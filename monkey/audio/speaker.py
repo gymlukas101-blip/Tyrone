@@ -21,8 +21,10 @@ BLOCK = 1024  # ~23ms at 44.1k -> ~43 mouth updates per second
 
 class Speaker:
     def __init__(self, engines: list, on_level: Callable[[float], None], on_state: Callable[[bool], None],
-                 on_visemes: Callable[[dict], None] | None = None):
+                 on_visemes: Callable[[dict], None] | None = None,
+                 on_fallback: Callable[[str, Exception], None] | None = None):
         self.engines = engines            # tried in order (Fish first, system voice fallback)
+        self.on_fallback = on_fallback    # told when the preferred voice fails and a fallback is used
         self.on_level = on_level
         self.on_visemes = on_visemes
         self._prev_rms = 0.0
@@ -91,6 +93,11 @@ class Speaker:
                     break
                 except Exception as exc:  # noqa: BLE001 - try the next engine
                     log.warning("TTS engine %s failed: %s", type(engine).__name__, exc)
+                    if self.on_fallback is not None and engine is self.engines[0]:
+                        try:
+                            self.on_fallback(type(engine).__name__, exc)
+                        except Exception:  # noqa: BLE001
+                            pass
             if gen == self._gen:
                 self._audio.put(None)  # end-of-sentence marker
 

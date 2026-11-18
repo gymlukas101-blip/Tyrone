@@ -426,7 +426,11 @@ async function openSettings() {
                 const c = await api.choose_voice(i); resultToast(c, "Voice saved — that's Monkey now"); openSettings();
               } }, "Use this one"))));
           } }, "Design voices"),
-          h("button", { class: "ghost", type: "button", onclick: () => api.test_voice() }, "Test voice")),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            const r = await api.test_voice();
+            toast(r.ok ? `✓ Using Monkey's Fish voice (${r.voice_id})` : `⚠ ${r.error} Playing the Windows voice instead.`, r.ok ? 4000 : 10000);
+            if (r.ok) openSettings();
+          } }, "Test voice")),
         voiceOut,
         field("Fish voice ID", "fish_voice_id", "text", { placeholder: "reference_id from fish.audio" }),
         field("Fish model", "fish_model")),

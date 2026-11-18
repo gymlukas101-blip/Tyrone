@@ -20,6 +20,31 @@ import numpy as np
 FISH_API = "https://api.fish.audio"
 TTS_RATE = 44100
 
+
+def normalize_voice_id(value: str) -> str:
+    """Accept a bare reference_id or a pasted fish.audio link (https://fish.audio/m/<id>/) and return the id."""
+    import re
+
+    v = (value or "").strip()
+    m = re.search(r"([0-9a-f]{32})", v, re.I)
+    return m.group(1).lower() if m else v
+
+
+def explain_fish_error(exc: Exception) -> str:
+    """Plain-English reason the Fish voice didn't work."""
+    t = str(exc)
+    if "401" in t or "403" in t:
+        return "Fish Audio didn't accept the API key. Re-paste it in Settings → API keys → Fish Audio."
+    if "402" in t or "insufficient" in t.lower() or "balance" in t.lower() or "credit" in t.lower():
+        return "Your Fish Audio account is out of credits (fish.audio → billing)."
+    if "404" in t or "reference" in t.lower() or "model not found" in t.lower():
+        return "Fish couldn't find that voice. Check the Fish voice ID (the 32-character code from the voice's link)."
+    if "429" in t:
+        return "Fish Audio is rate-limiting right now. Try again in a minute."
+    if "ConnectError" in t or "timed out" in t.lower() or "Timeout" in type(exc).__name__:
+        return "Couldn't reach Fish Audio (internet or firewall)."
+    return f"Fish Audio error: {t[:160]}"
+
 MONKEY_VOICE_PROMPT = (
     "An original adult male character voice, around 40 years old, from New York City. Deep, smooth, slightly raspy "
     "baritone with a calm, laid-back, confident delivery and a subtle New York accent. Warm and friendly, a little "
@@ -38,8 +63,9 @@ class FishTTS:
     def stream_pcm(self, text: str) -> Iterator[np.ndarray]:
         """Yield int16 mono PCM chunks at TTS_RATE as they arrive."""
         body = {"text": text, "format": "pcm", "sample_rate": TTS_RATE, "latency": "balanced", "normalize": True}
-        if self._voice():
-            body["reference_id"] = self._voice()
+        voice = normalize_voice_id(self._voice())
+        if voice:
+            body["reference_id"] = voice
         headers = {"Authorization": f"Bearer {self._key()}", "model": self._model() or "s2.1-pro"}
         leftover = b""
         with httpx.stream("POST", f"{FISH_API}/v1/tts", json=body, headers=headers, timeout=30) as r:

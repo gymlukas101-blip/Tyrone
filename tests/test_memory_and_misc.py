@@ -83,3 +83,47 @@ def test_heuristic_ranking():
     assert heuristic_score(prof, now) > heuristic_score(promo, now)
     ranking, usage = rank_items(None, [exam, promo, prof], now=now)
     assert usage is None and ranking.items[0].id == "e1"
+
+
+def test_fish_voice_id_from_pasted_link():
+    from monkey.audio.tts import explain_fish_error, normalize_voice_id
+
+    vid = "4a396e7e91a640a2b1e0f06249cbcd14"
+    assert normalize_voice_id(f"https://fish.audio/m/{vid}/") == vid
+    assert normalize_voice_id(f"  {vid.upper()} ") == vid
+    assert normalize_voice_id("") == ""
+    assert "API key" in explain_fish_error(RuntimeError("Fish TTS 401: unauthorized"))
+    assert "voice ID" in explain_fish_error(RuntimeError("Fish TTS 404: reference not found"))
+    assert "credits" in explain_fish_error(RuntimeError("Fish TTS 402: insufficient balance"))
+
+
+def test_speaker_reports_fallback():
+    import numpy as np
+
+    from monkey.audio.speaker import Speaker
+
+    class Broken:
+        def available(self):
+            return True
+
+        def stream_pcm(self, text):
+            raise RuntimeError("Fish TTS 404: reference not found")
+            yield  # pragma: no cover
+
+    class Ok:
+        def available(self):
+            return True
+
+        def stream_pcm(self, text):
+            yield np.zeros(10, dtype=np.int16)
+
+    seen = []
+    sp = Speaker([Broken(), Ok()], on_level=lambda v: None, on_state=lambda s: None,
+                 on_fallback=lambda name, exc: seen.append((name, str(exc))))
+    sp.say("hello")
+    import time
+    for _ in range(50):
+        if seen:
+            break
+        time.sleep(0.02)
+    assert seen and seen[0][0] == "Broken" and "404" in seen[0][1]

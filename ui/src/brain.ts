@@ -122,7 +122,7 @@ async function startCalibration(api: Api, tasks: string[], samples: number): Pro
 }
 
 function outputBox(o: { kind: string; to?: string; subject?: string; text: string }) {
-  return h("details", { class: "calout", open: o.kind === "Email draft" },
+  return h("details", { class: "calout", open: true },
     h("summary", {}, `${o.kind === "Email draft" ? "📧" : "🖥"} ${o.kind}${o.subject ? `: ${o.subject}` : ""}${o.to ? ` (to ${o.to})` : ""}`),
     h("pre", {}, o.text));
 }

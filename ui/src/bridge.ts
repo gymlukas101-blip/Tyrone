@@ -37,7 +37,7 @@ export interface Api {
   learn_style(): Promise<{ ok: boolean; error?: string; preview?: string }>;
   voice_design(instruction: string): Promise<{ ok: boolean; error?: string; candidates?: string[] }>;
   choose_voice(index: number): Promise<{ ok: boolean; error?: string; voice_id?: string }>;
-  test_voice(): Promise<void>;
+  test_voice(): Promise<{ ok: boolean; error?: string; voice_id?: string; engine?: string }>;
   export_memory(password: string): Promise<{ ok: boolean; error?: string; path?: string }>;
   import_memory(password: string): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   open_memory_folder(): Promise<void>;
@@ -216,7 +216,7 @@ function mockApi(): Api {
     async learn_style() { return { ok: false, error: "Demo mode" }; },
     async voice_design() { return { ok: false, error: "Demo mode" }; },
     async choose_voice() { return { ok: false, error: "Demo mode" }; },
-    async test_voice() {},
+    async test_voice() { return { ok: true, voice_id: "4a396e7e91a640a2b1e0f06249cbcd14", engine: "fish" }; },
     async export_memory() { return { ok: false, error: "Demo mode" }; },
     async import_memory() { return { ok: false, error: "Demo mode" }; },
     async open_memory_folder() {},

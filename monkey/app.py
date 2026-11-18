@@ -214,6 +214,7 @@ class MonkeyApp:
             [FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
                      lambda: self.cfg.settings.fish_model), SystemTTS()],
             on_level=self.ui.level, on_state=lambda _: self._publish_state(), on_visemes=self.ui.visemes,
+            on_fallback=self._voice_fallback,
         )
         try:
             self.speaker.start()
@@ -260,6 +261,16 @@ class MonkeyApp:
         if name in ("user", "delta", "done"):
             self._remember_chat(name, payload or {})
         self.ui.emit(name, payload)
+
+    def _voice_fallback(self, engine: str, exc: Exception) -> None:
+        """Monkey's Fish voice failed: say why (at most once a minute) instead of silently switching voices."""
+        from .audio.tts import explain_fish_error
+
+        now = time.time()
+        if now - getattr(self, "_last_voice_warn", 0) < 60:
+            return
+        self._last_voice_warn = now
+        self._emit("warning", {"message": f"{explain_fish_error(exc)} Using the Windows voice for now."})
 
     def _remember_chat(self, name: str, p: dict) -> None:
         """Keep the chat (exactly as shown on screen) so it's still there next time Monkey opens."""
@@ -582,6 +593,10 @@ class Api:
 
     def save_settings(self, changes: dict):
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
+        if "fish_voice_id" in allowed:
+            from .audio.tts import normalize_voice_id
+
+            allowed["fish_voice_id"] = normalize_voice_id(str(allowed["fish_voice_id"]))
         self._app.cfg.update(**allowed)
         if "start_with_windows" in allowed and getattr(sys, "frozen", False):
             from . import cleanup
@@ -801,7 +816,23 @@ class Api:
             return {"ok": False, "error": str(exc)}
 
     def test_voice(self):
-        self._app._say("Yo, it's Monkey. How I'm sounding?")
+        """Check Monkey's Fish voice directly (so the reason shows up if it fails), then say a test line."""
+        from .audio.tts import FishTTS, explain_fish_error, normalize_voice_id
+
+        a = self._app
+        s = a.cfg.settings
+        result = {"ok": True, "engine": "fish", "voice_id": normalize_voice_id(s.fish_voice_id)}
+        if not keys.get("fish"):
+            result = {"ok": False, "engine": "windows", "error": "No Fish Audio key saved yet (Settings → API keys)."}
+        else:
+            try:
+                fish = FishTTS(lambda: keys.get("fish"), lambda: s.fish_voice_id, lambda: s.fish_model)
+                next(iter(fish.stream_pcm("Test.")), None)
+            except Exception as exc:  # noqa: BLE001
+                result = {"ok": False, "engine": "windows", "error": explain_fish_error(exc)}
+        a._last_voice_warn = time.time()   # the toast below already explains any problem
+        a._say("Yo, it's Monkey. How I'm sounding?")
+        return result
 
     # memory
     def export_memory(self, password: str):
