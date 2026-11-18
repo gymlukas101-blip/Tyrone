@@ -32,7 +32,9 @@ class Updater:
         self.status = "idle"          # idle | checking | up_to_date | downloading | ready | unavailable | error
         self.detail = ""
         self.available_version = ""
+        self.progress = 0             # download percent while status == "downloading"
         self._lock = threading.Lock()
+        self._busy = threading.Event()
 
     @staticmethod
     def _default_factory():
@@ -58,33 +60,68 @@ class Updater:
 
     def state(self) -> dict:
         return {"status": self.status, "detail": self.detail, "current": self.current_version(),
-                "available": self.available_version, "enabled": bool(self.enabled())}
+                "available": self.available_version, "enabled": bool(self.enabled()), "progress": self.progress}
+
+    def _set(self, status: str, detail: str = "") -> None:
+        self.status, self.detail = status, detail
+        self.emit("update", self.state())
+
+    def check_async(self) -> dict:
+        """For the "Check now" button: returns at once; progress arrives as "update" events.
+        If a check or download is already running (e.g. the automatic one at startup), just report it."""
+        if self.status == "ready" or self._busy.is_set():
+            return self.state()
+        self.status = "checking"
+        threading.Thread(target=self.check, name="update-check", daemon=True).start()
+        return self.state()
 
     def check(self, download: bool = True) -> dict:
         """Check (and by default download) an update. Safe to call from any thread."""
         with self._lock:
-            m = self._manager()
-            if m is None:
-                return self.state()
+            self._busy.set()
             try:
-                self.status = "checking"
+                m = self._manager()
+                if m is None:
+                    self.emit("update", self.state())
+                    return self.state()
+                if self._pending is not None:
+                    self._set("ready")
+                    return self.state()
+                self._set("checking")
                 info = m.check_for_updates()
                 if not info:
-                    self.status, self.available_version = "up_to_date", ""
+                    self.available_version = ""
+                    self._set("up_to_date")
                     return self.state()
                 self.available_version = str(info.TargetFullRelease.Version)
                 if download:
-                    self.status = "downloading"
-                    self.emit("update", self.state())
-                    m.download_updates(info)
+                    self.progress = 0
+                    self._set("downloading")
+                    last = [-1]
+
+                    def on_progress(pct, *_):
+                        try:
+                            p = int(pct)
+                        except (TypeError, ValueError):
+                            return
+                        if p != last[0] and (p - last[0] >= 5 or p >= 100):   # don't flood the UI
+                            last[0] = self.progress = p
+                            self.emit("update", self.state())
+
+                    try:
+                        m.download_updates(info, on_progress)
+                    except TypeError:  # older binding without a progress callback
+                        m.download_updates(info)
                     self._pending = info
-                    self.status = "ready"
-                    self.emit("update", self.state())
+                    self.progress = 100
+                    self._set("ready")
                 return self.state()
             except Exception as exc:  # noqa: BLE001 - offline, GitHub rate limit, etc.
-                self.status, self.detail = "error", str(exc).splitlines()[0][:200]
                 log.warning("update check failed: %s", exc)
+                self._set("error", str(exc).splitlines()[0][:200])
                 return self.state()
+            finally:
+                self._busy.clear()
 
     def apply(self) -> dict:
         """Restart into the downloaded version (the process exits on success)."""

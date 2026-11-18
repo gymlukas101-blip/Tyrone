@@ -90,7 +90,7 @@ export interface CalResults {
 export interface CleanupItem { kind: string; label: string; path: string; status: string; detail: string }
 export interface CleanupResult { ok: boolean; error?: string; items?: CleanupItem[]; count?: number }
 
-export interface UpdateState { status: string; detail: string; current: string; available: string; enabled: boolean }
+export interface UpdateState { status: string; detail: string; current: string; available: string; enabled: boolean; progress?: number }
 
 declare global {
   interface Window {

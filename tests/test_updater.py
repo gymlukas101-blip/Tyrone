@@ -36,7 +36,8 @@ def make(mgr=None, enabled=True, boom=False):
 def test_up_to_date():
     u, ev = make(FakeMgr())
     s = u.check()
-    assert s["status"] == "up_to_date" and s["current"] == "0.3.10" and ev == []
+    assert s["status"] == "up_to_date" and s["current"] == "0.3.10"
+    assert [p["status"] for _, p in ev] == ["checking", "up_to_date"]   # live status for Settings
 
 
 def test_update_downloaded_then_applied():
@@ -44,7 +45,7 @@ def test_update_downloaded_then_applied():
     u, ev = make(mgr)
     s = u.check()
     assert s["status"] == "ready" and s["available"] == "0.3.11" and mgr.downloaded
-    assert [p["status"] for _, p in ev] == ["downloading", "ready"]
+    assert [p["status"] for _, p in ev] == ["checking", "downloading", "ready"]
     u.apply()
     assert mgr.applied is mgr.downloaded
 
@@ -63,3 +64,31 @@ def test_errors_are_caught():
 
     u, _ = make(Offline())
     assert u.check()["status"] == "error"
+
+
+def test_check_async_returns_immediately_and_reports_progress():
+    import threading
+
+    gate = threading.Event()
+
+    class SlowMgr(FakeMgr):
+        def download_updates(self, info, progress_callback=None):
+            for p in (10, 50, 100):
+                progress_callback(p)
+            gate.wait(2)
+            self.downloaded = info
+
+    mgr = SlowMgr("0.3.16")
+    u, events = make(mgr)
+    first = u.check_async()
+    assert first["status"] in ("checking", "downloading")          # didn't wait for the download
+    assert u.check_async()["status"] in ("checking", "downloading")  # second click doesn't start another
+    gate.set()
+    for _ in range(100):
+        if u.status == "ready":
+            break
+        threading.Event().wait(0.02)
+    assert u.status == "ready" and mgr.downloaded is not None
+    progress = [p["progress"] for e, p in events if e == "update" and p["status"] == "downloading"]
+    assert 50 in progress
+    assert u.check_async()["status"] == "ready"

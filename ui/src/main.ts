@@ -218,9 +218,12 @@ function onEvent(name: string, p: any) {
     case "emote": avatar.emote(p.name); break;
     case "health": healthCard(p); break;
     case "cleanup": cleanupCard(p); break;
-    case "update":
+    case "update": {
+      const el = document.getElementById("updStatus");
+      if (el) el.textContent = updateText(p);
       if (p.status === "ready") updateToast(p);
       break;
+    }
     case "sources":
       card("🔎 Sources", h("div", { class: "sources" }, ...p.sources.map((s: any) =>
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
@@ -290,6 +293,19 @@ function cleanupCard(plan: { items?: { kind: string; label: string; path: string
   c.append(
     h("p", { class: "meta" }, "These are from earlier Monkey/Tyrone versions. Old apps get uninstalled, and downloads go to the Recycle Bin so you can undo. Your memory, settings and keys are kept."),
     list, h("div", { class: "actions draft" }, go, later));
+}
+
+/** Plain-English update status for Settings → Updates (also refreshed live by "update" events). */
+function updateText(u: { status: string; available?: string; current?: string; detail?: string; progress?: number }) {
+  switch (u.status) {
+    case "checking": return "Checking GitHub for a new version…";
+    case "downloading": return `Downloading ${u.available ?? "update"}… ${u.progress ? `${u.progress}%` : ""}`.trim();
+    case "ready": return `Update ${u.available} downloaded. Click Restart & update.`;
+    case "up_to_date": return `You're on the latest version (${u.current || appState.version})`;
+    case "unavailable": return "Auto-update works after installing with Monkey-win-Setup.exe";
+    case "error": return `Couldn't check: ${u.detail || "unknown error"}. Try again in a minute.`;
+    default: return `Version ${u.current || appState.version}`;
+  }
 }
 
 function updateToast(u: { available: string }) {
@@ -519,16 +535,16 @@ async function openSettings() {
           return sel;
         })()),
         (() => {
-          const out = h("span", { class: "meta" }, "");
-          api.update_state().then((u) => { out.textContent = u.status === "unavailable" ? "Auto-update works after installing with the new MonkeySetup.exe" : `Version ${u.current || appState.version} · ${u.status.replace("_", " ")}`; });
+          const out = h("span", { class: "meta", id: "updStatus" }, "");
+          api.update_state().then((u) => { out.textContent = updateText(u); });
           const auto = h("input", { type: "checkbox", checked: s.auto_update !== false });
           auto.addEventListener("change", async () => { appState = await api.save_settings({ auto_update: auto.checked }); toast("Saved"); });
           return h("div", {},
             h("div", { class: "field" }, h("span", {}, "Updates"), out,
               h("button", { class: "ghost", type: "button", onclick: async () => {
-                out.textContent = "Checking…";
-                const u = await api.check_update();
-                out.textContent = u.status === "ready" ? `Update ${u.available} downloaded` : u.status === "up_to_date" ? "You're on the latest version" : (u.detail || u.status);
+                out.textContent = updateText({ status: "checking" });
+                const u = await api.check_update();      // returns at once; live progress comes as events
+                out.textContent = updateText(u);
                 if (u.status === "ready") updateToast(u);
               } }, "Check now"),
               h("button", { class: "ghost", type: "button", onclick: async () => {

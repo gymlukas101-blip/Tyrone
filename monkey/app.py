@@ -663,7 +663,7 @@ class Api:
 
     # updates
     def check_update(self):
-        return self._app.updater.check(download=True)
+        return self._app.updater.check_async()
 
     def apply_update(self):
         return self._app.updater.apply()
