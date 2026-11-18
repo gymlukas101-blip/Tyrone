@@ -16,6 +16,9 @@ export interface AppState {
   version: string;
 }
 
+export interface MemoryHit { kind: string; ref: string; text: string; date: string; source: string; status: string; score: number; sensitive: boolean }
+export interface ImportFile { name: string; action: string; add: string[]; conflicts: { existing: string; incoming: string }[] }
+
 export interface Api {
   get_state(): Promise<AppState>;
   save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string; warning?: string; note?: string }>;
@@ -41,6 +44,14 @@ export interface Api {
   export_memory(password: string): Promise<{ ok: boolean; error?: string; path?: string }>;
   import_memory(password: string): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   open_memory_folder(): Promise<void>;
+  memory_search(query: string, scope: string, includeHistory: boolean): Promise<{ ok: boolean; error?: string; hits?: MemoryHit[] }>;
+  memory_forget(factId: string): Promise<{ ok: boolean; error?: string; file?: string }>;
+  history_stats(): Promise<{ enabled: boolean; retention_days: number; sessions?: number; messages?: number; episodes?: number; facts?: number; fts?: boolean }>;
+  history_delete(scope: string, days: number): Promise<{ ok: boolean; error?: string; deleted?: number }>;
+  history_export(): Promise<{ ok: boolean; error?: string; path?: string }>;
+  import_preview(): Promise<{ ok: boolean; error?: string; label?: string; files?: ImportFile[] }>;
+  import_apply(): Promise<{ ok: boolean; error?: string; backup?: string }>;
+  import_undo(): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   new_conversation(): Promise<void>;
   get_assignments(refresh: boolean): Promise<any>;
   toggle_assignment(id: string, done: boolean): Promise<{ ok: boolean; synced?: boolean; error?: string }>;
@@ -228,6 +239,24 @@ function mockApi(): Api {
     async export_memory() { return { ok: false, error: "Demo mode" }; },
     async import_memory() { return { ok: false, error: "Demo mode" }; },
     async open_memory_folder() {},
+    async memory_search(q: string) {
+      return { ok: true, hits: q ? [
+        { kind: "fact", ref: "f1a2b3c4", text: "Comet Quest ranked mode ships before survival (demo)", date: "2026-11-18", source: "projects.md", status: "current", score: -2, sensitive: false },
+        { kind: "episode", ref: "abc123", text: "Planned the speech note cards (demo)", date: "2026-11-17", source: "episode summary", status: "current", score: -1, sensitive: false },
+      ] : [] };
+    },
+    async memory_forget() { return { ok: true, file: "projects.md" }; },
+    async history_stats() { return { enabled: true, retention_days: 365, sessions: 12, messages: 140, episodes: 11, facts: 65, fts: true }; },
+    async history_delete() { return { ok: true, deleted: 0 }; },
+    async history_export() { return { ok: true, path: "Documents\\Monkey-conversations.json" }; },
+    async import_preview() {
+      return { ok: true, label: "Imported context (demo)", files: [
+        { name: "profile.md", action: "merge", add: ["- Example imported line <!-- src=import -->"], conflicts: [] },
+        { name: "classes.md", action: "new", add: ["- Example class line"], conflicts: [{ existing: "- Class at 9:30", incoming: "- Class at 11:00" }] },
+      ] };
+    },
+    async import_apply() { return { ok: true, backup: "memories\\backups\\import-demo" }; },
+    async import_undo() { return { ok: true, restored: ["profile.md"] }; },
     async new_conversation() {},
     async get_assignments() { return { ok: true, ...demoBoard() }; },
     async toggle_assignment() { return { ok: true, synced: true }; },

@@ -346,3 +346,13 @@ dialog, .settings header { background: #0a3a1c; }
 .soundlab .name { min-width: 130px; color: var(--muted); font-size: 0.9em; }
 .soundlab .take { min-width: 28px; padding: 2px 6px; border-radius: 8px; }
 .soundlab .take.off { opacity: 0.35; text-decoration: line-through; }
+
+/* Memory inspector / import / chip */
+.memresults { display: grid; gap: 6px; margin: 6px 0; max-height: 280px; overflow: auto; }
+.memhit { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.memhit.superseded { opacity: 0.6; }
+.memhit button { justify-self: start; }
+.memhit pre { white-space: pre-wrap; font-size: 0.85em; margin: 4px 0 0; }
+.memchip { font-size: 12px; color: var(--muted); margin: -2px 0 6px 8px; }
+.memchip summary { cursor: pointer; }
+.memchip ul { margin: 4px 0 0 16px; padding: 0; }

@@ -80,6 +80,8 @@ class Settings:
     longitude: float = -89.4125
     # Memory
     memory_dir_override: str = ""     # e.g. a OneDrive folder to sync memory across PCs
+    history_enabled: bool = True      # keep a searchable local history of conversations (monkey.db)
+    history_retention_days: int = 365 # older conversations are deleted automatically (0 = keep forever)
     # App
     start_with_windows: bool = True
     first_run_complete: bool = False

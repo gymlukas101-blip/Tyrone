@@ -380,6 +380,7 @@ function onEvent(name: string, p: any) {
       break;
     case "opened": addMsg("sys", `Opened ${p.url}`); break;
     case "memory": addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
+    case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
@@ -775,10 +776,97 @@ async function openSettings() {
             h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.export_memory(pw.value), "Exported") }, "Export"),
             h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.import_memory(pw.value), "Imported — restart Monkey") }, "Import"),
             h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open folder"));
-        })()),
+        })(),
+        memoryInspector(),
+        contextImport(),
+        historyControls(s)),
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   if (!dlg.open) dlg.showModal();
+}
+
+// ------------------------------------------------------------------ memory: inspector, import, history
+/** Which memories/episodes informed the current answer: a small chip under the reply, details on click. */
+function memoryUsed(items: { kind: string; ref: string; date: string; source: string; status: string }[]) {
+  if (!items.length) return;
+  const label = items.map((i) => `${i.kind === "fact" ? i.source : i.kind === "episode" ? "earlier chat" : "conversation"} · ${i.date}`);
+  const chip = h("details", { class: "memchip" }, h("summary", {}, `🧠 used ${items.length} memor${items.length === 1 ? "y" : "ies"}`),
+    h("ul", {}, ...label.map((t) => h("li", {}, t))));
+  log.append(chip);
+  log.scrollTop = log.scrollHeight;
+}
+
+function memoryInspector() {
+  const q = h("input", { type: "search", placeholder: "Search what Monkey remembers (facts + past conversations)" }) as HTMLInputElement;
+  const hist = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const out = h("div", { class: "memresults" });
+  const run = async () => {
+    const r = await api.memory_search(q.value, "all", hist.checked);
+    if (!r.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${r.error}`)); return; }
+    const hits = r.hits ?? [];
+    out.replaceChildren(...(hits.length ? hits.map((x) => h("div", { class: `memhit ${x.status}` },
+      h("span", { class: "meta" }, `${x.kind === "fact" ? x.source : x.kind} · ${x.date}${x.status !== "current" ? " · " + x.status : ""}${x.sensitive ? " · sensitive" : ""}`),
+      h("span", {}, x.text),
+      x.kind === "fact" && x.status === "current" ? h("button", { class: "ghost", type: "button", title: "Delete this fact from memory", onclick: async (e: Event) => {
+        const res = await api.memory_forget(x.ref);
+        toast(res.ok ? "Forgotten" : `⚠ ${res.error}`);
+        if (res.ok) (e.target as HTMLElement).closest(".memhit")?.remove();
+      } }, "Forget") : "")) : [h("p", { class: "help" }, "Nothing found.")]));
+  };
+  q.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") void run(); });
+  return h("details", {}, h("summary", {}, "🔎 Memory inspector: see, search and correct what Monkey knows"),
+    h("div", { class: "field" }, q, h("button", { class: "ghost", type: "button", onclick: run }, "Search")),
+    h("label", { class: "field toggle" }, hist, h("span", {}, "Include older (superseded) versions")), out);
+}
+
+function contextImport() {
+  const out = h("div", { class: "memresults" });
+  const preview = async () => {
+    const r = await api.import_preview();
+    if (!r.ok) { toast(`⚠ ${r.error}`); return; }
+    const files = r.files ?? [];
+    const apply = h("button", { class: "primary", type: "button", onclick: async () => {
+      const a = await api.import_apply();
+      if (!a.ok) return toast(`⚠ ${a.error}`);
+      out.replaceChildren(h("p", { class: "help" }, `✓ Imported. Backup of your previous files: ${a.backup}`),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          const u = await api.import_undo();
+          toast(u.ok ? `Undone (${(u.restored ?? []).join(", ")})` : `⚠ ${u.error}`);
+        } }, "Undo import"));
+    } }, "Apply import (backs up first)");
+    out.replaceChildren(h("p", { class: "help" }, `Preview: ${r.label}. Nothing is written until you click Apply.`),
+      ...files.map((f) => h("div", { class: "memhit" },
+        h("strong", {}, `${f.name}: ${f.action === "new" ? "new file" : f.action === "merge" ? `add ${f.add.length} line(s)` : "no changes"}`),
+        ...f.conflicts.map((c) => h("span", { class: "meta" }, `⚠ possible conflict: “${c.existing}” vs “${c.incoming}” (both kept; fix in the file)`)),
+        h("details", {}, h("summary", {}, "lines"), h("pre", {}, f.add.join("\n").replace(/\s*<!--.*?-->/g, ""))))),
+      apply);
+  };
+  return h("details", {}, h("summary", {}, "📥 Import context files (e.g. your ChatGPT profile pack)"),
+    h("p", { class: "help" }, "Pick profile.md, preferences.md, projects.md, classes.md. You'll see exactly what changes; your current files are backed up first and you can undo."),
+    h("button", { class: "ghost", type: "button", onclick: preview }, "Choose files and preview…"), out);
+}
+
+function historyControls(s: Record<string, any>) {
+  const stats = h("span", { class: "meta" }, "…");
+  api.history_stats().then((st) => {
+    stats.textContent = st.enabled ? `${st.sessions ?? 0} conversations, ${st.episodes ?? 0} summaries, ${st.facts ?? 0} facts indexed${st.fts ? "" : " (basic search)"}` : "History is off";
+  });
+  const enabled = h("input", { type: "checkbox", checked: s.history_enabled !== false }) as HTMLInputElement;
+  enabled.addEventListener("change", async () => { appState = await api.save_settings({ history_enabled: enabled.checked }); toast("Saved (takes effect after restart)"); });
+  return h("details", {}, h("summary", {}, "🗂 Conversation history & retention"),
+    h("label", { class: "field toggle" }, enabled, h("span", {}, "Keep a searchable history of our conversations on this PC")),
+    h("div", { class: "field" }, h("span", {}, "Keep for (days, 0 = forever)"), (() => {
+      const inp = h("input", { type: "number", min: "0", max: "3650", value: String(s.history_retention_days ?? 365) }) as HTMLInputElement;
+      inp.addEventListener("change", async () => { appState = await api.save_settings({ history_retention_days: Number(inp.value) }); toast("Saved"); });
+      return inp;
+    })()),
+    h("div", { class: "field" }, stats,
+      h("button", { class: "ghost", type: "button", onclick: async () => { const r = await api.history_export(); toast(r.ok ? `Exported to ${r.path}` : `⚠ ${r.error}`); } }, "Export"),
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        if (!confirm("Delete ALL saved conversations and summaries? Your memory files stay.")) return;
+        const r = await api.history_delete("all", 0);
+        toast(r.ok ? `Deleted ${r.deleted} conversations` : `⚠ ${r.error}`);
+      } }, "Delete all history")));
 }
 
 // ------------------------------------------------------------------ earlier chat (survives restarts)

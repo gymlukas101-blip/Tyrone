@@ -89,6 +89,10 @@ class MonkeyApp:
         self.ui = UIBus()
         self.memory = MonkeyMemory(self.cfg.memory_dir)
         self.ledger = Ledger(self.cfg.db_path)
+        from .memory.history import HistoryStore
+
+        self.history = HistoryStore(self.cfg.db_path, self.cfg.settings.history_retention_days) \
+            if self.cfg.settings.history_enabled else None
         self._bot_text: list[str] = []
         self._calibration = None
 
@@ -114,7 +118,7 @@ class MonkeyApp:
             image_gen=self._generate_images,
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
-            assignments=self.board, health=self.garmin,
+            assignments=self.board, health=self.garmin, history=self.history,
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
@@ -128,7 +132,9 @@ class MonkeyApp:
             policy=self.policy,
         )
         self.agent = Agent(None, self.router, ToolRunner(self.services), self.memory, self.ledger,
-                           emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name)
+                           emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name,
+                           history=self.history, on_session_end=self._episode_async)
+        threading.Thread(target=self._history_maintenance, name="history", daemon=True).start()
         self._ensure_client()
 
         # Audio (created in start_audio so tests/selftest don't need devices)
@@ -259,6 +265,42 @@ class MonkeyApp:
 
         threading.Thread(target=init_listener, name="listener-init", daemon=True).start()
         self._register_hotkey()
+
+    # ------------------------------------------------------------------ conversation history (episodes)
+    def _history_maintenance(self) -> None:
+        """Startup: apply retention, close sessions left open by a quit/crash, summarize unsummarized ones."""
+        if self.history is None:
+            return
+        try:
+            removed = self.history.prune()
+            if removed:
+                log.info("history: removed %d conversations past the retention window", removed)
+            self.history.close_stale(active_sid=self.agent.session_id)
+            self.history.index_facts(Path(self.memory.memory_root))
+            for sid in self.history.needs_episode():
+                self._summarize_episode(sid)
+        except Exception:  # noqa: BLE001
+            log.warning("history maintenance failed", exc_info=True)
+
+    def _episode_async(self, sid: str) -> None:
+        threading.Thread(target=self._summarize_episode, args=(sid,), name="episode", daemon=True).start()
+
+    def _summarize_episode(self, sid: str) -> None:
+        from .memory.episodes import summarize
+
+        if self.history is None:
+            return
+        try:
+            msgs = self.history.messages(sid)
+            if not any(m["role"] == "user" for m in msgs):
+                return
+            client = self._ensure_client()
+            ep, usage = summarize(client, msgs, HAIKU)
+            if usage is not None:
+                self._record_usage(HAIKU, "low", "memory:episode", usage)
+            self.history.add_episode(sid, ep["summary"], ep["topics"], ep["decisions"], ep["open_items"], ep["source"])
+        except Exception:  # noqa: BLE001
+            log.warning("episode summary failed", exc_info=True)
 
     def _register_hotkey(self) -> None:
         try:
@@ -482,7 +524,7 @@ class MonkeyApp:
 
         def run():
             try:
-                self.agent.handle(text, importance)
+                self.agent.handle(text, importance, source="typed" if typed else "voice")
             except Exception as exc:  # noqa: BLE001 - the agent rolls itself back; just make sure we're usable
                 log.exception("agent failed")
                 self._listening = False
@@ -822,6 +864,98 @@ class Api:
 
     def update_state(self):
         return self._app.updater.state()
+
+    # memory inspector, history controls, context import
+    def memory_search(self, query: str, scope: str = "all", include_history: bool = False):
+        a = self._app
+        if a.history is None:
+            return {"ok": False, "error": "Conversation history is turned off (Settings → Memory)."}
+        from .memory.history import hits_json
+
+        a.history.index_facts(Path(a.memory.memory_root))
+        return {"ok": True, "hits": hits_json(a.history.search(str(query)[:300], scope=scope, limit=20,
+                                                               include_superseded=bool(include_history)))}
+
+    def memory_forget(self, fact_id: str):
+        from .memory import facts as F
+
+        a = self._app
+        try:
+            f = F.forget_fact(Path(a.memory.memory_root), str(fact_id))
+            if a.history is not None:
+                a.history.tombstone(f.text)
+                a.history.index_facts(Path(a.memory.memory_root), force=True)
+            return {"ok": True, "file": f.file}
+        except KeyError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def history_stats(self):
+        a = self._app
+        s = a.cfg.settings
+        st = a.history.stats() if a.history is not None else {}
+        return {"enabled": s.history_enabled, "retention_days": s.history_retention_days, **st}
+
+    def history_delete(self, scope: str = "all", days: int = 0):
+        a = self._app
+        if a.history is None:
+            return {"ok": False, "error": "History is off."}
+        n = a.history.delete_all() if scope == "all" else a.history.prune(int(days))
+        return {"ok": True, "deleted": n}
+
+    def history_export(self):
+        a = self._app
+        if a.history is None:
+            return {"ok": False, "error": "History is off."}
+        target = Path.home() / "Documents" / f"Monkey-conversations-{datetime.now():%Y%m%d-%H%M}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(a.history.export(), indent=1), encoding="utf-8")
+        return {"ok": True, "path": str(target)}
+
+    def import_preview(self):
+        """Pick .md context files (e.g. from a ChatGPT profile pack) and preview the merge. Nothing is written yet."""
+        import webview
+
+        from .memory.importer import plan_import
+
+        a = self._app
+        dialog = getattr(getattr(webview, "FileDialog", None), "OPEN", None) or webview.OPEN_DIALOG
+        picked = a.ui.window.create_file_dialog(dialog, allow_multiple=True, file_types=("Markdown (*.md)",))
+        if not picked:
+            return {"ok": False, "error": "Nothing picked."}
+        try:
+            incoming = {Path(p).name: Path(p).read_text(encoding="utf-8") for p in picked
+                        if Path(p).name.lower() not in ("readme_import.md", "implementation_brief.md")}
+            plan = plan_import(Path(a.memory.memory_root), incoming)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        a._import_plan = plan
+        return {"ok": True, **plan.summary()}
+
+    def import_apply(self):
+        from .memory.importer import apply_import
+
+        a = self._app
+        plan = getattr(a, "_import_plan", None)
+        if plan is None:
+            return {"ok": False, "error": "Preview an import first."}
+        backup = apply_import(Path(a.memory.memory_root), plan)
+        a._import_plan = None
+        a._last_import_backup = backup
+        if a.history is not None:
+            a.history.index_facts(Path(a.memory.memory_root), force=True)
+        return {"ok": True, "backup": str(backup)}
+
+    def import_undo(self):
+        from .memory.importer import restore_backup
+
+        a = self._app
+        backup = getattr(a, "_last_import_backup", None)
+        if backup is None:
+            return {"ok": False, "error": "No import to undo this session."}
+        restored = restore_backup(Path(a.memory.memory_root), backup)
+        if a.history is not None:
+            a.history.index_facts(Path(a.memory.memory_root), force=True)
+        return {"ok": True, "restored": restored}
 
     def end_conversation(self):
         """The ✕ on the "Listening…" chip: stop listening without the wake word."""
