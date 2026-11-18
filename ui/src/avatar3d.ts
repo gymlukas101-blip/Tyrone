@@ -5,17 +5,44 @@
 //  - random blinks, glowing (emissive) eye rings + headset LED that follow the state
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 import { type AvatarLike, type AvatarState, type Emote, bananaRain } from "./avatar-types";
 import { IdleBrain, Life } from "./avatar/life";
 import { type Juice, Sfx } from "./avatar/sfx";
 import { Vfx } from "./avatar/vfx";
 import { type Beat, crossed } from "./avatar/events";
+import { addFurDetail, setFurStrength } from "./avatar/fur";
 
 const STATE_CLIP: Record<AvatarState, string> = {
   idle: "idle", listening: "listen", transcribing: "listen", thinking: "think", speaking: "talk",
 };
+/** Small image-based-lighting scene: warm cream sky, jungle-green ground bounce, a warm key-side panel and a
+ * green panel low on the fill side, so his fur picks up the same colors as the backdrop instead of grey. */
+function jungleEnvironment(): THREE.Scene {
+  const env = new THREE.Scene();
+  const sky = new THREE.SphereGeometry(10, 32, 16);
+  const top = new THREE.Color(0xfff6e6), mid = new THREE.Color(0xe6e6d4), low = new THREE.Color(0x3d6b3c);
+  const pos = sky.getAttribute("position");
+  const cols: number[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / 10;                                   // -1 (ground) .. 1 (sky)
+    const c = y > 0 ? mid.clone().lerp(top, Math.min(1, y * 1.4)) : mid.clone().lerp(low, Math.min(1, -y * 2.2));
+    cols.push(c.r, c.g, c.b);
+  }
+  sky.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+  env.add(new THREE.Mesh(sky, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const panel = (color: number, intensity: number, x: number, y: number, z: number, w: number, h: number) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }));
+    m.position.set(x, y, z);
+    m.lookAt(0, 0.5, 0);
+    env.add(m);
+  };
+  panel(0xffe2b8, 3.2, 3.5, 5, 6, 5, 4);        // key side: warm softbox
+  panel(0x8fcf8a, 1.0, -6, -0.5, 3, 6, 3);      // fill side: soft leafy bounce
+  panel(0xfff0b0, 2.2, -3, 4, -6, 4, 3);        // behind: warm rim source
+  return env;
+}
+
 const SLEEP_CHAIN = ["yawn", "sit_down", "sit_doze_loop", "lie_down", "sleep_loop"];
 const VISEMES = ["viseme_sil", "viseme_PP", "viseme_FF", "viseme_TH", "viseme_DD", "viseme_kk", "viseme_CH",
   "viseme_SS", "viseme_nn", "viseme_RR", "viseme_aa", "viseme_E", "viseme_I", "viseme_O", "viseme_U"];
@@ -82,6 +109,7 @@ export class Avatar3D implements AvatarLike {
   private brain: IdleBrain | null = null;
   private vfx: Vfx;
   readonly sfx = new Sfx();
+  private key!: THREE.DirectionalLight;
   private sleeping = false;
   private chain: string[] = [];
   private chainAct: THREE.AnimationAction | null = null;
@@ -99,19 +127,36 @@ export class Avatar3D implements AvatarLike {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // Tone mapping: ACES with the warm/neutral lighting below gave the richest fur (Neutral/AgX compared, see
+    // prototypes/fur-lighting).
+    // ?tm=aces|agx|neutral compares them (look-dev only).
+    const tm = new URLSearchParams(location.search).get("tm") ?? "aces";
+    this.renderer.toneMapping = tm === "aces" ? THREE.ACESFilmicToneMapping : tm === "agx" ? THREE.AgXToneMapping
+      : THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = tm === "aces" ? 1.2 : tm === "agx" ? 1.35 : 0.85;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.domElement.className = "avatar3d";
     host.replaceChildren(this.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    const key = new THREE.DirectionalLight(0xfff2d6, 2.2);
-    key.position.set(1.5, 2.5, 3);
-    const rim = new THREE.DirectionalLight(0x7dffb0, 1.6);
-    rim.position.set(-2, 1.5, -2.5);
-    this.scene.add(key, rim, new THREE.HemisphereLight(0xeaffd0, 0x1a4a20, 0.6));
+    this.scene.environment = pmrem.fromScene(jungleEnvironment(), 0.03).texture;
+    // 3-point lighting: warm key (casts soft self-shadows), cool-green fill, two back rims for a fur halo.
+    this.key = new THREE.DirectionalLight(0xfff1de, 2.6);
+    this.key.position.set(1.6, 2.6, 3);
+    this.key.castShadow = true;
+    this.key.shadow.mapSize.set(1024, 1024);
+    this.key.shadow.bias = -0.0004;
+    this.key.shadow.normalBias = 0.02;
+    this.key.shadow.radius = 4;
+    const fill = new THREE.DirectionalLight(0xdcecf0, 0.7);
+    fill.position.set(-2.2, 0.6, 2.4);
+    const rimWarm = new THREE.DirectionalLight(0xfff0a8, 1.8);
+    rimWarm.position.set(-1.8, 2.2, -2.6);
+    const rimGreen = new THREE.DirectionalLight(0x86ffb8, 1.6);
+    rimGreen.position.set(2.1, 1.4, -2.4);
+    this.scene.add(this.key, this.key.target, fill, rimWarm, rimGreen, new THREE.HemisphereLight(0xfff8ec, 0x3c5a34, 0.35));
 
     this.vfx = new Vfx(this.scene);
     // Soft contact shadow so he sits ON the ground instead of floating (cheap radial blob).
@@ -146,6 +191,9 @@ export class Avatar3D implements AvatarLike {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.frustumCulled = false; // skinned bounds don't follow the animation
+        const matName = Array.isArray(mesh.material) ? "" : mesh.material.name;
+        mesh.castShadow = !/Glow|Highlight|Sparkle/i.test(matName);
+        mesh.receiveShadow = !/Glow|Highlight|Sparkle|Eye/i.test(matName);
         const dict = mesh.morphTargetDictionary;
         if (dict && mesh.morphTargetInfluences) {
           for (const [name, index] of Object.entries(dict)) {
@@ -160,6 +208,16 @@ export class Avatar3D implements AvatarLike {
           const fur = new THREE.MeshPhysicalMaterial();
           THREE.MeshStandardMaterial.prototype.copy.call(fur, src);
           fur.sheen = 0.6; fur.sheenRoughness = 0.55; fur.sheenColor = new THREE.Color(0xffe0b0);
+          const isCard = /FurCard/i.test(src.name);
+          if (isCard) {
+            // silhouette tufts (tools/blender/fur_cards.py): alpha-tested, no blending -> no sorting problems
+            fur.transparent = false;
+            fur.alphaTest = 0.4;
+            mesh.castShadow = mesh.receiveShadow = false;      // thin cards + shadow maps = black specks
+            fur.depthWrite = true;
+            fur.side = THREE.DoubleSide;
+            mesh.visible = !new URLSearchParams(location.search).has("nocards");
+          } else if (!new URLSearchParams(location.search).has("nofur")) addFurDetail(fur);
           mesh.material = fur;
         }
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -181,6 +239,13 @@ export class Avatar3D implements AvatarLike {
     const dist = (size.y * 0.92) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     this.camera.position.set(center.x, center.y + size.y * 0.06, center.z + dist);
     this.camera.lookAt(center.x, center.y + size.y * 0.04, center.z);
+    // Tight shadow frustum around him (sharper, cheaper shadows); generous so lying down still fits.
+    const r = Math.max(size.x, size.y) * 0.95;
+    const sc = this.key.shadow.camera as THREE.OrthographicCamera;
+    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.near = 0.1; sc.far = 12;
+    this.key.target.position.copy(center);
+    this.key.position.copy(center).add(new THREE.Vector3(1.6, 2.6, 3).normalize().multiplyScalar(4));
+    sc.updateProjectionMatrix();
 
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of gltf.animations) {
@@ -254,6 +319,21 @@ export class Avatar3D implements AvatarLike {
     if (!this.emoting && !this.chainAct) this.play(STATE_CLIP[s]);
   }
 
+  private setShadows(size: number) {
+    const on = size > 0;
+    if (on === this.key.castShadow && this.key.shadow.mapSize.x === size) return;
+    this.key.castShadow = on;
+    if (on) {
+      this.key.shadow.mapSize.set(size, size);
+      this.key.shadow.map?.dispose();
+      (this.key.shadow as any).map = null;
+    }
+    this.model?.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      for (const x of Array.isArray(m) ? m : m ? [m] : []) x.needsUpdate = true;
+    });
+  }
+
   /** Settings → Look & feel. */
   configure(o: { juice?: Juice; volume?: number; sleepAfterMin?: number }) {
     if (o.juice) {
@@ -262,6 +342,8 @@ export class Avatar3D implements AvatarLike {
       this.vfx.enabled = o.juice !== "minimal";
       this.vfx.reduced = o.juice === "calm";
       if (this.brain) this.brain.fidgets = o.juice !== "minimal";
+      this.setShadows(o.juice === "minimal" ? 0 : o.juice === "calm" ? 512 : 1024);
+      setFurStrength(o.juice === "minimal" ? 0 : 1);
     }
     if (o.volume !== undefined) this.sfx.setVolume(o.volume);
     if (o.sleepAfterMin && this.brain && !new URLSearchParams(location.search).has("sleep")) {

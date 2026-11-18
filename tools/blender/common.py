@@ -46,10 +46,10 @@ def meshes() -> dict[str, "bpy.types.Object"]:
     return {o.name: o for o in bpy.data.objects if o.type == "MESH"}
 
 
-def export_glb(path: Path = GLB):
+def export_glb(path: Path = GLB, **extra):
     for a in bpy.data.actions:
         a.use_fake_user = True
-    bpy.ops.export_scene.gltf(
+    opts = dict(
         filepath=str(path), export_format="GLB", export_animations=True, export_animation_mode="ACTIONS",
         export_force_sampling=True, export_frame_range=False, export_morph=True, export_morph_normal=True,
         export_skins=True, export_all_influences=False, export_yup=True, export_apply=False,
@@ -57,3 +57,8 @@ def export_glb(path: Path = GLB):
         export_image_format="AUTO", export_optimize_animation_size=True,
         export_anim_single_armature=True, export_reset_pose_bones=True,
     )
+    opts.update(extra)
+    bpy.ops.export_scene.gltf(**opts)
+    from glbinfo import set_default_weights
+
+    print("default morph weights from idle:", set_default_weights(path))

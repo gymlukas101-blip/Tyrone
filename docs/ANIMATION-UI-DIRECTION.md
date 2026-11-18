@@ -119,20 +119,22 @@ So DK's quality comes from **art direction, shape design, fur, materials and abo
 | Rank | Cause | Impact | Detail | Status |
 |---|---|---|---|---|
 | 1 | Animation | Biggest | Short, generic clips (baked at 24 fps, but the motion itself is simple). Before Phase 1: no secondary motion, no look-at, no breathing, no idle variety. | Phase 1 fixed a lot of this |
-| 2 | Materials and fur | Large | Only 2 textures for the whole model, no normal map. Painted noise reads as a plush toy. No tufts on the silhouette. | Planned |
-| 3 | Lighting and post | Medium | We already have ACES tone mapping, room IBL, key and rim light. We lack ambient occlusion, a contact shadow (added now), fur sheen (added now) and SMAA. | Partly done |
+| 2 | Materials and fur | Large | Only 2 textures for the whole model, no normal map. Painted noise reads as a plush toy. No tufts on the silhouette. | **Done:** baked AO in the color maps (`tools/blender/bake_ao.py`), runtime triplanar strand detail (`ui/src/avatar/fur.ts`), 300 crossed silhouette tufts (`tools/blender/fur_cards.py`) |
+| 3 | Lighting and post | Medium | We already have ACES tone mapping, room IBL, key and rim light. We lack ambient occlusion, a contact shadow (added now), fur sheen (added now) and SMAA. | **Done:** custom jungle IBL, 3-point lights with two rims, soft self-shadows (scaled by juice level). No screen-space post: the canvas is transparent, and baked AO covers the creases. |
 | 4 | Model | Smallest | 38k vertices is **not** the bottleneck. A smooth silhouette, and the face and hands, matter more than polycount. | Planned |
 
 So the answer to "Blender failed, or lighting?" is a **third option: mostly animation and fur/material design**, with lighting a smaller factor.
 
 **Upgrade list, in order:**
 1. ✅ Alive layer, contact shadow, fur sheen (done).
-2. **Baked fur normal + AO + ORM maps in headless Blender Cycles:**
+Results: `prototypes/fur-lighting/compare-full.png` and `compare-closeup.png` (before | after).
+
+2. ✅ **Baked fur detail (done as: Cycles AO baked into the color maps, plus runtime triplanar strand bump, which avoids UV seams):**
    - subdivide plus a clump/strand displacement along the fur flow;
    - bake normal, AO and cavity onto the game mesh;
    - multiply AO and cavity into the albedo for darker roots and lighter tips;
    - vary roughness.
-3. **Silhouette tuft cards:** alpha-tested fur "fin" cards along the shoulders, forearms, head and back, skinned to the same bones (+1–3k triangles).
+3. ✅ **Silhouette tuft cards:** alpha-tested fur "fin" cards along the shoulders, forearms, head and back, skinned to the same bones (+1–3k triangles).
 4. **Post:** N8AO or GTAO at half resolution, plus SMAA. It must keep the transparent background, so test it in WebView2.
 5. **Clip polish pass in bpy:** Bezier easing, child-bone overlap offsets of 1–3 frames, anticipation and overshoot keys, arcs. Longer 6–10 s idles with variation.
 6. **Optional "high" setting:** shell fur (8–16 shells, alpha-test).
