@@ -1,0 +1,141 @@
+<title>Monkey Design Lineup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@500;700;800&display=swap">
+<style>
+/* Layout: a jungle "character select" screen — 8 framed cards, a compare tray for any two, and a rules checklist per design. */
+:root {
+  --jungle: #f2fbe8; --panel: #ffffff; --panel-2: #e3f4d2; --ink: #17321a; --muted: #4c6b4a;
+  --frame: #c9a227; --leaf: #1e9e48; --banana: #ffd43b; --banana-ink: #3a2a00; --glow: #12a8c8;
+  --shadow: rgba(23, 50, 26, .25);
+  --display: "Lilita One", "Arial Black", system-ui, sans-serif;
+  --body: "Nunito", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --jungle: #062611; --panel: #0d3b1d; --panel-2: #0a2f17; --ink: #eaffdf; --muted: #a6d39a;
+  --frame: #d8b13a; --leaf: #35d26a; --banana: #ffd43b; --banana-ink: #2a1c00; --glow: #33e1ff;
+  --shadow: rgba(0, 0, 0, .45); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --jungle: #062611; --panel: #0d3b1d; --panel-2: #0a2f17; --ink: #eaffdf; --muted: #a6d39a;
+  --frame: #d8b13a; --leaf: #35d26a; --banana: #ffd43b; --banana-ink: #2a1c00; --glow: #33e1ff;
+  --shadow: rgba(0, 0, 0, .45); color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--jungle); color: var(--ink); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+h1 { font: 400 clamp(30px, 5vw, 46px)/1.05 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 span { color: var(--leaf); }
+.lede { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.chip { font: 700 12px/1 var(--body); padding: 6px 10px; border-radius: 999px; background: var(--panel-2); border: 2px solid var(--ink); }
+.chip.glow { border-color: var(--glow); color: var(--ink); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
+.card { background: var(--panel); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 0 0 3px var(--frame), 0 8px 0 var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.card.pick { box-shadow: 0 0 0 4px var(--banana), 0 0 22px color-mix(in srgb, var(--banana) 60%, transparent), 0 8px 0 var(--shadow); }
+.shot { position: relative; background: var(--panel-2); }
+.shot img { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; cursor: zoom-in; }
+.num { position: absolute; top: 8px; left: 10px; font: 400 26px/1 var(--display); color: var(--banana);
+  text-shadow: 0 2px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink); }
+.body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.card h2 { font: 400 21px/1.1 var(--display); margin: 0; }
+.dir { margin: 0; font-size: 13px; color: var(--muted); }
+.traits { font-size: 12px; margin: 0; }
+.traits b { color: var(--leaf); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+button { font: 400 15px/1 var(--display); letter-spacing: .02em; border: 3px solid var(--ink); border-radius: 12px; padding: 8px 12px 9px; cursor: pointer;
+  background: var(--panel-2); color: var(--ink); box-shadow: 0 4px 0 var(--ink); transition: transform 80ms, box-shadow 80ms; }
+button:active { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
+button.on { background: var(--banana); color: var(--banana-ink); }
+.tray { background: var(--panel); border: 3px solid var(--ink); border-radius: 18px; padding: 14px; box-shadow: 0 0 0 3px var(--frame), 0 8px 0 var(--shadow); }
+.tray h3 { font: 400 22px/1 var(--display); margin: 0 0 4px; }
+.tray p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.pair figure { margin: 0; min-width: 0; }
+.pair img { width: 100%; border: 3px solid var(--ink); border-radius: 12px; background: #e7e9ec; }
+.pair figcaption { font: 400 16px/1.2 var(--display); margin-top: 6px; }
+.empty { padding: 18px; text-align: center; border: 2px dashed var(--muted); border-radius: 12px; color: var(--muted); }
+.rules { background: var(--panel); border: 3px solid var(--ink); border-radius: 18px; padding: 14px 18px; }
+.rules h3 { font: 400 20px/1 var(--display); margin: 0 0 8px; }
+.rules ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.box { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: grid; place-items: center; padding: 16px; z-index: 20; cursor: zoom-out; }
+.box img { max-width: 100%; max-height: 90vh; border: 4px solid var(--frame); border-radius: 14px; }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Pick the next <span>Monkey</span></h1>
+    <p class="lede">Eight original takes on Monkey, made with GPT Image 2.6 Sunburst from the current 3D model and the design rules. Each has a jungle hero shot and a front, side and back model sheet for the Blender build. Star your favorite and send two to the compare tray to see their model sheets side by side.</p>
+    <div class="meta">
+      <span class="chip">gpt-image-2.6-sunburst · high quality</span>
+      <span class="chip">16 images · $0.90 total</span>
+      <span class="chip glow">Signature: cyan #33E1FF eye ring + banana headset LED</span>
+    </div>
+  </header>
+
+  <section class="grid" id="grid" aria-label="Prototypes"></section>
+
+  <section class="tray" aria-live="polite">
+    <h3>Compare model sheets</h3>
+    <p>Tap "Compare" on any two designs. These front, side and back views are what the Blender model is built from.</p>
+    <div id="pair" class="pair"><div class="empty">Choose two designs to compare.</div></div>
+  </section>
+
+  <section class="rules">
+    <h3>Every design follows the rules</h3>
+    <ul>
+      <li>Original character: borrows proportions and appeal from famous buff cartoon apes, never their signature looks (no neckties with initials, glasses with armor, franchise headbands or caps).</li>
+      <li>Buff and friendly: barrel chest, narrow waist, six-pack, big forearms, short legs, curled tail, about 2.8 heads tall (the chibi goes rounder).</li>
+      <li>Huge glossy eyes with a cyan glow ring, peanut-shaped cream face, pink inner ears, spiky hair tuft.</li>
+      <li>Banana-yellow headset with a cyan-glowing mic tip: what shows he's listening, thinking and talking.</li>
+      <li>Riggable: clear silhouette, clumped fur, no stringy hair or loose cloth.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+const DATA = [{"id": "01", "title": "Jarvis+ (refined)", "direction": "A refined, more polished version of the reference character: keep his exact colors, glossy eyes and banana headset, but improve the anatomy - clearer clumped stylized fur, softer calm brows, a wider expressive mouth, slightly larger hands, crisper silhouette.", "traits": "1:2.5 head-to-body, clumped stylized fur, soft brows, big eyes, rim light, one accent color", "folder": "01-jarvis-plus", "cost_usd": 0.16}, {"id": "02", "title": "Silverback Bruiser", "direction": "Heavier gorilla-like bulk: a massive rounded brow ridge, very wide shoulders, huge knuckle-forward forearms, a slight hunch, a short silvery-grey fur saddle across the back and shoulders. Eyes stay big and warm so he reads gentle, not villainous. Rounded shapes everywhere, no pointy ears.", "traits": "gargoyle-like hunched mass, knuckle stance, heavy but rounded brow, gentle eyes (contrast comedy)", "folder": "02-silverback", "cost_usd": 0.106}, {"id": "03", "title": "Athletic V-Taper", "direction": "Leaner sprinter-athlete build: dramatic V-taper, defined but not bulky muscles, slightly longer legs (still cartoon short), a light athletic tank top in banana yellow with a single cyan stripe, sporty wristband on one wrist. Keep the big head and huge eyes so he stays friendly.", "traits": "broad chest to narrow waist, longer legs balanced by big head and eyes", "folder": "03-athletic", "cost_usd": 0.105}, {"id": "04", "title": "Kawaii Chibi", "direction": "Super-cute chibi version: about 1:1.6 head-to-body, very round head, extra-large sparkly eyes, a round squishy torso that still shows a tiny cartoon six-pack, short beefy stub arms, tiny feet, rosy cheeks.", "traits": "1:1 to 1:2 proportions, round torso, beefy stub forearms, oversized eyes", "folder": "04-kawaii-chibi", "cost_usd": 0.105}, {"id": "05", "title": "Jungle Streetwear", "direction": "Streetwear style: a sleeveless cropped hoodie vest in leaf-green that shows off his big arms, chunky oversized sneakers in white with banana-yellow accents, a simple chain-free look. No caps, no logos, no text on clothes. Clothes are simple, chunky and easy to model.", "traits": "hoodie vest showing arms, oversized sneakers balance tiny legs, single accent color", "folder": "05-streetwear", "cost_usd": 0.105}, {"id": "06", "title": "Jungle Guardian", "direction": "Protector of the jungle: a broad green leaf-bandana tied around his forehead (big leaf shapes, not a black band), thin green vine bands around the biceps (no hand wraps), a small carved wooden banana pendant. Earthy greens and browns, heroic but warm.", "traits": "nature accessories that read as shapes, heroic stance, earthy palette with one accent", "folder": "06-jungle-guardian", "cost_usd": 0.105}, {"id": "07", "title": "Retro Rubber-Hose Mascot", "direction": "1930s rubber-hose cartoon style interpreted in modern 3D: bendy noodle-like limbs without visible elbows, white puffy cartoon gloves, pie-cut highlights in the eyes, bouncy exaggerated pose, his bulk toned down into a round barrel chest. Keep his brown and cream colors and the banana headset.", "traits": "rubber-hose limbs, bouncy pose, round shapes, vintage appeal", "folder": "07-retro-mascot", "cost_usd": 0.106}, {"id": "08", "title": "Sci-Fi Sidekick", "direction": "Tech-assistant look: the headset becomes a sleek banana-yellow tech band with small cyan glowing ear fins, a slim translucent cyan visor that floats in front of his eyes (eyes still visible), thin cyan glowing seams on a minimal chest harness, a tiny hovering banana-shaped drone. No glasses, no armor plates, no weapons.", "traits": "tech that shows assistant state (glow/LEDs), light muzzle, soft brows", "folder": "08-scifi-sidekick", "cost_usd": 0.106}];
+const BASE = location.protocol === "file:" ? "../ui/public/prototypes/" : "";
+const grid = document.getElementById("grid");
+const pairEl = document.getElementById("pair");
+let pick = ""; let compare = [];
+try { pick = localStorage.getItem("monkey-pick") || ""; compare = JSON.parse(localStorage.getItem("monkey-compare") || "[]"); } catch (e) {}
+const save = () => { try { localStorage.setItem("monkey-pick", pick); localStorage.setItem("monkey-compare", JSON.stringify(compare)); } catch (e) {} };
+function zoom(src, alt) {
+  const b = document.createElement("div"); b.className = "box"; b.setAttribute("role", "dialog");
+  const i = document.createElement("img"); i.src = src; i.alt = alt; b.append(i);
+  b.addEventListener("click", () => b.remove()); document.body.append(b);
+}
+function el(tag, attrs, ...kids) { const e = document.createElement(tag); Object.assign(e, attrs || {}); e.append(...kids); return e; }
+function render() {
+  grid.replaceChildren(...DATA.map((p) => {
+    const hero = BASE + p.folder + "/hero.jpg";
+    const img = el("img", { src: hero, alt: p.title + " hero image", loading: "lazy" });
+    img.addEventListener("click", () => zoom(hero, p.title));
+    const star = el("button", { type: "button", className: pick === p.id ? "on" : "", textContent: pick === p.id ? "★ Favorite" : "☆ Favorite" });
+    star.setAttribute("aria-pressed", String(pick === p.id));
+    star.addEventListener("click", () => { pick = pick === p.id ? "" : p.id; save(); render(); });
+    const cmp = el("button", { type: "button", className: compare.includes(p.id) ? "on" : "", textContent: compare.includes(p.id) ? "Comparing" : "Compare" });
+    cmp.addEventListener("click", () => {
+      compare = compare.includes(p.id) ? compare.filter((x) => x !== p.id) : [...compare, p.id].slice(-2);
+      save(); render();
+    });
+    const sheet = el("button", { type: "button", textContent: "Model sheet" });
+    sheet.addEventListener("click", () => zoom(BASE + p.folder + "/sheet.jpg", p.title + " model sheet"));
+    return el("article", { className: "card" + (pick === p.id ? " pick" : "") },
+      el("div", { className: "shot" }, img, el("span", { className: "num", textContent: "#" + p.id })),
+      el("div", { className: "body" },
+        el("h2", { textContent: p.title }),
+        el("p", { className: "dir", textContent: p.direction }),
+        el("p", { className: "traits" }, el("b", { textContent: "Borrowed traits: " }), p.traits),
+        el("div", { className: "btns" }, star, cmp, sheet)));
+  }));
+  const chosen = compare.map((id) => DATA.find((p) => p.id === id)).filter(Boolean);
+  pairEl.replaceChildren(...(chosen.length ? chosen.map((p) => el("figure", {},
+      el("img", { src: BASE + p.folder + "/sheet.jpg", alt: p.title + " model sheet", loading: "lazy" }),
+      el("figcaption", { textContent: "#" + p.id + " " + p.title }))) : [el("div", { className: "empty", textContent: "Choose two designs to compare." })]));
+}
+render();
+</script>
