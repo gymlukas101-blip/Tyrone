@@ -98,6 +98,47 @@ Comedic "takes" can step on twos, while base loops stay smooth.
 
 Visemes stay as morphs. A jaw bone isn't required, because `jawOpen` plus `yawnWide` cover the big mouth shapes.
 
+## 3b. Why DK looks higher quality than Monkey (and the fix list)
+
+**Finding: Bananza's rendering tech is modest.** Digital Foundry measured:
+- about 1080–1200p;
+- FSR 1 plus SMAA, no DLSS;
+- a 60 fps target that drops to 30;
+- criticized shadows and a soft image.
+
+Sources: [Nintendo Life](https://www.nintendolife.com/news/2025/07/somewhat-mixed-digital-foundry-delivers-its-technical-analysis-of-donkey-kong-bananza), [TweakTown](https://www.tweaktown.com/news/106456/donkey-kong-bananza-on-the-switch-2-uses-amd-fsr-1-not-nvidia-dlss/).
+
+So DK's quality comes from **art direction, shape design, fur, materials and above all animation**, not graphics tech:
+- The team (the Super Mario Odyssey team, Nintendo EPD Tokyo) deliberately made his fur "rich and thick". They added britches and suspenders so his back isn't "a monotonous mass of brown fur" ([TechRadar](https://www.techradar.com/gaming/nintendo/donkey-kong-wears-clothes-in-banaza-because-nintendo-was-conscious-of-what-the-ape-would-look-like-from-the-back)).
+- They put "particular effort into creating a wide range of expressions" ([Bounding Into Comics](https://boundingintocomics.com/video-games/donkey-kong-bananza-new-design-insights)).
+- It won CEDEC 2026 awards for visual arts and engineering ([Inven](https://www.invenglobal.com/articles/24119/donkey-kong-bananza-wins-three-awards-at-cedec-2026)).
+- No public source describes how DK's fur is rendered. From looking at it, it appears to be sculpted, clumped tufts that break the silhouette, a strand/clump normal map, darker roots and lighter tips, and a soft rim sheen **(unverified)**.
+
+**Our gap, ranked:**
+
+| Rank | Cause | Impact | Detail | Status |
+|---|---|---|---|---|
+| 1 | Animation | Biggest | Short, generic clips (baked at 24 fps, but the motion itself is simple). Before Phase 1: no secondary motion, no look-at, no breathing, no idle variety. | Phase 1 fixed a lot of this |
+| 2 | Materials and fur | Large | Only 2 textures for the whole model, no normal map. Painted noise reads as a plush toy. No tufts on the silhouette. | Planned |
+| 3 | Lighting and post | Medium | We already have ACES tone mapping, room IBL, key and rim light. We lack ambient occlusion, a contact shadow (added now), fur sheen (added now) and SMAA. | Partly done |
+| 4 | Model | Smallest | 38k vertices is **not** the bottleneck. A smooth silhouette, and the face and hands, matter more than polycount. | Planned |
+
+So the answer to "Blender failed, or lighting?" is a **third option: mostly animation and fur/material design**, with lighting a smaller factor.
+
+**Upgrade list, in order:**
+1. ✅ Alive layer, contact shadow, fur sheen (done).
+2. **Baked fur normal + AO + ORM maps in headless Blender Cycles:**
+   - subdivide plus a clump/strand displacement along the fur flow;
+   - bake normal, AO and cavity onto the game mesh;
+   - multiply AO and cavity into the albedo for darker roots and lighter tips;
+   - vary roughness.
+3. **Silhouette tuft cards:** alpha-tested fur "fin" cards along the shoulders, forearms, head and back, skinned to the same bones (+1–3k triangles).
+4. **Post:** N8AO or GTAO at half resolution, plus SMAA. It must keep the transparent background, so test it in WebView2.
+5. **Clip polish pass in bpy:** Bezier easing, child-bone overlap offsets of 1–3 frames, anticipation and overshoot keys, arcs. Longer 6–10 s idles with variation.
+6. **Optional "high" setting:** shell fur (8–16 shells, alpha-test).
+
+**Honest ceiling:** we won't match a dedicated Nintendo team's hand-sculpt and hundreds of hand-keyed clips. The realistic target is a "Bananza-like feel" at 60 fps on a laptop. If there's ever budget, 4–6 hand-keyed clips from a freelance animator would beat any script.
+
 ---
 
 ## 4. The animation kit
