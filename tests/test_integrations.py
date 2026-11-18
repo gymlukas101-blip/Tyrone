@@ -1,8 +1,8 @@
 import base64
 from datetime import datetime, timedelta, timezone
 
-from tyrone.integrations.canvas_ics import parse_ics
-from tyrone.integrations.google import _decode_body
+from monkey.integrations.canvas_ics import parse_ics
+from monkey.integrations.google import _decode_body
 
 ICS = b"""BEGIN:VCALENDAR
 VERSION:2.0

@@ -18,7 +18,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]" numpy
+      - run: pip install -e ".[dev]" numpy sherpa-onnx sentencepiece
+      - name: Download keyword-spotting model + test audio
+        run: |
+          curl -sL -o kws.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
+          tar xjf kws.tar.bz2
+          mkdir -p wakeword/sherpa-kws
+          M=sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01
+          cp -r $M/tokens.txt $M/bpe.model $M/*.int8.onnx $M/test_wavs wakeword/sherpa-kws/
       - run: pytest -q
       - uses: actions/setup-node@v4
         with:
@@ -30,7 +37,7 @@ jobs:
     needs: test
     runs-on: windows-latest
     env:
-      TYRONE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0-dev' }}
+      MONKEY_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0-dev' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,17 +57,26 @@ jobs:
       - name: Bundle the fallback wake word model (hey_jarvis) + feature models
         run: python -c "import openwakeword.utils as u; u.download_models(model_names=['hey_jarvis'])"
 
+      - name: Bundle the "Hey Monkey" keyword-spotting model (sherpa-onnx, ~5 MB int8)
+        shell: bash
+        run: |
+          curl -sL -o kws.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
+          tar xjf kws.tar.bz2
+          mkdir -p wakeword/sherpa-kws
+          M=sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01
+          cp $M/tokens.txt $M/bpe.model $M/*.int8.onnx $M/README.md wakeword/sherpa-kws/
+
       - name: Unit tests (Windows)
         run: pytest -q
 
       - name: PyInstaller
-        run: pyinstaller tyrone.spec --noconfirm
+        run: pyinstaller monkey.spec --noconfirm
 
       - name: Self-test the built exe
         shell: pwsh
         run: |
-          $env:TYRONE_SELFTEST_OUT = "$PWD\selftest.txt"
-          $p = Start-Process -FilePath "dist\Tyrone\Tyrone.exe" -ArgumentList "--selftest" -Wait -PassThru
+          $env:MONKEY_SELFTEST_OUT = "$PWD\selftest.txt"
+          $p = Start-Process -FilePath "dist\Monkey\Monkey.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
 
@@ -68,11 +84,11 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\tyrone.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\monkey.iss
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TyroneSetup
+          name: MonkeySetup
           path: dist/installer/*.exe
 
       - name: Publish GitHub Release

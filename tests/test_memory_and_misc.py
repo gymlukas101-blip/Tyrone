@@ -2,17 +2,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tyrone.brain.costs import HAIKU, OPUS, Ledger, Usage, cost_usd
-from tyrone.brain.ranking import heuristic_score, heuristic_tier, rank_items
-from tyrone.brain.speech_text import SentenceChunker, speakable
-from tyrone.brain.tools import resolve_site
-from tyrone.integrations.base import Email, Event
-from tyrone.memory.export import export_bundle, import_bundle
-from tyrone.memory.store import TyroneMemory
+from monkey.brain.costs import HAIKU, OPUS, Ledger, Usage, cost_usd
+from monkey.brain.ranking import heuristic_score, heuristic_tier, rank_items
+from monkey.brain.speech_text import SentenceChunker, speakable
+from monkey.brain.tools import resolve_site
+from monkey.integrations.base import Email, Event
+from monkey.memory.export import export_bundle, import_bundle
+from monkey.memory.store import MonkeyMemory
 
 
 def test_memory_seed_and_tool_commands(tmp_path):
-    mem = TyroneMemory(tmp_path / "memory")
+    mem = MonkeyMemory(tmp_path / "memory")
     assert "profile.md" in mem.files()
     out = mem.call({"command": "view", "path": "/memories"})
     assert "profile.md" in str(out)
@@ -25,7 +25,7 @@ def test_memory_seed_and_tool_commands(tmp_path):
 
 
 def test_site_shortcuts(tmp_path):
-    mem = TyroneMemory(tmp_path / "memory")
+    mem = MonkeyMemory(tmp_path / "memory")
     s = mem.site_shortcuts()
     assert resolve_site("Canvas", s) == "https://canvas.wisc.edu"
     assert resolve_site("course search", s).startswith("https://public.enroll.wisc.edu")
@@ -37,10 +37,10 @@ def test_site_shortcuts(tmp_path):
 
 def test_export_import_roundtrip(tmp_path):
     data = tmp_path / "a"
-    mem = TyroneMemory(data / "memory")
+    mem = MonkeyMemory(data / "memory")
     mem.write("profile.md", "secret fact")
     (data / "settings.json").write_text("{}")
-    bundle = export_bundle(data, data / "memory", tmp_path / "x.tyrone", "correct horse")
+    bundle = export_bundle(data, data / "memory", tmp_path / "x.monkey", "correct horse")
     assert b"secret fact" not in bundle.read_bytes()
     with pytest.raises(ValueError):
         import_bundle(bundle, tmp_path / "b", tmp_path / "b" / "memory", "wrong password")

@@ -4,10 +4,10 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-from tyrone.brain.assignments import Assignment, Group, compute_impacts, rank, score
-from tyrone.brain.router import Router
-from tyrone.integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
-from tyrone.integrations.garmin import downsample_hr, parse_health, resolve_day, summarize
+from monkey.brain.assignments import Assignment, Group, compute_impacts, rank, score
+from monkey.brain.router import Router
+from monkey.integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
+from monkey.integrations.garmin import downsample_hr, parse_health, resolve_day, summarize
 
 NOW = datetime(2026, 11, 18, 12, tzinfo=timezone.utc)
 
@@ -160,7 +160,7 @@ class Feed:
         return True
 
     def list_events(self, start, end):
-        from tyrone.integrations.base import Event
+        from monkey.integrations.base import Event
 
         return [Event("event-assignment-55", "canvas", "Reading quiz [PSYCH 202]",
                       datetime.now(timezone.utc) + timedelta(days=1))]

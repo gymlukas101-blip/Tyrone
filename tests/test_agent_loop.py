@@ -1,13 +1,13 @@
 """Drive the agent loop with a fake streaming client (no network)."""
 from types import SimpleNamespace as NS
 
-from tyrone.brain.agent import Agent
-from tyrone.brain.approval import ApprovalGate
-from tyrone.brain.costs import HAIKU, SONNET, Ledger
-from tyrone.brain.router import Router
-from tyrone.brain.tools import Services, ToolRunner
-from tyrone.integrations.base import DraftResult
-from tyrone.memory.store import TyroneMemory
+from monkey.brain.agent import Agent
+from monkey.brain.approval import ApprovalGate
+from monkey.brain.costs import HAIKU, SONNET, Ledger
+from monkey.brain.router import Router
+from monkey.brain.tools import Services, ToolRunner
+from monkey.integrations.base import DraftResult
+from monkey.memory.store import MonkeyMemory
 
 
 def text_block(t):
@@ -72,7 +72,7 @@ def build(tmp_path, script):
     events, spoken = [], []
     mail = FakeMail()
     gate = ApprovalGate({"gmail": lambda d: mail.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body)})
-    mem = TyroneMemory(tmp_path / "memory")
+    mem = MonkeyMemory(tmp_path / "memory")
     services = Services(emit=lambda e, p: events.append((e, p)), memory=mem, approval=gate,
                         mail={"gmail": mail}, open_url=lambda u: events.append(("url", u)))
     client = FakeClient(script)

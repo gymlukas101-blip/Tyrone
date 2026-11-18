@@ -1,7 +1,7 @@
 import numpy as np
 
-from tyrone.audio.endpoint import FRAME_SAMPLES, Endpointer
-from tyrone.audio.stt import to_wav_bytes
+from monkey.audio.endpoint import FRAME_SAMPLES, Endpointer
+from monkey.audio.stt import to_wav_bytes
 
 rng = np.random.default_rng(0)
 

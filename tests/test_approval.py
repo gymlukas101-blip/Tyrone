@@ -1,6 +1,6 @@
 import pytest
 
-from tyrone.brain.approval import ApprovalGate, PendingDraft
+from monkey.brain.approval import ApprovalGate, PendingDraft
 
 
 def make_gate():

@@ -1,7 +1,7 @@
 [project]
-name = "tyrone"
+name = "monkey"
 version = "0.1.0"
-description = "Tyrone - a Jarvis-style desktop voice assistant"
+description = "Monkey - a Jarvis-style desktop voice assistant"
 requires-python = ">=3.11"
 dependencies = [
   "anthropic>=2.10",
@@ -22,6 +22,8 @@ desktop = [
   "numpy>=1.26",
   "soundfile>=0.12",
   "openwakeword>=0.6",
+  "sherpa-onnx>=1.12",
+  "sentencepiece>=0.2",
   "faster-whisper>=1.1",
   "keyboard>=0.13",
   "pyttsx3>=2.98",
@@ -33,7 +35,7 @@ desktop = [
 dev = ["pytest>=8", "pyinstaller>=6.10"]
 
 [project.scripts]
-tyrone = "tyrone.__main__:main"
+monkey = "monkey.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -43,7 +45,7 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["tyrone*"]
+include = ["monkey*"]
 
 [tool.setuptools.package-data]
-tyrone = ["brain/*.md"]
+monkey = ["brain/*.md"]

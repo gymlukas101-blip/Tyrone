@@ -41,7 +41,7 @@ function stageBar(st: Health["sleep"]["stages_min"]) {
   });
   const legend = h("div", { class: "legend" }, ...STAGES.map(([k, label, color]) =>
     h("span", {}, h("i", { style: `background:${color}` }), `${label} `, h("b", {}, minutes(st[k])))));
-  return h("div", {}, svg, legend);
+  return h("div", { class: "stagebar-wrap" }, svg, legend);
 }
 
 function tile(label: string, value: string, sub = "") {

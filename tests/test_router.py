@@ -1,5 +1,5 @@
-from tyrone.brain.costs import HAIKU, OPUS, SONNET
-from tyrone.brain.router import Router, detect_importance, rule_level
+from monkey.brain.costs import HAIKU, OPUS, SONNET
+from monkey.brain.router import Router, detect_importance, rule_level
 
 
 def r(text, classify=None, **kw):

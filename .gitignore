@@ -13,3 +13,4 @@ ui/dist/
 credentials*.json
 token*.json
 .env
+wakeword/sherpa-kws/

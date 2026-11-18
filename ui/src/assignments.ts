@@ -80,7 +80,7 @@ async function toggleItem(it: Item, r: HTMLElement, cb: HTMLButtonElement) {
   setTimeout(() => moveItem(it.id, done), done ? 700 : 250);
 }
 
-/** Moves an item between lists (also used when Tyrone checks something off by voice). */
+/** Moves an item between lists (also used when Monkey checks something off by voice). */
 export function markChecked(id: string, done: boolean) {
   if (!current) return;
   const row = current.root.querySelector<HTMLElement>(`li.asg[data-id="${CSS.escape(id)}"]`);

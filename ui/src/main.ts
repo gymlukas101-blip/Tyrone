@@ -6,6 +6,7 @@ import { type Api, type AppState, type Importance, waitForApi } from "./bridge";
 import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
 import { renderAssignments, markChecked } from "./assignments";
 import { renderHealth } from "./health";
+import { decorateJungle } from "./jungle";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -23,8 +24,9 @@ let appState: AppState;
 let importance: Importance = "normal";
 let botBubble: HTMLElement | null = null;
 const avatar = new Avatar($("#avatar"));
+decorateJungle($("#stage"));
 const LABELS: Record<AvatarState, string> = {
-  idle: "Chillin'", listening: "Listening…", transcribing: "Got it…", thinking: "Thinking…", speaking: "Talking",
+  idle: "Chillin' in the jungle", listening: "Ears up…", transcribing: "Got it…", thinking: "Thinking… 🍌", speaking: "Talking",
 };
 function setState(s: AvatarState) {
   avatar.setState(s);
@@ -141,7 +143,11 @@ function assignmentsCard(board: any) {
     class: "ghost mini", type: "button", title: "Refresh from Canvas",
     onclick: async () => { const r = await api.get_assignments(true); if (r.ok) assignmentsCard(r); else toast(`⚠ ${r.error}`); },
   }, "↻"));
-  renderAssignments(c, board, (id, done) => api.toggle_assignment(id, done), (u) => api.open_url(u));
+  renderAssignments(c, board, async (id, done) => {
+    const r = await api.toggle_assignment(id, done);
+    if (r.ok && done) avatar.emote("celebrate");
+    return r;
+  }, (u) => api.open_url(u));
 }
 
 function healthCard(hd: any) {
@@ -167,6 +173,7 @@ function onEvent(name: string, p: any) {
     case "panel": card(p.title, md(p.markdown)); break;
     case "draft": draftCard(p); break;
     case "approval":
+      if (p.action === "sent") avatar.emote("celebrate");
       if (p.action === "sent") document.querySelectorAll(".draft:not(.sent)").forEach((c) => {
         c.classList.add("sent"); c.querySelector(".actions")?.replaceChildren(h("strong", {}, "✓ Sent"));
       });
@@ -179,7 +186,8 @@ function onEvent(name: string, p: any) {
     case "videos": videosCard(p); break;
     case "weather": weatherCard(p); break;
     case "assignments": assignmentsCard(p); break;
-    case "assignment_checked": markChecked(p.id, p.done); break;
+    case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
+    case "emote": avatar.emote(p.name); break;
     case "health": healthCard(p); break;
     case "sources":
       card("🔎 Sources", h("div", { class: "sources" }, ...p.sources.map((s: any) =>
@@ -189,13 +197,13 @@ function onEvent(name: string, p: any) {
     case "memory": addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); break;
-    case "wake": addMsg("sys", "👂 Yo Tyrone"); break;
+    case "wake": addMsg("sys", "👂 Hey Monkey"); break;
     case "heard": if (!p.text) addMsg("sys", "Didn't catch that."); break;
     case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); break;
     case "hint": $("#hint").textContent = p.text; break;
   }
 }
-window.__tyroneEvents = (events) => { for (const [n, p] of events) { try { onEvent(n, p); } catch (e) { console.error(n, e); } } };
+window.__monkeyEvents = (events) => { for (const [n, p] of events) { try { onEvent(n, p); } catch (e) { console.error(n, e); } } };
 
 // ------------------------------------------------------------------ composer
 $("#importance").addEventListener("click", (e) => {
@@ -231,7 +239,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") api.stop_s
 // ------------------------------------------------------------------ settings
 const KEY_INFO: [string, string, string][] = [
   ["anthropic", "Anthropic (Claude)", "Required. console.anthropic.com → API keys."],
-  ["fish", "Fish Audio", "Tyrone's voice. fish.audio → API keys."],
+  ["fish", "Fish Audio", "Monkey's voice. fish.audio → API keys."],
   ["deepgram", "Deepgram (optional)", "Faster speech recognition. Leave empty to use free local Whisper."],
   ["youtube", "YouTube Data API (optional)", "For showing videos. Google Cloud → APIs → YouTube Data API v3 → API key."],
   ["brave", "Brave Search (optional)", "Better image search. Without it, images come from Wikimedia Commons."],
@@ -275,8 +283,8 @@ async function openSettings() {
       h("section", {}, h("h4", {}, "API keys"),
         h("p", { class: "help" }, "Stored in Windows Credential Manager on this PC, never in files or the repo."),
         ...KEY_INFO.map(keyRow)),
-      h("section", {}, h("h4", {}, "Tyrone's voice (Fish Audio)"),
-        h("p", { class: "help" }, "Design an original voice from a description, pick a candidate, and Tyrone keeps it. Or design it on fish.audio and paste the voice ID."),
+      h("section", {}, h("h4", {}, "Monkey's voice (Fish Audio)"),
+        h("p", { class: "help" }, "Design an original voice from a description, pick a candidate, and Monkey keeps it. Or design it on fish.audio and paste the voice ID."),
         instr,
         h("div", { class: "field" },
           h("button", { class: "primary", type: "button", onclick: async () => {
@@ -286,7 +294,7 @@ async function openSettings() {
             voiceOut.replaceChildren(...(r.candidates ?? []).map((b64, i) => h("div", { class: "field" },
               h("audio", { controls: true, src: `data:audio/wav;base64,${b64}` }),
               h("button", { class: "ghost", type: "button", onclick: async () => {
-                const c = await api.choose_voice(i); resultToast(c, "Voice saved — that's Tyrone now"); openSettings();
+                const c = await api.choose_voice(i); resultToast(c, "Voice saved — that's Monkey now"); openSettings();
               } }, "Use this one"))));
           } }, "Design voices"),
           h("button", { class: "ghost", type: "button", onclick: () => api.test_voice() }, "Test voice")),
@@ -366,16 +374,16 @@ async function openSettings() {
           return sel;
         })())),
       h("section", {}, h("h4", {}, "Memory"),
-        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Tyrone to another PC (encrypted with your password).`),
-        field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Tyrone" }),
+        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Monkey to another PC (encrypted with your password).`),
+        field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),
         (() => {
           const pw = h("input", { type: "password", placeholder: "export/import password (8+ chars)" });
           return h("div", { class: "field" }, pw,
             h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.export_memory(pw.value), "Exported") }, "Export"),
-            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.import_memory(pw.value), "Imported — restart Tyrone") }, "Import"),
+            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.import_memory(pw.value), "Imported — restart Monkey") }, "Import"),
             h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open folder"));
         })()),
-      h("p", { class: "help" }, `Tyrone ${appState.version}`),
+      h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   if (!dlg.open) dlg.showModal();
 }
@@ -391,6 +399,6 @@ async function openSettings() {
     addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");
     openSettings();
   } else {
-    addMsg("sys", "Tyrone's ready.");
+    addMsg("sys", "Monkey's ready.");
   }
 })();

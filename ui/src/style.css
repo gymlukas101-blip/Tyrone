@@ -1,25 +1,22 @@
 :root {
-  --bg: #0d0f17;
-  --panel: #151826;
-  --panel2: #1c2033;
-  --line: #2a2f47;
-  --text: #e9ebf5;
-  --muted: #9aa0bd;
-  --accent: #6c7bff;
-  --ok: #2fe39a;
-  --warn: #ffb547;
-  --bad: #ff5d6c;
-  --critical: #ff5d6c;
-  --high: #ffb547;
-  --normal: #6c7bff;
-  --low: #5d6383;
+  /* Jungle theme: deep greens, banana yellow, tropical pops. One look in light and dark OS modes. */
+  --bg: #04260f;
+  --panel: #0a3a1c;
+  --panel2: #0f5129;
+  --line: #22863f;
+  --text: #f6ffe9;
+  --muted: #b5e3a8;
+  --accent: #ffd60a;          /* banana */
+  --accent-ink: #2a1c00;
+  --ok: #39ff6a;
+  --warn: #ff9f1a;
+  --bad: #ff3b5c;
+  --critical: #ff3b5c;
+  --high: #ff9f1a;
+  --normal: #18b8ff;
+  --low: #5f8f6e;
+  --chart-surface: #071b0f;   /* validated: all chart colors >= 3:1 here */
   color-scheme: dark;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f3f4fa; --panel: #ffffff; --panel2: #eef0f8; --line: #d8dbea; --text: #161a2b; --muted: #5d6383;
-    color-scheme: light;
-  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -61,7 +58,7 @@ header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; borde
 #cards:not(:empty) { padding-top: 12px; }
 #log { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .msg { max-width: 85%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; }
-.msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); font-weight: 500; border-bottom-right-radius: 4px; }
 .msg.bot { align-self: flex-start; background: var(--panel2); border-bottom-left-radius: 4px; }
 .msg.sys { align-self: center; color: var(--muted); font-size: 12px; background: transparent; }
 #composer { border-top: 1px solid var(--line); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
@@ -71,7 +68,7 @@ header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; borde
   border-radius: 10px; padding: 9px 12px; font: inherit;
 }
 #send, .primary {
-  background: var(--accent); border: 0; color: #fff; border-radius: 10px; padding: 8px 14px; font-weight: 600;
+  background: var(--accent); border: 0; color: var(--accent-ink); border-radius: 10px; padding: 8px 14px; font-weight: 700;
 }
 #mic { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; width: 42px; }
 #importance { display: flex; gap: 6px; }
@@ -100,8 +97,8 @@ header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; borde
 .items li { display: flex; gap: 8px; align-items: flex-start; }
 .tier { font-size: 11px; font-weight: 700; text-transform: uppercase; border-radius: 6px; padding: 1px 6px; flex: none; }
 .tier.critical { background: var(--critical); color: #fff; }
-.tier.high { background: var(--high); color: #1b1300; }
-.tier.normal { background: var(--normal); color: #fff; }
+.tier.high { background: var(--high); color: #2a1300; }
+.tier.normal { background: var(--normal); color: #00243a; }
 .tier.low { background: var(--low); color: #fff; }
 .items .meta { color: var(--muted); font-size: 12px; }
 .sources a { color: var(--accent); font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -155,11 +152,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --grid: color-mix(in srgb, var(--text) 10%, transparent);
   --axis: var(--muted);
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
-  }
 }
 .ghost.mini { padding: 0 8px; height: 24px; margin-left: 8px; font-size: 13px; border-radius: 8px; }
 .card h3 { display: flex; align-items: center; }
@@ -257,3 +249,79 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .datatable { margin-top: 6px; font-size: 12px; color: var(--muted); }
 .datatable table { border-collapse: collapse; margin-top: 6px; }
 .datatable td, .datatable th { padding: 2px 10px 2px 0; text-align: left; }
+
+/* ======================================================================= JUNGLE */
+body {
+  background:
+    radial-gradient(1200px 700px at 15% -10%, #138a3c 0%, transparent 60%),
+    radial-gradient(900px 600px at 110% 110%, #0d6b2f 0%, transparent 55%),
+    var(--bg);
+}
+#stage {
+  background:
+    radial-gradient(circle at 50% 45%, #ffe45c55 0%, transparent 38%),
+    radial-gradient(circle at 50% 60%, #1fbf55 0%, #0b6b2c 45%, #04260f 85%);
+  border-right: 3px solid #0b4a20;
+  overflow: hidden;
+}
+#side {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cg fill='%2322a04a' fill-opacity='.10'%3E%3Cpath d='M20 70c10-30 40-40 60-30-20 0-40 12-60 30z'/%3E%3Cpath d='M70 110c6-22 26-30 44-24-15 1-30 10-44 24z'/%3E%3Cpath d='M90 30c-8-12-2-26 10-28-6 8-8 18-10 28z'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #0a3a1c, #062b14);
+}
+header { background: linear-gradient(90deg, #0b4a22, #0f5a2a 60%, #146b33); border-bottom: 2px solid #1d8a42; }
+.brand {
+  font-size: 18px; letter-spacing: .18em; color: var(--accent);
+  text-shadow: 0 2px 0 #7a4a00, 0 0 18px #ffd60a66;
+}
+.brand::before { content: "🍌 "; letter-spacing: 0; }
+.icon { background: #0f5129; border-color: #2aa14f; }
+.icon:hover { background: #157036; }
+#stateLabel { color: var(--accent); text-shadow: 0 2px 0 #0006; font-size: 16px; }
+#routeChip { background: #0b3a1ccc; border-color: #2aa14f; color: var(--text); }
+#hint { color: #e9ffd9; text-shadow: 0 1px 2px #000a; }
+.msg.bot { background: #11602f; border: 1px solid #23913f; }
+.msg.sys { color: #c6f0b6; }
+.card { background: linear-gradient(180deg, #11602f, #0d4f26); border: 2px solid #26a24b; box-shadow: 0 6px 18px #0005; }
+.card h3 { color: #f6ffe9; }
+#input { background: #0b3f1e; border-color: #2aa14f; }
+#importance button.on { border-color: var(--accent); background: #ffd60a26; }
+#composer { background: #07301588; }
+#mic { background: #ff3d9a; border: 0; color: #fff; }
+dialog, .settings header { background: #0a3a1c; }
+.settings input, .settings select, .settings textarea { background: #0f5129; border-color: #2aa14f; }
+.asg { background: #0b4321; border-color: #23913f; }
+.cb-check { stroke: #0b2a00; }
+.cb.on .cb-box { fill: var(--accent); stroke: var(--accent); }
+.cb:hover .cb-box { stroke: var(--accent); }
+.burst i { background: var(--accent); }
+.ring-fg { stroke: var(--accent); }
+.hero, .tile { background: var(--chart-surface); border-color: #1f7a43; }
+.chartwrap, .stagebar-wrap { background: var(--chart-surface); border-radius: 10px; padding: 6px 8px; }
+.tip { background: #071b0f; border-color: #2aa14f; }
+
+/* --- decorations: hanging vines, monstera leaves, banana bunches */
+.jungle-deco { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+#stage > *:not(.jungle-deco) { position: relative; z-index: 1; }
+.jungle-deco svg { position: absolute; }
+.vine { top: -6px; transform-origin: top center; animation: sway 6s ease-in-out infinite; }
+.vine.v2 { animation-duration: 7.5s; animation-delay: -2s; }
+.vine.v3 { animation-duration: 5.5s; animation-delay: -4s; }
+.leaf-corner { animation: rustle 9s ease-in-out infinite; transform-origin: bottom left; }
+.leaf-corner.r { transform-origin: bottom right; animation-delay: -3s; }
+@keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes rustle { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(2.5deg); } }
+
+/* --- banana rain (celebrate emote) */
+#avatar { position: relative; }
+.banana-rain { position: absolute; inset: -10% 0 0 0; pointer-events: none; overflow: visible; }
+.banana-rain span {
+  position: absolute; top: -30px; animation: banana-fall 2.2s cubic-bezier(.3,.6,.6,1) forwards;
+  filter: drop-shadow(0 3px 2px #0006);
+}
+@keyframes banana-fall {
+  to { transform: translateY(520px) rotate(var(--spin)); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vine, .leaf-corner { animation: none; }
+}

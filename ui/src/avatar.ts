@@ -1,124 +1,149 @@
-// Tyrone's cartoon avatar: an original character drawn as layered SVG.
-// The mouth follows the loudness of his voice; eyes blink; idle breathing;
-// listening/thinking states change brows, eyes and the glow ring.
+// Monkey: a big, buff, original cartoon monkey drawn as layered SVG.
+// Mouth follows the loudness of his voice; eyes blink; idle breathing; arms pose per state;
+// emotes: "celebrate" (double-bicep flex + banana rain), "laugh", "shrug".
 
 export type AvatarState = "idle" | "listening" | "thinking" | "speaking" | "transcribing";
+export type Emote = "celebrate" | "laugh" | "shrug";
 
-const SKIN = "#8a5a35";
-const SKIN_SHADE = "#734a2b";
-const SKIN_LIGHT = "#a06c43";
-const HAIR = "#1c1712";
+const FUR = "#7a4518";
+const FUR_DARK = "#5a300f";
+const FUR_LIGHT = "#9a5b25";
+const FACE = "#f6c48b";
+const FACE_SHADE = "#e0a565";
+const OUTLINE = "#2b1405";
+
+// One arm: upper arm + bicep + forearm + fist, pivoting at the shoulder (0,0).
+const arm = (id: string, flip: 1 | -1) => `
+  <g id="${id}">
+    <rect x="-30" y="-6" width="60" height="112" rx="30" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+    <ellipse id="${id}Bicep" cx="${-8 * flip}" cy="52" rx="24" ry="30" fill="${FUR_LIGHT}" opacity="0.9"/>
+    <g id="${id}Fore" transform="translate(0 98)">
+      <rect x="-25" y="-6" width="50" height="96" rx="25" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+      <circle cx="0" cy="96" r="29" fill="${FACE}" stroke="${OUTLINE}" stroke-width="3"/>
+      <path d="M-14,86 Q0,80 14,86 M-16,98 Q0,92 16,98" stroke="${FACE_SHADE}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </g>
+  </g>`;
 
 const SVG = `
-<svg viewBox="0 0 400 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tyrone">
+<svg viewBox="0 0 400 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Monkey">
   <defs>
     <radialGradient id="glow" cx="50%" cy="45%" r="55%">
-      <stop offset="60%" stop-color="var(--glow)" stop-opacity="0"/>
-      <stop offset="100%" stop-color="var(--glow)" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="var(--glow)" stop-opacity="0"/>
+      <stop offset="100%" stop-color="var(--glow)" stop-opacity="0.7"/>
     </radialGradient>
-    <linearGradient id="hoodie" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#3a3f58"/>
-      <stop offset="1" stop-color="#23263a"/>
+    <linearGradient id="tank" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#22e06b"/>
+      <stop offset="1" stop-color="#0fa84a"/>
     </linearGradient>
-    <linearGradient id="gold" x1="0" x2="1">
-      <stop offset="0" stop-color="#f7d774"/>
-      <stop offset="0.5" stop-color="#e2ac2f"/>
-      <stop offset="1" stop-color="#f7d774"/>
+    <linearGradient id="band" x1="0" x2="1">
+      <stop offset="0" stop-color="#ff2d78"/>
+      <stop offset="1" stop-color="#ff7a1a"/>
     </linearGradient>
-    <clipPath id="mouthClip"><ellipse id="mouthClipShape" cx="0" cy="0" rx="26" ry="3"/></clipPath>
+    <clipPath id="bodyClip"><rect x="-300" y="-300" width="1000" height="740"/></clipPath>
+    <clipPath id="mouthClip"><ellipse id="mouthClipShape" cx="0" cy="0" rx="30" ry="3"/></clipPath>
   </defs>
 
   <circle id="ring" cx="200" cy="215" r="198" fill="url(#glow)"/>
 
-  <g id="body">
-    <!-- hoodie -->
-    <path d="M40,440 C48,372 110,338 200,336 C290,338 352,372 360,440 Z" fill="url(#hoodie)"/>
-    <path d="M128,350 C150,392 250,392 272,350 C250,372 150,372 128,350 Z" fill="#2c3047"/>
-    <path d="M168,372 L162,430 M232,372 L238,430" stroke="#c9ccd8" stroke-width="4" stroke-linecap="round"/>
-    <!-- neck -->
-    <path d="M160,300 L160,352 C180,368 220,368 240,352 L240,300 Z" fill="${SKIN_SHADE}"/>
-    <!-- chain -->
-    <path d="M150,346 C165,392 235,392 250,346" fill="none" stroke="url(#gold)" stroke-width="7"
-          stroke-dasharray="7 3" stroke-linecap="round"/>
-    <g transform="translate(200,392)">
-      <path d="M0,-14 L12,0 L0,16 L-12,0 Z" fill="url(#gold)" stroke="#b8861b" stroke-width="2"/>
-      <path d="M0,-8 L5,0 L0,8 L-5,0 Z" fill="#fff5c7" opacity="0.8"/>
+  <g clip-path="url(#bodyClip)"><g id="body">
+    <!-- torso -->
+    <path d="M78,440 C70,372 96,304 150,290 L250,290 C304,304 330,372 322,440 Z" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+    <!-- traps -->
+    <path d="M118,300 Q200,246 282,300 Q200,284 118,300 Z" fill="${FUR_DARK}"/>
+    <!-- chest + pecs -->
+    <path d="M140,312 Q200,300 260,312 Q262,350 200,356 Q138,350 140,312 Z" fill="${FACE}" stroke="${OUTLINE}" stroke-width="2.5"/>
+    <path d="M200,316 L200,352 M150,338 Q176,352 198,346 M250,338 Q224,352 202,346" stroke="${FACE_SHADE}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- tank top -->
+    <path d="M126,300 L156,300 Q170,356 200,362 Q230,356 244,300 L274,300 Q300,360 304,440 L96,440 Q100,360 126,300 Z"
+          fill="url(#tank)" stroke="${OUTLINE}" stroke-width="3"/>
+    <!-- banana logo -->
+    <g transform="translate(200 402) rotate(-18)">
+      <path d="M-26,-6 Q-4,18 26,-10 Q22,8 2,14 Q-18,16 -26,-6 Z" fill="#ffe14d" stroke="${OUTLINE}" stroke-width="2.5"/>
+      <path d="M24,-10 L30,-16" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round"/>
     </g>
-  </g>
+    <!-- arms (in front of the torso so poses like hand-to-chin read) -->
+    <g transform="translate(92 318)"><g id="armLPivot">${arm("armL", 1)}</g></g>
+    <g transform="translate(308 318)"><g id="armRPivot">${arm("armR", -1)}</g></g>
+    <!-- shoulders (deltoids) on top -->
+    <circle cx="92" cy="318" r="40" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+    <circle cx="308" cy="318" r="40" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+    <path d="M70,306 Q92,290 114,304 M286,304 Q308,290 330,306" stroke="${FUR_LIGHT}" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </g></g>
 
   <g id="head">
     <!-- ears -->
-    <ellipse cx="106" cy="205" rx="17" ry="27" fill="${SKIN}"/>
-    <ellipse cx="294" cy="205" rx="17" ry="27" fill="${SKIN}"/>
-    <ellipse cx="108" cy="206" rx="8" ry="15" fill="${SKIN_SHADE}"/>
-    <ellipse cx="292" cy="206" rx="8" ry="15" fill="${SKIN_SHADE}"/>
-    <circle cx="101" cy="226" r="4.5" fill="#e8f4ff" stroke="#9fc4e8" stroke-width="1.5"/>
-    <circle cx="299" cy="226" r="4.5" fill="#e8f4ff" stroke="#9fc4e8" stroke-width="1.5"/>
-    <!-- face -->
-    <path d="M200,72 C262,72 298,118 298,186 C298,246 276,302 200,312 C124,302 102,246 102,186 C102,118 138,72 200,72 Z"
-          fill="${SKIN}"/>
-    <path d="M200,72 C262,72 298,118 298,186 C298,200 297,212 295,224 C282,150 250,104 200,100 C150,104 118,150 105,224
-             C103,212 102,200 102,186 C102,118 138,72 200,72 Z" fill="${SKIN_LIGHT}" opacity="0.35"/>
-    <!-- buzz-cut fade -->
-    <path d="M104,170 C104,108 146,70 200,70 C254,70 296,108 296,170 C284,128 252,96 200,96 C148,96 116,128 104,170 Z"
-          fill="${HAIR}" opacity="0.78"/>
-    <!-- beard -->
-    <path id="beard" d="M108,206 C112,262 140,312 200,318 C260,312 288,262 292,206 C286,236 272,252 256,258
-             C246,240 226,232 200,234 C174,232 154,240 144,258 C128,252 114,236 108,206 Z" fill="${HAIR}"/>
-    <!-- brows -->
-    <g id="brows">
-      <path id="browL" d="M138,148 C152,136 174,136 186,144 L184,154 C172,148 154,148 140,158 Z" fill="${HAIR}"/>
-      <path id="browR" d="M262,148 C248,136 226,136 214,144 L216,154 C228,148 246,148 260,158 Z" fill="${HAIR}"/>
+    <g id="earL"><circle cx="104" cy="182" r="36" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/><circle cx="106" cy="184" r="22" fill="${FACE}"/></g>
+    <g id="earR"><circle cx="296" cy="182" r="36" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/><circle cx="294" cy="184" r="22" fill="${FACE}"/></g>
+    <!-- head fur -->
+    <circle cx="200" cy="178" r="96" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3"/>
+    <path d="M186,86 Q192,62 200,80 Q206,58 214,84 Q224,70 222,92" fill="${FUR}" stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"/>
+    <!-- face mask: two eye lobes + big muzzle -->
+    <g fill="${FACE}">
+      <circle cx="166" cy="168" r="42"/><circle cx="234" cy="168" r="42"/>
+      <ellipse cx="200" cy="232" rx="70" ry="52"/>
     </g>
+    <path d="M124,168 A42,42 0 0 1 200,146 A42,42 0 0 1 276,168" fill="none" stroke="${OUTLINE}" stroke-width="2.5" opacity="0.5"/>
+    <!-- headband -->
+    <path d="M110,134 Q200,84 290,134 L286,154 Q200,106 114,154 Z" fill="url(#band)" stroke="${OUTLINE}" stroke-width="3"/>
+    <path d="M286,140 L310,128 L306,152 Z M288,146 L312,160 L294,166 Z" fill="#ff2d78" stroke="${OUTLINE}" stroke-width="2.5" stroke-linejoin="round"/>
+    <!-- brows (heavy fur ridges) -->
+    <path id="browL" d="M132,152 Q160,134 192,146 L190,156 Q160,148 136,162 Z" fill="${FUR_DARK}"/>
+    <path id="browR" d="M268,152 Q240,134 208,146 L210,156 Q240,148 264,162 Z" fill="${FUR_DARK}"/>
     <!-- eyes -->
-    <g id="eyes">
-      <ellipse cx="162" cy="180" rx="19" ry="13" fill="#fdfaf3"/>
-      <ellipse cx="238" cy="180" rx="19" ry="13" fill="#fdfaf3"/>
-      <g id="pupils">
-        <circle cx="164" cy="181" r="9" fill="#3b2412"/>
-        <circle cx="240" cy="181" r="9" fill="#3b2412"/>
-        <circle cx="164" cy="181" r="4.5" fill="#0d0805"/>
-        <circle cx="240" cy="181" r="4.5" fill="#0d0805"/>
-        <circle cx="167" cy="177" r="2.6" fill="#fff"/>
-        <circle cx="243" cy="177" r="2.6" fill="#fff"/>
-      </g>
-      <!-- relaxed upper lids (gives the cool, half-lidded look) -->
-      <path id="lidL" d="M141,166 C150,160 176,160 183,168 L183,176 C170,170 152,170 141,176 Z" fill="${SKIN_SHADE}"/>
-      <path id="lidR" d="M259,166 C250,160 224,160 217,168 L217,176 C230,170 248,170 259,176 Z" fill="${SKIN_SHADE}"/>
-      <rect id="blinkL" x="140" y="164" width="44" height="0" fill="${SKIN_SHADE}"/>
-      <rect id="blinkR" x="216" y="164" width="44" height="0" fill="${SKIN_SHADE}"/>
+    <ellipse cx="166" cy="176" rx="19" ry="17" fill="#fff" stroke="${OUTLINE}" stroke-width="2.5"/>
+    <ellipse cx="234" cy="176" rx="19" ry="17" fill="#fff" stroke="${OUTLINE}" stroke-width="2.5"/>
+    <g id="pupils">
+      <circle cx="168" cy="178" r="10" fill="#6b3a12"/><circle cx="236" cy="178" r="10" fill="#6b3a12"/>
+      <circle cx="168" cy="178" r="5.5" fill="#120802"/><circle cx="236" cy="178" r="5.5" fill="#120802"/>
+      <circle cx="171" cy="174" r="3" fill="#fff"/><circle cx="239" cy="174" r="3" fill="#fff"/>
     </g>
+    <path id="lidL" d="M146,166 Q166,154 186,166 L186,170 Q166,162 146,170 Z" fill="${FACE_SHADE}"/>
+    <path id="lidR" d="M214,166 Q234,154 254,166 L254,170 Q234,162 214,170 Z" fill="${FACE_SHADE}"/>
+    <rect id="blinkL" x="144" y="158" width="44" height="0" fill="${FACE_SHADE}"/>
+    <rect id="blinkR" x="212" y="158" width="44" height="0" fill="${FACE_SHADE}"/>
     <!-- nose -->
-    <path d="M200,186 C198,206 190,218 184,224 C190,232 210,232 216,224 C210,218 202,206 200,186 Z" fill="${SKIN_SHADE}"/>
-    <ellipse cx="189" cy="226" rx="6" ry="4" fill="#4d2f19"/>
-    <ellipse cx="211" cy="226" rx="6" ry="4" fill="#4d2f19"/>
-    <!-- mustache -->
-    <path d="M160,250 C172,238 190,238 200,244 C210,238 228,238 240,250 C228,248 212,250 200,252 C188,250 172,248 160,250 Z"
-          fill="${HAIR}"/>
+    <path d="M186,206 Q200,198 214,206 Q214,218 200,220 Q186,218 186,206 Z" fill="${FACE_SHADE}"/>
+    <ellipse cx="193" cy="212" rx="4.5" ry="3.5" fill="${OUTLINE}"/>
+    <ellipse cx="207" cy="212" rx="4.5" ry="3.5" fill="${OUTLINE}"/>
     <!-- mouth -->
-    <g id="mouth" transform="translate(200,266)">
-      <ellipse id="mouthCavity" cx="0" cy="0" rx="26" ry="3" fill="#3a1010"/>
+    <g id="mouth" transform="translate(200 248)">
+      <ellipse id="mouthCavity" cx="0" cy="0" rx="30" ry="3" fill="#5a1414"/>
       <g clip-path="url(#mouthClip)">
-        <rect id="teeth" x="-22" y="-30" width="44" height="27" rx="4" fill="#fbf7ef"/>
-        <ellipse id="tongue" cx="0" cy="18" rx="15" ry="10" fill="#c45a5a"/>
+        <rect id="teeth" x="-26" y="-30" width="52" height="27" rx="4" fill="#fffdf5"/>
+        <ellipse id="tongue" cx="0" cy="20" rx="17" ry="11" fill="#ff6b8b"/>
       </g>
-      <path id="lips" d="M-28,0 C-14,-5 14,-5 28,0 C14,6 -14,6 -28,0 Z" fill="#5e2f22" opacity="0.9"/>
+      <path id="lips" d="M-34,-4 Q0,20 34,-4" fill="none" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round"/>
     </g>
+    <!-- cheeks -->
+    <ellipse cx="148" cy="226" rx="12" ry="7" fill="#ff7a8a" opacity="0.45"/>
+    <ellipse cx="252" cy="226" rx="12" ry="7" fill="#ff7a8a" opacity="0.45"/>
     <!-- thinking dots -->
     <g id="thinkDots" opacity="0">
-      <circle cx="300" cy="96" r="7" fill="var(--glow)"/>
-      <circle cx="322" cy="74" r="9" fill="var(--glow)"/>
-      <circle cx="350" cy="50" r="12" fill="var(--glow)"/>
+      <circle cx="300" cy="96" r="7" fill="var(--glow)"/><circle cx="324" cy="72" r="9" fill="var(--glow)"/>
+      <circle cx="354" cy="46" r="12" fill="var(--glow)"/>
     </g>
   </g>
-</svg>`;
+</svg>
+<div class="banana-rain" aria-hidden="true"></div>`;
 
 const COLORS: Record<AvatarState, string> = {
-  idle: "#6c7bff",
-  listening: "#2fe39a",
-  transcribing: "#2fe39a",
-  thinking: "#ffb547",
-  speaking: "#ff5ea8",
+  idle: "#ffd60a",
+  listening: "#39ff6a",
+  transcribing: "#39ff6a",
+  thinking: "#ff9f1a",
+  speaking: "#ff3d9a",
+};
+
+// Arm pose targets in degrees: [left upper, left fore, right upper, right fore].
+type Pose = [number, number, number, number];
+const POSES: Record<string, Pose> = {
+  idle: [14, -8, -14, 8],
+  listening: [14, -8, -150, -40],     // right hand cupped near ear
+  thinking: [14, -8, 35, 121],        // right fist to chin
+  speaking: [20, -30, -20, 30],
+  celebrate: [100, 95, -100, -95],    // double-bicep flex
+  shrug: [60, -110, -60, 110],
+  laugh: [30, 60, -30, -60],
 };
 
 export class Avatar {
@@ -130,6 +155,10 @@ export class Avatar {
   private nextBlink = performance.now() + 2500;
   private blinkUntil = 0;
   private roundness = 0;
+  private pose: Pose = [...POSES.idle] as Pose;
+  private emoteName: Emote | null = null;
+  private emoteUntil = 0;
+  private nextFidget = performance.now() + 9000;
 
   constructor(host: HTMLElement) {
     this.root = host;
@@ -144,63 +173,110 @@ export class Avatar {
     this.root.dataset.state = s;
   }
 
-  /** 0..1 loudness of Tyrone's voice (drives the mouth). */
+  /** 0..1 loudness of Monkey's voice (drives the mouth). */
   setLevel(v: number) {
     this.level = Math.max(0, Math.min(1, v));
   }
 
+  emote(name: Emote, ms = 2200, rain = true) {
+    this.emoteName = name;
+    this.emoteUntil = performance.now() + ms;
+    if (name === "celebrate" && rain) this.bananaRain();
+  }
+
+  private bananaRain() {
+    const rain = this.root.querySelector<HTMLElement>(".banana-rain");
+    if (!rain || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (let i = 0; i < 18; i++) {
+      const b = document.createElement("span");
+      b.textContent = "🍌";
+      b.style.left = `${5 + Math.random() * 90}%`;
+      b.style.animationDelay = `${Math.random() * 0.6}s`;
+      b.style.fontSize = `${18 + Math.random() * 18}px`;
+      b.style.setProperty("--spin", `${(Math.random() * 2 - 1) * 540}deg`);
+      rain.append(b);
+      setTimeout(() => b.remove(), 2600);
+    }
+  }
+
   private frame = (t: number) => {
     const s = this.state;
-    // Mouth: fast attack, slower release, with a little "shape" variation so it reads as talking.
-    const target = s === "speaking" ? Math.min(1, this.level * 1.6) : 0;
+    const emoting = this.emoteName && t < this.emoteUntil ? this.emoteName : null;
+    if (!emoting) this.emoteName = null;
+
+    // Idle fidget: a quick flex every so often, so he never looks frozen.
+    if (s === "idle" && !emoting && t > this.nextFidget) {
+      this.emote(Math.random() < 0.6 ? "celebrate" : "shrug", 1400, false);
+      this.nextFidget = t + 14000 + Math.random() * 12000;
+    }
+
+    // Mouth: fast attack, slower release, a little shape variation.
+    const talking = s === "speaking";
+    const target = talking ? Math.min(1, this.level * 1.6) : emoting === "laugh" ? 0.6 + Math.sin(t / 70) * 0.3 : 0;
     this.mouth += (target - this.mouth) * (target > this.mouth ? 0.55 : 0.25);
-    if (s === "speaking" && Math.random() < 0.06) this.roundness = Math.random();
+    if (talking && Math.random() < 0.06) this.roundness = Math.random();
     const open = this.mouth;
-    const rx = 26 - open * 6 - this.roundness * open * 8;
-    const ry = 3 + open * 20;
+    const rx = 30 - open * 6 - this.roundness * open * 9;
+    const ry = 3 + open * 22;
     for (const id of ["mouthCavity", "mouthClipShape"]) {
       const e = this.q<SVGEllipseElement>(id);
       e.setAttribute("rx", rx.toFixed(1));
       e.setAttribute("ry", ry.toFixed(1));
     }
-    this.q<SVGPathElement>("lips").style.opacity = open > 0.12 ? "0" : "0.9";
-    this.q<SVGGElement>("teeth").setAttribute("y", (-ry - 2).toFixed(1));
-    this.q<SVGGElement>("teeth").setAttribute("height", (ry * 0.45 + 2).toFixed(1));
+    this.q<SVGPathElement>("lips").style.opacity = open > 0.12 ? "0" : "1";
+    this.q("teeth").setAttribute("y", (-ry - 2).toFixed(1));
+    this.q("teeth").setAttribute("height", (ry * 0.45 + 2).toFixed(1));
 
     // Blink.
     if (t > this.nextBlink) {
       this.blinkUntil = t + 130;
       this.nextBlink = t + 2500 + Math.random() * 3500;
     }
-    const blinkH = t < this.blinkUntil ? 30 : 0;
+    const blinkH = t < this.blinkUntil || emoting === "laugh" ? 26 : 0;
     this.q("blinkL").setAttribute("height", String(blinkH));
     this.q("blinkR").setAttribute("height", String(blinkH));
 
-    // Head motion: breathing, nod while talking, tilt while listening.
+    // Arms ease toward the pose for the current emote/state.
+    const want = POSES[emoting ?? s] ?? POSES.idle;
+    const flexPulse = emoting === "celebrate" ? Math.sin(t / 120) * 6 : 0;
+    const talkSway = talking ? Math.sin(t / 160) * 10 * (0.3 + open) : 0;
+    for (let i = 0; i < 4; i++) this.pose[i] += (want[i] - this.pose[i]) * 0.14;
+    const [lu, lf, ru, rf] = this.pose;
+    this.q("armLPivot").setAttribute("transform", `rotate(${(lu + talkSway).toFixed(1)})`);
+    this.q("armLFore").setAttribute("transform", `translate(0 98) rotate(${(lf + flexPulse).toFixed(1)})`);
+    this.q("armRPivot").setAttribute("transform", `rotate(${(ru - talkSway).toFixed(1)})`);
+    this.q("armRFore").setAttribute("transform", `translate(0 98) rotate(${(rf - flexPulse).toFixed(1)})`);
+    const bicep = 1 + Math.max(0, (Math.abs(lu) - 30) / 70) * 0.35 + (emoting === "celebrate" ? Math.abs(flexPulse) / 40 : 0);
+    for (const id of ["armLBicep", "armRBicep"]) {
+      this.q(id).setAttribute("transform", `translate(0 52) scale(${bicep.toFixed(3)}) translate(0 -52)`);
+    }
+
+    // Head motion: breathing, nod while talking, tilt while listening, bounce when celebrating.
     const breathe = Math.sin(t / 900) * 2;
-    const bob = s === "speaking" ? Math.sin(t / 110) * open * 3 : 0;
-    const tilt = s === "listening" || s === "transcribing" ? -4 : s === "thinking" ? 3 : 0;
-    this.q<SVGGElement>("head").setAttribute(
-      "transform",
-      `translate(0 ${(breathe + bob).toFixed(2)}) rotate(${tilt} 200 300)`,
-    );
-    this.q<SVGGElement>("body").setAttribute("transform", `translate(0 ${(breathe * 0.5).toFixed(2)})`);
+    const bob = talking ? Math.sin(t / 110) * open * 3 : 0;
+    const hop = emoting === "celebrate" || emoting === "laugh" ? -Math.abs(Math.sin(t / 140)) * 8 : 0;
+    const tilt = s === "listening" || s === "transcribing" ? -6 : s === "thinking" ? 5 : emoting === "shrug" ? 7 : 0;
+    this.q("head").setAttribute("transform",
+      `translate(0 ${(breathe + bob + hop).toFixed(2)}) rotate(${tilt} 200 300)`);
+    this.q("body").setAttribute("transform", `translate(0 ${(breathe * 0.6 + hop * 0.5).toFixed(2)})`);
+    const earScale = s === "listening" || s === "transcribing" ? 1.12 : 1;
+    this.q("earL").setAttribute("transform", `translate(104 182) scale(${earScale}) translate(-104 -182)`);
+    this.q("earR").setAttribute("transform", `translate(296 182) scale(${earScale}) translate(-296 -182)`);
 
     // Brows + eyes per state.
-    const browUp = s === "listening" || s === "transcribing" ? -7 : s === "thinking" ? -3 : 0;
+    const browUp = s === "listening" || s === "transcribing" ? -8 : s === "thinking" ? -4 : emoting ? -6 : 0;
     this.q("browL").setAttribute("transform", `translate(0 ${browUp})`);
-    this.q("browR").setAttribute("transform", `translate(0 ${s === "thinking" ? 2 : browUp})`);
-    const look = s === "thinking" ? "translate(5 -5)" : s === "listening" ? "translate(0 -1)" : "translate(0 0)";
+    this.q("browR").setAttribute("transform", `translate(0 ${s === "thinking" ? 3 : browUp})`);
+    const look = s === "thinking" ? "translate(5 -5)" : s === "listening" ? "translate(-2 -1)" : "translate(0 0)";
     this.q("pupils").setAttribute("transform", look);
-    const lidDrop = s === "idle" ? 2 : s === "listening" ? -5 : 0;
+    const lidDrop = s === "idle" && !emoting ? 3 : s === "listening" ? -6 : 0;
     this.q("lidL").setAttribute("transform", `translate(0 ${lidDrop})`);
     this.q("lidR").setAttribute("transform", `translate(0 ${lidDrop})`);
 
-    // Glow ring pulse + thinking dots.
-    const pulse = s === "listening" ? 1 + Math.sin(t / 200) * 0.03 : s === "speaking" ? 1 + open * 0.04 : 1;
+    // Glow ring + thinking dots.
+    const pulse = s === "listening" ? 1 + Math.sin(t / 200) * 0.03 : talking ? 1 + open * 0.05 : 1;
     this.q("ring").setAttribute("transform", `translate(200 215) scale(${pulse.toFixed(3)}) translate(-200 -215)`);
-    const dots = this.q<SVGGElement>("thinkDots");
-    dots.style.opacity = s === "thinking" ? String(0.55 + Math.sin(t / 250) * 0.35) : "0";
+    this.q<SVGGElement>("thinkDots").style.opacity = s === "thinking" ? String(0.55 + Math.sin(t / 250) * 0.35) : "0";
 
     requestAnimationFrame(this.frame);
   };

@@ -48,7 +48,7 @@ export interface Api {
 declare global {
   interface Window {
     pywebview?: { api: Api };
-    __tyroneEvents?: (events: [string, any][]) => void;
+    __monkeyEvents?: (events: [string, any][]) => void;
   }
 }
 
@@ -65,7 +65,7 @@ export function waitForApi(timeoutMs = 2500): Promise<Api> {
 
 // ------------------------------------------------------------------ demo mock
 function mockApi(): Api {
-  const emit = (events: [string, any][]) => window.__tyroneEvents?.(events);
+  const emit = (events: [string, any][]) => window.__monkeyEvents?.(events);
   const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
   const state: AppState = {
     settings: { user_name: "", monthly_budget_usd: 25, wakeword_threshold: 0.5, stt_engine: "whisper",

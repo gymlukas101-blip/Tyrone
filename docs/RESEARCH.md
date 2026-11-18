@@ -9,16 +9,17 @@
 | Cartesia | mid-range | Lowest latency in third-party benchmarks. |
 | Kokoro (local) | $0 | Runs offline; less expressive, no custom character voice. |
 
-For Tyrone, about 30–150 spoken sentences a day comes to roughly 100–300K characters a month, which is **about $1–3 a month on Fish**.
+For Monkey, about 30–150 spoken sentences a day comes to roughly 100–300K characters a month, which is **about $1–3 a month on Fish**.
 
-**Why Tyrone doesn't clone 50 Cent:**
+**Why the assistant doesn't clone a celebrity voice:**
 - Both Fish Audio and ElevenLabs ban cloning a real person's voice without consent, and ElevenLabs blocks celebrity voices outright.
 - NY, CA and TN (the ELVIS Act) protect a person's voice and likeness.
 - Fish's Voice Design makes you confirm the voice doesn't impersonate a real, identifiable person.
 
-So Tyrone is an original character with a similar vibe: a deep, smooth, laid-back New York voice.
+So Monkey is an original character (a buff cartoon monkey) with a deep, laid-back voice picked from Fish Audio.
 
 ## Wake word
+- **"Hey Monkey" today, with no training:** sherpa-onnx open-vocabulary keyword spotting. A 3.3M-parameter streaming Zipformer trained on GigaSpeech takes any phrase as text and runs on the CPU.
 - **Picovoice Porcupine's free tier was shut off on June 30, 2026.**
 - **openWakeWord** (Apache-2.0) is the free option. It trains a custom phrase from synthetic speech, so you don't record anything (see `wakeword/README.md`).
 
@@ -34,7 +35,7 @@ So Tyrone is an original character with a similar vibe: a deep, smooth, laid-bac
 | Claude Sonnet 5.5 | $2 | $10 | Normal questions, quick web lookups |
 | Claude Opus 5.5 | $4 | $20 | Research, email drafting in your voice, priority ranking, anything you mark important |
 
-The router decides on each request (see `tyrone/brain/router.py`):
+The router decides on each request (see `monkey/brain/router.py`):
 1. Your words come first: "important" or "take your time" means a stronger model, "quick" means a cheaper one.
 2. Then task rules, such as email drafting and research.
 3. Then a Haiku classifier that costs a fraction of a cent.
@@ -43,7 +44,7 @@ The router decides on each request (see `tyrone/brain/router.py`):
 Prompt caching keeps repeat context cheap.
 
 ## Email and calendar at UW–Madison
-- **wisc.edu (Microsoft 365):** since late 2025, Microsoft requires a tenant admin to approve third-party apps that read Exchange mail and calendars through Graph. Students can't approve this themselves. Tyrone uses the **classic Outlook desktop app** through Windows COM instead. It is local, already signed in, and needs no admin approval. ("New Outlook" has no COM interface.)
+- **wisc.edu (Microsoft 365):** since late 2025, Microsoft requires a tenant admin to approve third-party apps that read Exchange mail and calendars through Graph. Students can't approve this themselves. Monkey uses the **classic Outlook desktop app** through Windows COM instead. It is local, already signed in, and needs no admin approval. ("New Outlook" has no COM interface.)
 - **Gmail and Google Calendar:** official APIs with your own OAuth client. Set the consent screen to *In production* (unverified is fine for personal use). In *Testing* mode, Google expires the login every 7 days.
 - **Canvas:** since Nov 14, 2025, UW–Madison students can't create API tokens themselves (it's a request form now). The **Calendar Feed (ICS) link** gives all due dates with no token.
 
@@ -51,10 +52,10 @@ Prompt caching keeps repeat context cheap.
 - The calendar feed only has titles and due dates. Points, current grade and missing status come from the Canvas REST API:
   - Courses, with `include[]=total_scores`, give your current grade.
   - Assignment groups, with `include[]=assignments&include[]=submission`, give each assignment's points, the group weights, and the `missing`, `late` and graded status.
-- The checkbox uses Canvas **Planner overrides** (`marked_complete`), so a check in Tyrone also shows as done in Canvas's planner.
+- The checkbox uses Canvas **Planner overrides** (`marked_complete`), so a check in Monkey also shows as done in Canvas's planner.
 - At UW–Madison, students must request an API token through a form (since Nov 2025).
 
-### Priority formula (`tyrone/brain/assignments.py`)
+### Priority formula (`monkey/brain/assignments.py`)
 
 Priority is scored 0–100 from four pieces:
 
@@ -70,12 +71,12 @@ Tiers by score: critical ≥ 70, high ≥ 50, normal ≥ 30, low below 30.
 ## Garmin
 - Garmin's official Health API is only for approved businesses.
 - The community `garminconnect` library switched to Garmin's mobile sign-in in v0.3 (the old garth login broke in March 2026). It supports two-step verification codes.
-- Tyrone uses your password once and never saves it. The tokens go in `%APPDATA%\Tyrone\garmin`.
+- Monkey uses your password once and never saves it. The tokens go in `%APPDATA%\Monkey\garmin`.
 - It reads `get_sleep_data`, `get_heart_rates`, `get_user_summary` and `get_hrv_data`.
 - Unofficial means Garmin can break it again. When that happens, update the library version.
 
 ## Where your data lives (memory)
-- **Memory** is markdown files in `%APPDATA%\Tyrone\memory\memories\`, managed by Claude's memory tool. Claude reads only what it needs, and you can open and edit them.
+- **Memory** is markdown files in `%APPDATA%\Monkey\memory\memories\`, managed by Claude's memory tool. Claude reads only what it needs, and you can open and edit them.
 - **The SQLite database** holds the cost ledger.
 - **API keys** are stored in Windows Credential Manager.
 
@@ -83,8 +84,8 @@ None of this goes in the code repo. To move to another PC, use Settings → Expo
 
 ## Should this be a repo? Yes, a private GitHub repo
 - Version history, plus a safe place to keep the code while you switch laptops.
-- GitHub Actions builds the Windows installer on every release tag. You install on any PC by downloading `TyroneSetup-x.y.z.exe` from Releases.
-- Code and personal data stay separate: a fresh install on the Dell XPS plus an imported memory file gives you the same Tyrone.
+- GitHub Actions builds the Windows installer on every release tag. You install on any PC by downloading `MonkeySetup-x.y.z.exe` from Releases.
+- Code and personal data stay separate: a fresh install on the Dell XPS plus an imported memory file gives you the same Monkey.
 
 ## Quality-of-life ideas for a UW–Madison student (roadmap)
 
