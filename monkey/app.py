@@ -1025,6 +1025,7 @@ def _tray(app: MonkeyApp, window) -> None:
     )
     icon = pystray.Icon("Monkey", img, "Monkey", menu)
     icon.run_detached()
+    app._tray_icon = icon
 
 
 def _fix_mime_types() -> None:
@@ -1047,8 +1048,12 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+SHOW_EVENT = "Local\\MonkeyAssistant.Show"
+
+
 def _single_instance() -> bool:
-    """True if this is the only Monkey running. Otherwise tell the user and return False (Windows only)."""
+    """True if this is the only Monkey running. If he's already running (e.g. hidden in the tray after closing
+    the window), ask that copy to show its window and return False (Windows only)."""
     if sys.platform != "win32":
         return True
     import ctypes
@@ -1056,11 +1061,40 @@ def _single_instance() -> bool:
     kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
     run._mutex = kernel32.CreateMutexW(None, False, "Local\\MonkeyAssistant.SingleInstance")  # keep a ref
     if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ev = kernel32.OpenEventW(0x0002, False, SHOW_EVENT)          # EVENT_MODIFY_STATE
+        if ev and kernel32.SetEvent(ev):
+            kernel32.CloseHandle(ev)
+            return False                                              # the running copy brings its window up
         ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
             None, "Monkey is already running. Look for the monkey icon in the system tray "
                   "(the ^ arrow near the clock) and click it to open the window.", "Monkey", 0x40)
         return False
     return True
+
+
+def _listen_for_show(window) -> None:
+    """Opening Monkey again (Start menu / desktop shortcut) while he's in the tray brings the window back."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    ev = kernel32.CreateEventW(None, False, False, SHOW_EVENT)        # auto-reset
+    if not ev:
+        return
+    run._show_event = ev                                              # keep a ref
+
+    def wait():
+        while kernel32.WaitForSingleObject(ev, 0xFFFFFFFF) == 0:
+            try:
+                window.show()
+                window.restore()
+                window.on_top = True                                  # pop above other windows, then behave normally
+                window.on_top = False
+            except Exception:  # noqa: BLE001
+                log.exception("couldn't show the window")
+
+    threading.Thread(target=wait, name="show-window", daemon=True).start()
 
 
 def run() -> None:
@@ -1080,11 +1114,21 @@ def run() -> None:
     app.ui.window = window
 
     def on_closing():
-        # Closing the window hides Monkey to the tray; he keeps listening.
+        # Closing the window hides Monkey to the tray; he keeps listening. Say so the first few times.
         window.hide()
+        icon = getattr(app, "_tray_icon", None)
+        shown = getattr(app, "_hide_tips", 0)
+        if icon is not None and shown < 3:
+            app._hide_tips = shown + 1
+            try:
+                icon.notify("Monkey is still listening. To open him again, click the monkey icon near the clock "
+                            "or open Monkey from the Start menu. To quit, right-click the icon → Quit.", "Monkey")
+            except Exception:  # noqa: BLE001
+                pass
         return False
 
     window.events.closing += on_closing
+    _listen_for_show(window)
 
     def after_start():
         try:
