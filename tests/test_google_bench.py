@@ -46,7 +46,7 @@ class FakeFlow:
 
 
 def test_sign_in_reports_url_and_saves_token(monkeypatch):
-    import google_auth_oauthlib.flow as flowmod
+    flowmod = pytest.importorskip("google_auth_oauthlib.flow")      # desktop extra: installed in the Windows job
     import webbrowser
 
     monkeypatch.setattr(flowmod, "InstalledAppFlow", FakeFlow)
