@@ -506,6 +506,7 @@ async function openSettings() {
 // ------------------------------------------------------------------ boot
 (async () => {
   api = await waitForApi();
+  (window as any).__monkeyBooted = true;
   appState = await api.get_state();
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;

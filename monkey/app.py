@@ -481,6 +481,9 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
+    def report_ui_error(self, info: str):
+        log.error("UI boot problem: %s", str(info)[:2000])
+
     def cleanup_dismiss(self):
         self._app.cfg.update(cleanup_done=True)
 
@@ -697,12 +700,52 @@ def _tray(app: MonkeyApp, window) -> None:
     icon.run_detached()
 
 
+def _fix_mime_types() -> None:
+    """Python's mimetypes reads the Windows registry, where other software often maps .js/.css to
+    text/plain - WebView2 then refuses scripts/styles. Pin the correct types for everything we serve."""
+    import mimetypes
+
+    for ext, mime in {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+                      ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml",
+                      ".glb": "model/gltf-binary", ".png": "image/png", ".jpg": "image/jpeg",
+                      ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff"}.items():
+        mimetypes.add_type(mime, ext)
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _single_instance() -> bool:
+    """True if this is the only Monkey running. Otherwise tell the user and return False (Windows only)."""
+    if sys.platform != "win32":
+        return True
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    run._mutex = kernel32.CreateMutexW(None, False, "Local\\MonkeyAssistant.SingleInstance")  # keep a ref
+    if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+            None, "Monkey is already running. Look for the monkey icon in the system tray "
+                  "(the ^ arrow near the clock) and click it to open the window.", "Monkey", 0x40)
+        return False
+    return True
+
+
 def run() -> None:
+    if not _single_instance():
+        return
+    _fix_mime_types()
     import webview
 
     app = MonkeyApp()
     api = Api(app)
     index = resource_path("ui", "dist", "index.html")
+    debug = "--debug" in sys.argv or bool(os.environ.get("MONKEY_DEBUG"))
     window = webview.create_window(
         "Monkey", url=str(index), js_api=api, width=1200, height=780, min_size=(380, 600),
         background_color="#0d0f17",
@@ -717,14 +760,20 @@ def run() -> None:
     window.events.closing += on_closing
 
     def after_start():
+        try:
+            log.info("UI %s via %s (engine: %s)", index, getattr(window, "real_url", "?"),
+                     getattr(getattr(window, "gui", None), "__name__", "?"))
+        except Exception:  # noqa: BLE001
+            pass
         app.start_audio()
         _tray(app, window)
         app.updater.start_background()
         app.after_install_tasks()
 
-    # A plain file path (not file://) makes pywebview serve ui/dist over its local HTTP server,
-    # which the 3D avatar needs to fetch models/monkey.glb. http_server=True makes that explicit.
-    webview.start(after_start, http_server=True, private_mode=False, storage_path=str(app.cfg.data_dir / "webview"))
+    # pywebview serves ui/dist over a local HTTP server (a plain path, not file://). A fresh free port
+    # each launch avoids clashing with any other copy; the UI itself is one self-contained index.html.
+    webview.start(after_start, http_server=True, http_port=_free_port(), private_mode=False, debug=debug,
+                  storage_path=str(app.cfg.data_dir / "webview"))
 
 
 def selftest() -> int:
@@ -734,8 +783,12 @@ def selftest() -> int:
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         app = MonkeyApp(data_dir=Path(tmp), headless=True)
-        if not resource_path("ui", "dist", "index.html").exists():
+        index = resource_path("ui", "dist", "index.html")
+        if not index.exists():
             problems.append("UI not bundled")
+        elif "<script src=" in index.read_text(encoding="utf-8", errors="ignore") or \
+                'rel="stylesheet" crossorigin href=' in index.read_text(encoding="utf-8", errors="ignore"):
+            problems.append("UI must be a single self-contained index.html (external JS/CSS found)")
         if not resource_path("ui", "dist", "models", "monkey.glb").exists():
             problems.append("3D monkey model not bundled")
         if "Monkey" not in app.agent.system:

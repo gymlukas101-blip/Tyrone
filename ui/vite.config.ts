@@ -1,7 +1,11 @@
 import { defineConfig } from "vite";
+import { viteSingleFile } from "vite-plugin-singlefile";
 
-// base "./" so the built files load from disk inside the desktop window.
+// One self-contained index.html: all JS, CSS and fonts are inlined, so the desktop window
+// never depends on the local server's MIME types or paths for code and styles.
+// (Large assets like models/monkey.glb and prototype images stay as separate files.)
 export default defineConfig({
   base: "./",
-  build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 0 },
+  plugins: [viteSingleFile({ removeViteModuleLoader: true })],
+  build: { outDir: "dist", emptyOutDir: true, assetsInlineLimit: 100_000_000, cssCodeSplit: false },
 });

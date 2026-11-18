@@ -53,6 +53,7 @@ export interface Api {
   cleanup_plan(): Promise<CleanupResult>;
   cleanup_run(): Promise<CleanupResult>;
   cleanup_dismiss(): Promise<void>;
+  report_ui_error(info: string): Promise<void>;
 }
 
 export interface CleanupItem { kind: string; label: string; path: string; status: string; detail: string }
@@ -67,14 +68,22 @@ declare global {
   }
 }
 
+/** Demo mode only in a normal browser dev preview (vite on localhost:4173/5173 or ?demo). Inside the
+ *  desktop app we always wait for the real Python bridge, however slow the first start is. */
+const isDevPreview = () =>
+  /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && ["4173", "5173"].includes(location.port) ||
+  new URLSearchParams(location.search).has("demo");
+
 export function waitForApi(timeoutMs = 2500): Promise<Api> {
   return new Promise((resolve) => {
-    if (window.pywebview?.api) return resolve(window.pywebview.api);
-    const done = () => resolve(window.pywebview!.api);
-    window.addEventListener("pywebviewready", done, { once: true });
-    setTimeout(() => {
-      if (!window.pywebview?.api) resolve(mockApi());
-    }, timeoutMs);
+    const ready = () => !!window.pywebview?.api && typeof (window.pywebview.api as any).get_state === "function";
+    if (ready()) return resolve(window.pywebview!.api);
+    window.addEventListener("pywebviewready", () => resolve(window.pywebview!.api), { once: true });
+    // Also poll: the ready event can fire before this listener is attached.
+    const iv = setInterval(() => { if (ready()) { clearInterval(iv); resolve(window.pywebview!.api); } }, 200);
+    if (isDevPreview()) {
+      setTimeout(() => { if (!ready()) { clearInterval(iv); resolve(mockApi()); } }, timeoutMs);
+    }
   });
 }
 
@@ -185,6 +194,7 @@ function mockApi(): Api {
     async cleanup_plan() { return { ok: true, count: demoCleanup().length, items: demoCleanup() }; },
     async cleanup_run() { return { ok: true, count: 4, items: demoCleanup().map((i) => ({ ...i, status: "ok", detail: i.kind === "download" ? "moved to Recycle Bin" : "uninstalled" })) }; },
     async cleanup_dismiss() {},
+    async report_ui_error() {},
     async update_state() { return { status: "up_to_date", detail: "", current: "0.3.40", available: "", enabled: true }; },
   };
 }

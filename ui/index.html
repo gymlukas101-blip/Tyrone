@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Monkey</title>
+    <script>
+      /* Boot watchdog (plain script, runs even if the app bundle can't): if the UI hasn't started
+         within 12 s, show what went wrong instead of a blank "Starting up…" and send it to monkey.log. */
+      (function () {
+        var errors = [];
+        window.addEventListener("error", function (e) {
+          errors.push((e.message || "load error") + (e.filename ? " @ " + e.filename + ":" + e.lineno : "") +
+                      (e.target && e.target.src ? " [" + e.target.src + "]" : ""));
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) { errors.push("promise: " + String(e.reason)); });
+        setTimeout(function () {
+          if (window.__monkeyBooted) return;
+          var info = "UI failed to start. " + (errors.join(" | ") || "No error was reported.") +
+                     " | UA: " + navigator.userAgent + " | URL: " + location.href;
+          try { window.pywebview && window.pywebview.api && window.pywebview.api.report_ui_error(info); } catch (x) {}
+          var el = document.getElementById("stateLabel");
+          if (el) {
+            el.textContent = "Monkey's screen didn't load. Please close and reopen Monkey; if it keeps happening, " +
+                             "send %APPDATA%\\Monkey\\monkey.log to Claude.";
+            el.style.cssText = "font:16px Segoe UI, sans-serif;color:#fff;display:block;max-width:640px;margin:24px";
+          }
+        }, 12000);
+      })();
+    </script>
   </head>
   <body>
     <div id="app">
