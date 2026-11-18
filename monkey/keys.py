@@ -29,6 +29,7 @@ KNOWN_KEYS = {
     "google_token": "MONKEY_GOOGLE_TOKEN",     # OAuth token JSON (refresh token)
     "google_client": "MONKEY_GOOGLE_CLIENT",   # OAuth client JSON (Desktop app)
     "export_password": "MONKEY_EXPORT_PASSWORD",
+    "calendar_ics": "MONKEY_CALENDAR_ICS",     # private iCal link(s), one per line (Google "secret address")
 }
 # Shown in Settings as "••••abcd" so you can tell which key is saved. Not for JSON blobs or passwords.
 HINTABLE = {"anthropic", "fish", "deepgram", "youtube", "openai", "brave", "canvas_token"}

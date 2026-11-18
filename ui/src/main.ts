@@ -344,6 +344,8 @@ function onEvent(name: string, p: any) {
       $("#routeChip").title = `${p.task ? p.task.replace(/_/g, " ") + ": " : ""}${p.reason}`; break;
     case "calibration": brainEvent(p); break;
     case "voicekit": voiceKitEvent(p); if (p.finished) void offlineVoiceRefresh?.(); break;
+    case "google": googleEvent(p); break;
+    case "bench": benchEvent(p); break;
     case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
     case "draft": draftCard(p); break;
@@ -644,15 +646,36 @@ async function openSettings() {
               toast(r.ok ? "✓ Saved" : `⚠ Not saved: ${r.error}`); openSettings();
             } }, "Save"));
         })(),
+        h("div", { class: "field" }, h("span", {}, ""),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            const r = await api.google_client_file(); resultToast(r, "✓ Google client loaded. Now click Sign in."); if (r.ok) openSettings();
+          } }, "Load JSON file…")),
+        googleSetupGuide(),
         h("div", { class: "field" }, status(!!appState.connections.gmail), h("span", {}, "Gmail + Google Calendar"),
           h("button", { class: "primary", type: "button", onclick: async () => {
-            const r = await api.google_sign_in(); resultToast(r, "Google connected"); openSettings();
+            const r = await api.google_sign_in();
+            const st = document.getElementById("googleStatus");
+            if (!r.ok) { if (st) st.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); if (r.needs_client) (document.getElementById("googleGuide") as HTMLDetailsElement | null)?.setAttribute("open", ""); return; }
+            if (st) st.textContent = "Opening Google sign-in in your browser…";
           } }, appState.connections.gmail ? "Reconnect" : "Sign in"),
           appState.connections.gmail && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
+        h("div", { class: "field" }, h("span", {}, ""), h("span", { class: "meta", id: "googleStatus" }, "")),
         h("div", { class: "field" }, status(!!appState.connections.outlook), h("span", {}, "wisc.edu Outlook"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
           } }, "Test connection")),
+        (() => {
+          const ta = h("textarea", { rows: 2, placeholder: appState.connections.calendar_ics ? "Calendar link saved (paste to replace)" : "https://calendar.google.com/calendar/ical/…/private-…/basic.ics" }) as HTMLTextAreaElement;
+          return h("div", {},
+            h("div", { class: "field" }, status(!!appState.connections.calendar_ics), h("span", {}, "Calendar link (no sign-in)"), ta,
+              h("button", { class: "ghost", type: "button", onclick: async () => {
+                if (!ta.value.trim()) return;
+                const r = await api.save_key("calendar_ics", ta.value.trim());
+                toast(r.ok ? (r.warning ? `⚠ ${r.warning}` : `✓ ${r.note ?? "Saved"}`) : `⚠ ${r.error}`);
+                if (r.ok) openSettings();
+              } }, "Save")),
+            h("p", { class: "help" }, "Easiest way to give Monkey your class schedule: Google Calendar (web) → ⚙ Settings → click your calendar on the left → Integrate calendar → copy “Secret address in iCal format” and paste it here. Read-only; one link per line for several calendars. Keep it private: anyone with the link can see that calendar."));
+        })(),
         field("Canvas calendar feed URL", "canvas_ics_url", "url", { placeholder: "https://canvas.wisc.edu/feeds/calendars/user_….ics" }),
         field("Canvas site", "canvas_base_url", "url"),
         h("div", { class: "field" }, h("span", {}, "Email writing style"),
@@ -707,6 +730,14 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ force_model: sel.value }); toast("Saved"); });
           return sel;
         })()),
+        h("div", { class: "field" }, h("span", {}, "Routing benchmark"),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            const r = await api.routing_benchmark();
+            const out = document.getElementById("benchOut");
+            if (!r.ok) { toast(`⚠ ${r.error}`); return; }
+            if (out) out.textContent = "Running (~14 quick Haiku calls, under $0.01)…";
+          } }, "Run routing benchmark"),
+          h("span", { class: "meta", id: "benchOut" }, "")),
         h("div", { class: "field" }, h("span", {}, "Models per task"),
           h("button", { class: "primary", type: "button", onclick: () => openBrain(api) }, "🧠 Open model table & calibrate")),
         h("div", { class: "field" }, h("span", {}, "Brain profile"), (() => {
@@ -784,6 +815,49 @@ async function openSettings() {
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   if (!dlg.open) dlg.showModal();
+}
+
+// ------------------------------------------------------------------ Google sign-in + routing benchmark
+/** Links open in your real browser (pywebview ignores target=_blank). */
+function extLink(href: string, text: string) {
+  return h("a", { href, onclick: (e: Event) => { e.preventDefault(); void api.open_url(href); } }, text);
+}
+
+function googleSetupGuide() {
+  const a = (href: string, text: string) => extLink(href, text);
+  return h("details", { id: "googleGuide" }, h("summary", {}, "Set up Google (one time, ~5 min): what the Sign in button needs"),
+    h("ol", { class: "help" },
+      h("li", {}, "Open ", a("https://console.cloud.google.com/projectcreate", "Google Cloud → New project"), " (any name, e.g. Monkey)."),
+      h("li", {}, "Enable the ", a("https://console.cloud.google.com/apis/library/gmail.googleapis.com", "Gmail API"), " and the ", a("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com", "Google Calendar API"), "."),
+      h("li", {}, a("https://console.cloud.google.com/apis/credentials/consent", "OAuth consent screen"), ": External → fill the app name and your email → under Test users, add your own Google account."),
+      h("li", {}, a("https://console.cloud.google.com/apis/credentials", "Credentials"), " → Create credentials → OAuth client ID → Application type: Desktop app → Create → Download JSON."),
+      h("li", {}, "Back here: Load JSON file… (above), then Sign in. Your browser opens; pick your account; you may see “Google hasn't verified this app”: click Continue (it's your own app).")),
+    h("p", { class: "help" }, "Only need your calendar for the morning brief? Skip all this and use the Calendar link below instead."));
+}
+
+function googleEvent(p: any) {
+  const st = document.getElementById("googleStatus");
+  if (p.stage === "opening") {
+    if (st) st.replaceChildren("Finish signing in in your browser. Nothing opened? ",
+      extLink(p.url, "Open Google sign-in"));
+  } else if (p.stage === "done") {
+    if (st) st.textContent = "✓ Google connected";
+    toast("✓ Google connected");
+    void api.get_state().then((s) => { appState = s; });
+  } else if (p.stage === "error") {
+    if (st) st.textContent = `⚠ ${p.message}`;
+    toast(`⚠ ${p.message}`);
+  }
+}
+
+function benchEvent(p: any) {
+  const out = document.getElementById("benchOut");
+  if (!p.finished) { if (out) out.textContent = `Running… ${p.done}/${p.total}`; return; }
+  if (!p.ok) { if (out) out.textContent = `⚠ ${p.error}`; toast(`⚠ ${p.error}`); return; }
+  if (out) out.textContent = "✓ Done (results card on the right)";
+  card("📊 Routing benchmark", h("p", {}, p.summary),
+    p.misses?.length ? h("ul", { class: "items" }, ...p.misses.map((m: any) => h("li", {}, `“${m.text}” → ${m.task} (expected ${m.want.join(" / ")})`))) : "",
+    h("p", { class: "help" }, `Saved to ${p.path ?? "bench_routing.json"}. Nothing about routing changes automatically.`));
 }
 
 // ------------------------------------------------------------------ morning brief

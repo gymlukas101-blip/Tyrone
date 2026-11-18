@@ -42,7 +42,9 @@ export interface Api {
   edit_draft(draftId: string, token: string, subject: string, body: string): Promise<{ ok: boolean; error?: string }>;
   open_draft(draftId: string): Promise<void>;
   open_url(url: string): Promise<void>;
-  google_sign_in(): Promise<{ ok: boolean; error?: string }>;
+  google_sign_in(): Promise<{ ok: boolean; error?: string; started?: boolean; needs_client?: boolean }>;
+  google_client_file(): Promise<{ ok: boolean; error?: string }>;
+  routing_benchmark(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
   google_sign_out(): Promise<void>;
   test_outlook(): Promise<{ ok: boolean; error?: string }>;
   learn_style(): Promise<{ ok: boolean; error?: string; preview?: string }>;
@@ -244,7 +246,17 @@ function mockApi(): Api {
     async edit_draft() { return { ok: true }; },
     async open_draft() {},
     async open_url(url) { window.open(url, "_blank"); },
-    async google_sign_in() { return { ok: false, error: "Demo mode" }; },
+    async google_sign_in() {
+      later(400, () => emit([["google", { stage: "opening", url: "https://accounts.google.com/o/oauth2/auth?demo" }]]));
+      later(1800, () => emit([["google", { stage: "error", message: "Google blocked the sign-in. In Google Cloud → OAuth consent screen, add your Google account under Test users (demo)." }]]));
+      return { ok: true, started: true };
+    },
+    async google_client_file() { return { ok: false, error: "Demo mode" }; },
+    async routing_benchmark() {
+      let i = 0;
+      const iv = setInterval(() => { i += 3; emit([["bench", i >= 14 ? { finished: true, ok: true, summary: "Rules: 28/28 correct on the 28 of 42 requests they handle; 14 go to the classifier. Classifier: 86% right, median 0.71 s (max 1.2 s), $0.0042 total. (demo)", misses: [{ text: "tell me a joke", task: "general", want: ["chat"] }] } : { done: i, total: 14 }]]); if (i >= 14) clearInterval(iv); }, 300);
+      return { ok: true, started: true };
+    },
     async google_sign_out() {},
     async test_outlook() { return { ok: false, error: "Demo mode" }; },
     async learn_style() { return { ok: false, error: "Demo mode" }; },

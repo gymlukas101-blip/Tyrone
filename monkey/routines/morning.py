@@ -55,7 +55,7 @@ def candidate_schedule(events: list, now: datetime) -> dict[str, dict]:
     """Earliest recurring timed event per weekday over the next 2 weeks, as candidates for the user to confirm.
 
     Only calendar events (not Canvas due dates), not all-day, at most 4 hours long, and recurring: the same title
-    at the same time on that weekday at least twice, or a course-code-looking title (e.g. "COMM ARTS 100")."""
+    at the same time at least twice in the window, or a course-code-looking title (e.g. "COMM ARTS 100")."""
     import re
 
     course = re.compile(r"\b[A-Z][A-Z &]{1,14}\s?\d{3}\b")
@@ -68,11 +68,16 @@ def candidate_schedule(events: list, now: datetime) -> dict[str, dict]:
             continue
         key = (DAYS[st.weekday()], e.title.strip(), st.strftime("%H:%M"))
         seen.setdefault(key, []).append(st)
+    # "recurring" = the same title at the same time at least twice in the window, on any weekday (a MWF lecture
+    # still counts on a Wednesday that a holiday removed from the other week)
+    repeats: dict[tuple, int] = {}
+    for (day, title, hhmm), starts in seen.items():
+        repeats[(title, hhmm)] = repeats.get((title, hhmm), 0) + len(starts)
     out: dict[str, dict] = {}
     for (day, title, hhmm), starts in seen.items():
         if day not in SCHOOL_DAYS:
             continue
-        if len(starts) < 2 and not course.search(title):
+        if repeats[(title, hhmm)] < 2 and not course.search(title):
             continue
         cur = out.get(day)
         if cur is None or hhmm < cur["time"]:

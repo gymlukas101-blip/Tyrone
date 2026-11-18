@@ -28,7 +28,7 @@ from .brain.router import Router, classify_with_haiku
 from .brain.tools import Services, ToolRunner
 from .config import Config, resource_path
 from .integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
-from .integrations.canvas_ics import CanvasCalendar
+from .integrations.canvas_ics import CanvasCalendar, ICSCalendar
 from .integrations.garmin import GarminHealth
 from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvider
 from .integrations.outlook_com import OutlookProvider
@@ -102,6 +102,7 @@ class MonkeyApp:
         self.gcal = GoogleCalendarProvider(self.google)
         self.outlook = OutlookProvider()
         self.canvas = CanvasCalendar(lambda: self.cfg.settings.canvas_ics_url)
+        self.ics_calendar = ICSCalendar(lambda: keys.get("calendar_ics"))   # private iCal links (no OAuth)
         self.canvas_api = CanvasAPI(lambda: self.cfg.settings.canvas_base_url, lambda: keys.get("canvas_token"))
         self.board = AssignmentBoard(self.canvas_api, self.canvas, LocalChecks(self.cfg.db_path))
         self.garmin = GarminHealth(self.cfg.data_dir / "garmin")
@@ -113,7 +114,7 @@ class MonkeyApp:
         self.services = Services(
             emit=self._emit, memory=self.memory, approval=self.approval,
             mail={"gmail": self.gmail, "outlook": self.outlook},
-            calendars=[self.gcal, self.outlook, self.canvas],
+            calendars=[self.gcal, self.outlook, self.ics_calendar, self.canvas],
             image_search=self._images, video_search=self._videos if keys.get("youtube") else None,
             image_gen=self._generate_images,
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
@@ -282,7 +283,8 @@ class MonkeyApp:
 
     # ------------------------------------------------------------------ morning brief sources
     def _calendars(self) -> list:
-        return [p for p in (self.gcal, self.outlook) if self._ok(p)]   # not the Canvas feed: due dates aren't classes
+        # your calendars (Google sign-in, Outlook, private iCal links); never the Canvas feed: due dates aren't classes
+        return [p for p in (self.gcal, self.outlook, self.ics_calendar) if self._ok(p)]
 
     @staticmethod
     def _ok(p) -> bool:
@@ -712,6 +714,7 @@ class Api:
                 "canvas": bool(a.cfg.settings.canvas_ics_url),
                 "canvas_api": ks.get("canvas_token", False),
                 "garmin": a.garmin.connected(),
+                "calendar_ics": ks.get("calendar_ics", False),
             },
             "month_usd": a.ledger.month_to_date(),
             "budget_usd": a.cfg.settings.monthly_budget_usd,
@@ -727,6 +730,15 @@ class Api:
         value = (value or "").strip()
         if not value:
             return {"ok": False, "error": "Paste a key first"}
+        if name == "google_client":
+            from .integrations.google import validate_client
+
+            try:
+                validate_client(value)
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
+        if name == "calendar_ics" and not ICSCalendar(lambda: value).urls():
+            return {"ok": False, "error": "Paste the calendar's https:// (or webcal://) iCal link."}
         try:
             keys.set(name, value)
         except Exception as exc:  # noqa: BLE001
@@ -741,6 +753,17 @@ class Api:
             return {"ok": True, "hint": keys.hints().get(name, ""), "note": check.get("note", "")}
         if name == "youtube":
             a.services.video_search = a._videos
+        if name == "calendar_ics":
+            from .routines.morning import TZ
+
+            now = datetime.now(TZ)
+            try:
+                a.ics_calendar._cache.clear()
+                n = len(a.ics_calendar.list_events(now, now + timedelta(days=7)))
+                return {"ok": True, "note": f"Calendar link works: {n} events in the next 7 days."}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": True, "warning": f"Saved, but reading it failed ({type(exc).__name__}). "
+                                               "Check that it's the *secret* iCal address."}
         return {"ok": True, "hint": keys.hints().get(name, "")}
 
     def delete_key(self, name: str):
@@ -932,6 +955,37 @@ class Api:
 
     def update_state(self):
         return self._app.updater.state()
+
+    # routing benchmark (runs here, with the key Monkey already stores; ~14 Haiku calls, < $0.01)
+    def routing_benchmark(self):
+        from .brain.bench_routing import live, offline, summary_text
+
+        a = self._app
+        if getattr(a, "_bench_running", False):
+            return {"ok": False, "error": "The benchmark is already running."}
+        client = a._ensure_client()
+        if client is None:
+            return {"ok": False, "error": "Add your Anthropic key first (Settings → API keys)."}
+        a._bench_running = True
+
+        def run():
+            try:
+                res = {"offline": offline()}
+                res["live"] = live(client, on_progress=lambda i, n, t: a.ui.emit("bench", {"done": i, "total": n}),
+                                   record=lambda u: a._record_usage(HAIKU, "low", "benchmark:routing", u))
+                res["summary"] = summary_text(res)
+                (a.cfg.data_dir / "bench_routing.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
+                a.ui.emit("bench", {"finished": True, "ok": True, "summary": res["summary"],
+                                    "path": str(a.cfg.data_dir / "bench_routing.json"),
+                                    "misses": res["live"]["misses"][:6]})
+            except Exception as exc:  # noqa: BLE001
+                log.exception("routing benchmark failed")
+                a.ui.emit("bench", {"finished": True, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+            finally:
+                a._bench_running = False
+
+        threading.Thread(target=run, name="bench", daemon=True).start()
+        return {"ok": True, "started": True}
 
     # morning brief (in-app preview; no external notifications)
     def brief_status(self):
@@ -1168,11 +1222,49 @@ class Api:
 
     # accounts
     def google_sign_in(self):
+        """Starts the browser sign-in in the background and returns at once. Progress comes as "google" events:
+        opening (with the sign-in link, in case the browser didn't come up) -> done | error."""
+        from .integrations.google import validate_client
+
+        a = self._app
+        if getattr(a, "_google_signing_in", False):
+            return {"ok": False, "error": "Already waiting for you to finish signing in in the browser."}
         try:
-            self._app.google.sign_in()
-            return {"ok": True}
-        except Exception as exc:  # noqa: BLE001
+            validate_client(keys.get("google_client") or "")
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc), "needs_client": True}
+        a._google_signing_in = True
+
+        def run():
+            try:
+                a.google.sign_in(on_url=lambda url: a.ui.emit("google", {"stage": "opening", "url": url}))
+                a.ui.emit("google", {"stage": "done"})
+            except Exception as exc:  # noqa: BLE001
+                log.warning("google sign-in failed: %s", type(exc).__name__)
+                a.ui.emit("google", {"stage": "error", "message": str(exc)})
+            finally:
+                a._google_signing_in = False
+
+        threading.Thread(target=run, name="google-signin", daemon=True).start()
+        return {"ok": True, "started": True}
+
+    def google_client_file(self):
+        """Pick the client_secret_*.json downloaded from Google Cloud (Desktop app) and save it."""
+        import webview
+
+        from .integrations.google import validate_client
+
+        a = self._app
+        dialog = getattr(getattr(webview, "FileDialog", None), "OPEN", None) or webview.OPEN_DIALOG
+        picked = a.ui.window.create_file_dialog(dialog, file_types=("Google client JSON (*.json)",))
+        if not picked:
+            return {"ok": False, "error": "Nothing picked."}
+        try:
+            text = Path(picked[0]).read_text(encoding="utf-8")
+            validate_client(text)
+        except (OSError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
+        return self.save_key("google_client", text)
 
     def google_sign_out(self):
         self._app.google.sign_out()

@@ -27,6 +27,39 @@ SCOPES = [
 ]
 
 
+def validate_client(text: str) -> dict:
+    """The OAuth client JSON Google gives you for a *Desktop app*. Raises ValueError with what to fix."""
+    if not text.strip():
+        raise ValueError("Add your Google OAuth client first: Settings → Accounts → Set up Google → Load JSON file.")
+    try:
+        info = json.loads(text)
+    except json.JSONDecodeError:
+        raise ValueError("That isn't the JSON file from Google Cloud (it should start with {\"installed\": …}).")
+    if "web" in info and "installed" not in info:
+        raise ValueError("That's a *Web application* client. In Google Cloud → Credentials, create an OAuth client "
+                         "of type **Desktop app**, download its JSON and load that one.")
+    inst = info.get("installed")
+    if not isinstance(inst, dict) or not inst.get("client_id") or not inst.get("client_secret"):
+        raise ValueError("The client JSON is missing client_id/client_secret. Download it again from Google Cloud → "
+                         "Credentials (Desktop app).")
+    return info
+
+
+def explain_sign_in_error(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    low = text.lower()
+    if "timeout" in low or "timed out" in low:
+        return "Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser."
+    if "access_denied" in low or "access denied" in low:
+        return ("Google blocked the sign-in. In Google Cloud → OAuth consent screen, add your Google account under "
+                "Test users (the app stays in Testing mode), then try again.")
+    if "redirect_uri" in low:
+        return "Google rejected the redirect: make sure the client is a Desktop app (not Web)."
+    if "invalid_client" in low:
+        return "Google says the client is invalid: download the Desktop app JSON again and reload it."
+    return f"Google sign-in failed ({text[:160]})."
+
+
 class GoogleAuth:
     """Holds credentials; runs the browser sign-in flow on demand."""
 
@@ -37,14 +70,37 @@ class GoogleAuth:
     def connected(self) -> bool:
         return bool(keys.get("google_token"))
 
-    def sign_in(self) -> None:
+    def sign_in(self, on_url=None, timeout_s: int = 300) -> None:
+        """Browser sign-in. on_url(url) gets the Google sign-in link as soon as it exists, so the app can show a
+        clickable link if the browser doesn't come up (or opens behind Monkey)."""
+        import webbrowser
+
         from google_auth_oauthlib.flow import InstalledAppFlow
 
-        client = keys.get("google_client")
-        if not client:
-            raise RuntimeError("Paste your Google OAuth client JSON in Settings first.")
-        flow = InstalledAppFlow.from_client_config(json.loads(client), SCOPES)
-        creds = flow.run_local_server(port=0, prompt="consent", open_browser=True)
+        info = validate_client(keys.get("google_client") or "")
+        flow = InstalledAppFlow.from_client_config(info, SCOPES)
+
+        class _Opener:
+            def open(self, url, new=0, autoraise=True):
+                if on_url is not None:
+                    on_url(url)
+                try:
+                    return webbrowser.open(url, new=new, autoraise=autoraise)
+                except Exception:  # noqa: BLE001 - the link in the app still works
+                    return False
+
+        real_get = webbrowser.get
+        webbrowser.get = lambda using=None: _Opener()        # run_local_server opens via webbrowser.get().open()
+        try:
+            creds = flow.run_local_server(port=0, open_browser=True, timeout_seconds=timeout_s,
+                                          authorization_prompt_message="",
+                                          success_message="Monkey is connected to Google. You can close this tab.")
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(explain_sign_in_error(exc)) from exc
+        finally:
+            webbrowser.get = real_get
+        if creds is None or not getattr(creds, "token", None):
+            raise RuntimeError("Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser.")
         keys.set("google_token", creds.to_json())
         self._creds = creds
 

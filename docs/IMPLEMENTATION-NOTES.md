@@ -185,3 +185,41 @@ There was no cross-session recall, no provenance, and no correct or forget tools
 3. Settings → **Morning brief**: **Detect from calendar** (needs Google or Outlook connected), check the times, then **Confirm schedule**.
 4. Optional: enter your Canvas token's expiry date; preview and then **Enable** the scheduled task.
 5. Optional: `python -m tools.bench_routing --live` for the classifier numbers.
+
+## Fix: Google sign-in "does nothing", a calendar link without sign-in, and the routing benchmark in the app
+
+**Root causes:**
+1. Every toast was appended to `<body>`, and the modal Settings `<dialog>` sits on the browser's top layer above it. So **every message shown while Settings was open was invisible**, including Google's "add your OAuth client JSON first".
+2. Google sign-in needs a Google Cloud *Desktop app* OAuth client, and there was no guide for creating one.
+3. The browser flow blocked with no timeout and no visible link.
+4. The calendar feed parser didn't expand repeating events, so a weekly class only existed at its first date.
+
+**What changed:**
+- **Toasts:** `dom.ts` puts toasts inside the open dialog; errors stay 6.5 s.
+- **Client JSON check:** `google.validate_client` accepts Desktop clients only. A Web client, bad JSON or missing fields each get a specific message. It runs on paste, on **Load JSON file…**, and on sign-in.
+- **Sign-in flow:**
+  - `GoogleAuth.sign_in(on_url)` passes the sign-in link to the UI, which shows "Open Google sign-in" if no browser appeared.
+  - Timeout is 5 minutes.
+  - Errors are mapped to plain next steps (access_denied → add yourself as a test user, redirect → use a Desktop client, timeout).
+  - `Api.google_sign_in` runs in the background with `google` events, and a second click is refused while one is pending.
+  - Settings → Accounts has a 5-step **Set up Google** guide whose links open in your browser.
+- **Calendar link (no OAuth):**
+  - a `calendar_ics` secret holds one or more private iCal links (e.g. Google's "Secret address in iCal format");
+  - `ICSCalendar` reads them with `source="ics"`, never as Canvas;
+  - `parse_ics` expands RRULE/RDATE/EXDATE with `recurring-ical-events` (new dependency, bundled in the spec);
+  - the link is test-read on save ("N events in the next 7 days");
+  - it feeds the `get_calendar` tool, the brief's Today section, and **Detect from calendar**.
+- **Recurrence counting:** `candidate_schedule` now counts a class as recurring by the same title and time on *any* weekday, so a holiday-skipped Wednesday doesn't drop it.
+- **Benchmark in the app:**
+  - the code moved to `monkey/brain/bench_routing.py`, and `tools/bench_routing.py` is now a wrapper;
+  - Settings → Brain → **Run routing benchmark** runs it on your PC with the key Monkey already stores, logged in spend as `benchmark:routing`;
+  - results show on a card and are saved to `%APPDATA%\Monkey\bench_routing.json`;
+  - routing doesn't change automatically.
+- **Why not run it from here:** the cloud session can't hold a Claude API key securely. The platform won't inject secrets into api.anthropic.com requests, and a plain environment variable is readable by anything run in this environment.
+
+**Tests:**
+- `tests/test_ics_recurrence.py` (5): expansion months after the first date, EXDATE, DST, schedule detection, URL parsing.
+- `tests/test_google_bench.py` (9): client validation, error mapping, the sign-in link callback, 300 s timeout and token save, the API's needs-client path, background events with the second click refused, a Web client rejected on paste, calendar wiring that never includes Canvas, and benchmark aggregation and key requirement.
+- Playwright (demo build): with Settings open, a sign-in error toast is **inside the dialog and on top** (`elementFromPoint` hit), the status line shows the reason, and the benchmark card renders.
+
+Full suite: 263 passed, 1 skipped.

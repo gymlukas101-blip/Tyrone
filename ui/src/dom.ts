@@ -33,10 +33,13 @@ export const fmtTime = (iso?: string) => {
   return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 
-export function toast(text: string, ms = 3500) {
+export function toast(text: string, ms?: number) {
   const t = h("div", { class: "toast" }, text);
-  document.body.append(t);
-  setTimeout(() => t.remove(), ms);
+  // A modal <dialog> (Settings) sits on the browser's top layer, above everything in <body>. Put the toast inside
+  // the open dialog so messages shown while Settings is open are actually visible.
+  const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
+  host.append(t);
+  setTimeout(() => t.remove(), ms ?? (text.startsWith("⚠") ? 6500 : 3500));
 }
 
 export const safeHttp = (u: string) => (/^https:\/\//i.test(u) ? u : "");

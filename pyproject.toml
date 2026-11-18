@@ -9,6 +9,7 @@ dependencies = [
   "httpx>=0.27",
   "keyring>=25",
   "icalendar>=6",
+  "recurring-ical-events>=3.3",
   "python-dateutil>=2.9",
   "cryptography>=42",
 ]
