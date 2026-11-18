@@ -2,8 +2,14 @@
 // Mouth follows the loudness of his voice; eyes blink; idle breathing; arms pose per state;
 // emotes: "celebrate" (double-bicep flex + banana rain), "laugh", "shrug".
 
-export type AvatarState = "idle" | "listening" | "thinking" | "speaking" | "transcribing";
-export type Emote = "celebrate" | "laugh" | "shrug";
+import type { AvatarLike, AvatarState, Emote } from "./avatar-types";
+
+export type { AvatarState, Emote };
+type SvgEmote = "celebrate" | "laugh" | "shrug";
+const SVG_EMOTE: Record<Emote, SvgEmote> = {
+  celebrate: "celebrate", flex: "celebrate", dance: "celebrate", happy: "celebrate", wave: "celebrate",
+  laugh: "laugh", shrug: "shrug", surprised: "shrug", sad: "shrug", angry: "shrug",
+};
 
 const FUR = "#7a4518";
 const FUR_DARK = "#5a300f";
@@ -146,7 +152,7 @@ const POSES: Record<string, Pose> = {
   laugh: [30, 60, -30, -60],
 };
 
-export class Avatar {
+export class Avatar implements AvatarLike {
   private root: HTMLElement;
   private q = <T extends Element>(id: string) => this.root.querySelector<T>(`#${id}`)!;
   private state: AvatarState = "idle";
@@ -156,7 +162,7 @@ export class Avatar {
   private blinkUntil = 0;
   private roundness = 0;
   private pose: Pose = [...POSES.idle] as Pose;
-  private emoteName: Emote | null = null;
+  private emoteName: SvgEmote | null = null;
   private emoteUntil = 0;
   private nextFidget = performance.now() + 9000;
 
@@ -178,10 +184,15 @@ export class Avatar {
     this.level = Math.max(0, Math.min(1, v));
   }
 
+  setVisemes(_w: Record<string, number>) {
+    // The SVG fallback lip-syncs from loudness only.
+  }
+
   emote(name: Emote, ms = 2200, rain = true) {
-    this.emoteName = name;
+    const mapped = SVG_EMOTE[name] ?? "celebrate";
+    this.emoteName = mapped;
     this.emoteUntil = performance.now() + ms;
-    if (name === "celebrate" && rain) this.bananaRain();
+    if (mapped === "celebrate" && rain && name !== "wave" && name !== "happy") this.bananaRain();
   }
 
   private bananaRain() {

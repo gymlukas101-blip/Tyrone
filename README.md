@@ -1,10 +1,16 @@
 # Monkey
 
-A Jarvis-style desktop voice assistant for Windows, starring a buff cartoon monkey in a jungle-themed app. Say **"Hey Monkey"**, ask anything, and he answers out loud, lip-syncing, flexing when you finish your work.
+A Jarvis-style desktop voice assistant for Windows, starring a rigged 3D buff cartoon monkey in a jungle-themed app. Say **"Hey Monkey"**, ask anything, and he answers out loud, lip-syncing, flexing when you finish your work.
 
 ![Monkey](assets/monkey.png)
 
 ## What he does
+- 🐒 **Live 3D avatar** (three.js, `ui/public/models/monkey.glb`):
+  - 12 animations: idle, listen, think, talk, happy, laugh, sad, angry, surprised, wave, flex, dance.
+  - Lip sync: mouth shapes estimated from the voice audio in real time.
+  - Blinking, and cyan eye rings and headset LED that glow with his state.
+  - Reactions: he chooses expressions himself, flexes or dances when you finish work, and waves hello.
+  - If the PC can't run 3D, he falls back to the 2D SVG monkey.
 - 🎙 **Wake word + voice:**
   - "Hey Monkey" works out of the box: open-vocabulary keyword spotting (sherpa-onnx), so no training is needed. There's also a push-to-talk hotkey.
   - Monkey answers in his own designed voice (Fish Audio), and the avatar lip-syncs.

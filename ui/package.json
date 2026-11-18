@@ -9,8 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/three": "0.172.0",
     "dompurify": "3.2.6",
-    "marked": "15.0.12"
+    "marked": "15.0.12",
+    "three": "0.172.0"
   },
   "devDependencies": {
     "typescript": "5.8.3",

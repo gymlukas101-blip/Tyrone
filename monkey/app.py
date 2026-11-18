@@ -43,6 +43,7 @@ class UIBus:
         self.window = None
         self._q: queue.Queue[tuple[str, dict]] = queue.Queue()
         self._level: float | None = None
+        self._visemes: dict | None = None
         threading.Thread(target=self._loop, name="ui-bus", daemon=True).start()
 
     def emit(self, name: str, payload: dict | None = None) -> None:
@@ -50,6 +51,9 @@ class UIBus:
 
     def level(self, v: float) -> None:
         self._level = v
+
+    def visemes(self, w: dict) -> None:
+        self._visemes = w
 
     def _loop(self) -> None:
         while True:
@@ -62,6 +66,9 @@ class UIBus:
             if self._level is not None:
                 batch.append(("level", {"v": round(self._level, 3)}))
                 self._level = None
+            if self._visemes is not None:
+                batch.append(("visemes", self._visemes))
+                self._visemes = None
             if batch:
                 try:
                     self.window.evaluate_js(f"window.__monkeyEvents && window.__monkeyEvents({json.dumps(batch, default=str)})")
@@ -120,6 +127,7 @@ class MonkeyApp:
         self.wakeword_label = "starting…"
         self._agent_state = "idle"
         self._listening = False
+        self._waved = False
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
 
@@ -155,7 +163,7 @@ class MonkeyApp:
         self.speaker = Speaker(
             [FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
                      lambda: self.cfg.settings.fish_model), SystemTTS()],
-            on_level=self.ui.level, on_state=lambda _: self._publish_state(),
+            on_level=self.ui.level, on_state=lambda _: self._publish_state(), on_visemes=self.ui.visemes,
         )
         try:
             self.speaker.start()
@@ -221,6 +229,9 @@ class MonkeyApp:
         self.agent.cancel()
         self._listening = True
         self.ui.emit("wake", {})
+        if not self._waved:  # say hi with a wave the first time each run
+            self._waved = True
+            self.ui.emit("emote", {"name": "wave"})
         self._publish_state()
 
     def push_to_talk(self) -> None:
@@ -582,7 +593,9 @@ def run() -> None:
         app.start_audio()
         _tray(app, window)
 
-    webview.start(after_start, private_mode=False, storage_path=str(app.cfg.data_dir / "webview"))
+    # A plain file path (not file://) makes pywebview serve ui/dist over its local HTTP server,
+    # which the 3D avatar needs to fetch models/monkey.glb. http_server=True makes that explicit.
+    webview.start(after_start, http_server=True, private_mode=False, storage_path=str(app.cfg.data_dir / "webview"))
 
 
 def selftest() -> int:
@@ -594,6 +607,8 @@ def selftest() -> int:
         app = MonkeyApp(data_dir=Path(tmp), headless=True)
         if not resource_path("ui", "dist", "index.html").exists():
             problems.append("UI not bundled")
+        if not resource_path("ui", "dist", "models", "monkey.glb").exists():
+            problems.append("3D monkey model not bundled")
         if "Monkey" not in app.agent.system:
             problems.append("persona missing")
         r = app.router.route("draft an email to my professor")

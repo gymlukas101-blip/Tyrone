@@ -70,6 +70,10 @@ LOCAL_TOOLS: list[dict] = [
     _tool("get_health", "Garmin data: sleep score and stages, heart rate over the day, resting HR, HRV, body battery, "
           "stress, steps. `day` is 'today' (includes last night's sleep), 'yesterday', or YYYY-MM-DD. Shows a "
           "health card on screen.", {"day": S}),
+    _tool("emote", "Make your 3D avatar react with a short animation. Use sparingly, at most once per reply: "
+          "good news -> happy or flex, a joke -> laugh, greeting -> wave, the user finished something -> dance, "
+          "bad news -> sad, wow -> surprised.",
+          {"name": {"type": "string", "enum": ["happy", "laugh", "sad", "angry", "surprised", "wave", "flex", "dance"]}}),
     _tool("get_weather", "Current weather and forecast for the user's location (Madison by default).", {}),
     _tool("escalate", "Hand this request to a stronger model. Use when the request needs web search, careful "
           "reasoning or careful writing that you can't do well.", {"reason": S}),
@@ -273,6 +277,10 @@ class ToolRunner:
         self.s.emit("health", h)
         return {"date": h["date"], "summary": summarize(h), "sleep": h["sleep"],
                 "heart": {k: v for k, v in h["heart"].items() if k != "series"}, "hrv": h["hrv"], "day": h["day"]}
+
+    def t_emote(self, name: str):
+        self.s.emit("emote", {"name": name})
+        return "ok"
 
     def t_get_weather(self):
         if not self.s.weather:

@@ -1,5 +1,11 @@
 # Making Monkey highly animated: plan (researched 2026-11-18)
 
+> **Update (v0.3):** We went with the 3D route after all.
+> - A rigged glTF model (57 bones, 45 shape keys including the 15 Oculus visemes, 12 animation clips) is now live in the app via three.js (`ui/src/avatar3d.ts`).
+> - Lip sync uses a spectral viseme estimate computed in Python (`monkey/audio/visemes.py`).
+> - The Rive pipeline below is optional now.
+> - HeadAudio or Fish timestamps remain an upgrade path for sharper visemes.
+
 ## Where we are now (v0.2)
 - Monkey is a hand-coded layered SVG (`ui/src/avatar.ts`).
 - Already in place:

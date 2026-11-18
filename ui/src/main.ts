@@ -1,7 +1,9 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
-import { Avatar, type AvatarState } from "./avatar";
+import { Avatar } from "./avatar";
+import { Avatar3D, webglAvailable } from "./avatar3d";
+import type { AvatarLike, AvatarState } from "./avatar-types";
 import { type Api, type AppState, type Importance, waitForApi } from "./bridge";
 import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
 import { renderAssignments, markChecked } from "./assignments";
@@ -23,7 +25,26 @@ let api: Api;
 let appState: AppState;
 let importance: Importance = "normal";
 let botBubble: HTMLElement | null = null;
-const avatar = new Avatar($("#avatar"));
+// 3D monkey when WebGL works and the model loads; otherwise the SVG monkey.
+let avatar: AvatarLike;
+const avatarHost = $("#avatar");
+const forceSvg = new URLSearchParams(location.search).has("svg");
+if (!forceSvg && webglAvailable()) {
+  const a3 = new Avatar3D(avatarHost);
+  (window as any).__monkeyAvatarObj = a3;
+  avatar = a3;
+  (window as any).__monkeyAvatar = { ready: false, kind: "3d", clips: [], morphs: [] };
+  a3.ready.then(() => {
+    (window as any).__monkeyAvatar = { ready: true, kind: "3d", clips: a3.clips, morphs: a3.morphs };
+  }).catch((err) => {
+    console.warn("3D avatar failed, using SVG:", err);
+    avatar = new Avatar(avatarHost);
+    (window as any).__monkeyAvatar = { ready: true, kind: "svg", clips: [], morphs: [] };
+  });
+} else {
+  avatar = new Avatar(avatarHost);
+  (window as any).__monkeyAvatar = { ready: true, kind: "svg", clips: [], morphs: [] };
+}
 decorateJungle($("#stage"));
 const LABELS: Record<AvatarState, string> = {
   idle: "Chillin' in the jungle", listening: "Ears up…", transcribing: "Got it…", thinking: "Thinking… 🍌", speaking: "Talking",
@@ -162,6 +183,7 @@ function onEvent(name: string, p: any) {
   switch (name) {
     case "state": setState(p.state); if (p.state === "idle") botBubble = null; break;
     case "level": avatar.setLevel(p.v); break;
+    case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
     case "delta":
       if (!botBubble) botBubble = addMsg("bot", "");

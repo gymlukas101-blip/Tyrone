@@ -83,7 +83,10 @@ function mockApi(): Api {
     let i = 0;
     const words = text.split(" ");
     const iv = setInterval(() => {
-      emit([["delta", { text: (i ? " " : "") + words[i] }], ["level", { v: 0.3 + Math.random() * 0.6 }]]);
+      const vs = ["viseme_aa", "viseme_O", "viseme_E", "viseme_I", "viseme_U", "viseme_SS", "viseme_PP", "viseme_FF"];
+      const pick = vs[Math.floor(Math.random() * vs.length)];
+      emit([["delta", { text: (i ? " " : "") + words[i] }], ["level", { v: 0.3 + Math.random() * 0.6 }],
+            ["visemes", { [pick]: 0.6 + Math.random() * 0.4 }]]);
       if (++i >= words.length) {
         clearInterval(iv);
         emit([["level", { v: 0 }], ["done", { text }], ["state", { state: "idle" }]]);

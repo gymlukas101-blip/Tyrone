@@ -137,3 +137,13 @@ def test_draft_then_voice_send_never_via_model(tmp_path):
     agent.handle("yes")
     assert mail.sent == ["prov-1"]
     assert len(client.calls) == 2  # approval turns never hit the model
+
+
+def test_emote_tool_emits_event(tmp_path):
+    script = [
+        ([tool_block("emote", {"name": "dance"})], "tool_use"),
+        ([text_block("Let's go, you finished it!")], "end_turn"),
+    ]
+    agent, client, events, *_ = build(tmp_path, script)
+    agent.handle("I just finished my essay")
+    assert ("emote", {"name": "dance"}) in events

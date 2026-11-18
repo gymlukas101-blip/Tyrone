@@ -13,15 +13,19 @@ from typing import Callable
 import numpy as np
 
 from .tts import TTS_RATE
+from .visemes import estimate_visemes
 
 log = logging.getLogger(__name__)
 BLOCK = 1024  # ~23ms at 44.1k -> ~43 mouth updates per second
 
 
 class Speaker:
-    def __init__(self, engines: list, on_level: Callable[[float], None], on_state: Callable[[bool], None]):
+    def __init__(self, engines: list, on_level: Callable[[float], None], on_state: Callable[[bool], None],
+                 on_visemes: Callable[[dict], None] | None = None):
         self.engines = engines            # tried in order (Fish first, system voice fallback)
         self.on_level = on_level
+        self.on_visemes = on_visemes
+        self._prev_rms = 0.0
         self.on_state = on_state
         self._sentences: queue.Queue[str | None] = queue.Queue()
         self._audio: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=400)
@@ -109,7 +113,10 @@ class Speaker:
             self._buf = self._buf[take:]
             filled += take
         outdata[:, 0] = out
-        level = float(np.sqrt(np.mean(out.astype(np.float32) ** 2))) / 6000.0 if filled else 0.0
-        self.on_level(min(1.0, level))
+        rms = float(np.sqrt(np.mean(out.astype(np.float32) ** 2))) if filled else 0.0
+        self.on_level(min(1.0, rms / 6000.0))
+        if self.on_visemes is not None and (filled or self._prev_rms):
+            self.on_visemes(estimate_visemes(out, TTS_RATE, self._prev_rms))  # one 1024-pt FFT: microseconds
+        self._prev_rms = rms
         if filled == 0 and self._pending == 0 and self._audio.empty() and self._speaking:
             self._set_speaking(False)
