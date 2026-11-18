@@ -15,6 +15,7 @@ KNOWN_KEYS = {
     "fish": "FISH_API_KEY",
     "deepgram": "DEEPGRAM_API_KEY",
     "youtube": "YOUTUBE_API_KEY",
+    "openai": "OPENAI_API_KEY",
     "brave": "BRAVE_API_KEY",
     "canvas_token": "CANVAS_TOKEN",
     "google_token": "MONKEY_GOOGLE_TOKEN",     # OAuth token JSON (refresh token)

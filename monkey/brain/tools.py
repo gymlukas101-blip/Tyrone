@@ -74,6 +74,9 @@ LOCAL_TOOLS: list[dict] = [
           "good news -> happy or flex, a joke -> laugh, greeting -> wave, the user finished something -> dance, "
           "bad news -> sad, wow -> surprised.",
           {"name": {"type": "string", "enum": ["happy", "laugh", "sad", "angry", "surprised", "wave", "flex", "dance"]}}),
+    _tool("generate_image", "Create new images with AI (GPT Image) from a description and show them on screen. "
+          "Use when the user asks you to make, draw, design or imagine a picture. count is 1-4.",
+          {"prompt": S, "count": I}),
     _tool("get_weather", "Current weather and forecast for the user's location (Madison by default).", {}),
     _tool("escalate", "Hand this request to a stronger model. Use when the request needs web search, careful "
           "reasoning or careful writing that you can't do well.", {"reason": S}),
@@ -96,6 +99,7 @@ class Services:
     mail: dict[str, MailProvider] = field(default_factory=dict)
     calendars: list[CalendarProvider] = field(default_factory=list)
     image_search: Callable[[str, int], list[dict]] | None = None
+    image_gen: Callable[[str, int], list[dict]] | None = None     # GPT Image -> [{"title","src","thumb","page"}]
     video_search: Callable[[str, int], list[dict]] | None = None
     weather: Callable[[], dict] | None = None
     assignments: Any = None                                # AssignmentBoard
@@ -277,6 +281,14 @@ class ToolRunner:
         self.s.emit("health", h)
         return {"date": h["date"], "summary": summarize(h), "sleep": h["sleep"],
                 "heart": {k: v for k, v in h["heart"].items() if k != "series"}, "hrv": h["hrv"], "day": h["day"]}
+
+    def t_generate_image(self, prompt: str, count: int = 1):
+        if not self.s.image_gen:
+            return "Image generation isn't set up. Tell the user to add an OpenAI API key in Settings."
+        self.s.emit("state", {"state": "thinking"})
+        imgs = self.s.image_gen(prompt, max(1, min(count or 1, 4)))
+        self.s.emit("images", {"query": prompt[:80], "images": imgs, "generated": True})
+        return f"Generated {len(imgs)} image(s) and showed them on screen."
 
     def t_emote(self, name: str):
         self.s.emit("emote", {"name": name})

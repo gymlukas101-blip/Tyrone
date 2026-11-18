@@ -31,6 +31,7 @@ from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvid
 from .integrations.outlook_com import OutlookProvider
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
 from .memory.store import MonkeyMemory
+from .updater import Updater
 
 log = logging.getLogger("monkey")
 
@@ -105,6 +106,7 @@ class MonkeyApp:
             mail={"gmail": self.gmail, "outlook": self.outlook},
             calendars=[self.gcal, self.outlook, self.canvas],
             image_search=self._images, video_search=self._videos if keys.get("youtube") else None,
+            image_gen=self._generate_images,
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin,
@@ -130,6 +132,7 @@ class MonkeyApp:
         self._waved = False
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
+        self.updater = Updater(self.ui.emit, enabled=lambda: self.cfg.settings.auto_update)
 
     # ------------------------------------------------------------------ setup
     def _setup_logging(self) -> None:
@@ -290,6 +293,20 @@ class MonkeyApp:
     def _record_usage(self, model: str, effort: str, purpose: str, usage) -> None:
         self.ledger.record(model, effort, purpose, Usage.from_response(usage))
 
+    def _generate_images(self, prompt: str, count: int, refs=None, rules: bool = False) -> list[dict]:
+        """GPT Image generation -> thumbnails (data URIs) for the UI; full PNGs saved in %APPDATA%\\Monkey\\images."""
+        from .integrations.image_gen import MONKEY_RULES, generate
+
+        key = keys.get("openai")
+        if not key:
+            raise RuntimeError("Add your OpenAI API key in Settings to generate images.")
+        full_prompt = f"{MONKEY_RULES}\n\n{prompt}" if rules else prompt
+        res = generate(full_prompt, self.cfg.data_dir / "images", refs=refs, n=count, api_key=key,
+                       model=self.cfg.settings.image_model, size="1024x1536" if rules else "1024x1024")
+        self.ledger.record_usd(self.cfg.settings.image_model, "image", res.cost_usd)
+        return [{"title": p.stem, "src": _thumb_data_uri(p), "thumb": _thumb_data_uri(p, 384),
+                 "page": p.as_uri(), "path": str(p)} for p in res.paths]
+
     def _images(self, query: str, count: int):
         key = keys.get("brave")
         if key:
@@ -306,6 +323,19 @@ class MonkeyApp:
     def _open_url(url: str) -> None:
         if url.startswith(("http://", "https://")):
             webbrowser.open(url)
+
+
+def _thumb_data_uri(path: Path, size: int = 1024) -> str:
+    """Downscaled JPEG data URI so generated images show in the UI without a file server."""
+    import io
+
+    from PIL import Image
+
+    im = Image.open(path).convert("RGB")
+    im.thumbnail((size, size))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 # ---------------------------------------------------------------------------- JS API
@@ -366,6 +396,51 @@ class Api:
         if self._app.speaker:
             self._app.speaker.stop()
         self._app.agent.cancel()
+
+    # avatar lab (prototype designs)
+    def list_prototypes(self):
+        st = self._app.cfg.settings
+        return {"favorite": st.favorite_prototype, "notes": st.prototype_notes, "model": st.image_model,
+                "has_key": bool(keys.get("openai"))}
+
+    def pick_prototype(self, proto_id: str, notes: str = ""):
+        st = self._app.cfg.settings
+        notes_map = dict(st.prototype_notes or {})
+        if notes:
+            notes_map[proto_id] = notes[:2000]
+        self._app.cfg.update(favorite_prototype=proto_id, prototype_notes=notes_map)
+        return self.list_prototypes()
+
+    def save_prototype_note(self, proto_id: str, notes: str):
+        notes_map = dict(self._app.cfg.settings.prototype_notes or {})
+        notes_map[proto_id] = (notes or "")[:2000]
+        self._app.cfg.update(prototype_notes=notes_map)
+        return True
+
+    def generate_prototypes(self, direction: str, count: int = 1, ref_hero: str = ""):
+        """New Monkey design ideas: the design rules + your direction, using a prototype hero as reference."""
+        ref = None
+        if ref_hero and ".." not in ref_hero:
+            cand = resource_path("ui", "dist", *ref_hero.split("/"))
+            ref = [cand] if cand.exists() else None
+        try:
+            imgs = self._app._generate_images(
+                f"Art direction: {direction.strip()[:1500]}\n\nHero illustration: full body, polished stylized "
+                "3D render, soft clumped fur, warm key light and cyan rim light, vivid jungle background with bananas.",
+                max(1, min(int(count or 1), 2)), refs=ref, rules=True)
+            return {"ok": True, "images": imgs}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    # updates
+    def check_update(self):
+        return self._app.updater.check(download=True)
+
+    def apply_update(self):
+        return self._app.updater.apply()
+
+    def update_state(self):
+        return self._app.updater.state()
 
     def new_conversation(self):
         self._app.agent.new_session()
@@ -592,6 +667,7 @@ def run() -> None:
     def after_start():
         app.start_audio()
         _tray(app, window)
+        app.updater.start_background()
 
     # A plain file path (not file://) makes pywebview serve ui/dist over its local HTTP server,
     # which the 3D avatar needs to fetch models/monkey.glb. http_server=True makes that explicit.
@@ -621,7 +697,7 @@ def selftest() -> int:
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")
         for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray",
-                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece"):
+                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack"):
             try:
                 __import__(mod)
             except Exception as exc:  # noqa: BLE001

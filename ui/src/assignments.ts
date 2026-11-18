@@ -36,6 +36,16 @@ function burst(at: HTMLElement) {
   }
   at.append(b);
   setTimeout(() => b.remove(), 700);
+  // Game-style reward pop over the row.
+  const row = at.closest("li");
+  if (row) {
+    const box = row.getBoundingClientRect();
+    const r = h("span", { class: "reward", "aria-hidden": "true" }, "+1 🍌 NICE!");
+    r.style.left = `${box.left + box.width / 2}px`;
+    r.style.top = `${box.top}px`;
+    document.body.append(r);
+    setTimeout(() => r.remove(), 950);
+  }
 }
 
 function row(it: Item) {

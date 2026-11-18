@@ -43,7 +43,16 @@ export interface Api {
   garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
   garmin_mfa(code: string): Promise<{ ok: boolean; status?: string; error?: string }>;
   garmin_logout(): Promise<void>;
+  list_prototypes(): Promise<{ favorite: string; notes: Record<string, string>; model: string; has_key: boolean }>;
+  pick_prototype(id: string, notes: string): Promise<{ favorite: string; notes: Record<string, string>; model: string; has_key: boolean }>;
+  save_prototype_note(id: string, notes: string): Promise<boolean>;
+  generate_prototypes(direction: string, count: number, refHero: string): Promise<{ ok: boolean; error?: string; images?: { src: string; title: string }[] }>;
+  check_update(): Promise<UpdateState>;
+  apply_update(): Promise<UpdateState & { error?: string }>;
+  update_state(): Promise<UpdateState>;
 }
+
+export interface UpdateState { status: string; detail: string; current: string; available: string; enabled: boolean }
 
 declare global {
   interface Window {
@@ -161,10 +170,18 @@ function mockApi(): Api {
     async garmin_login() { return { ok: false, error: "Demo mode" }; },
     async garmin_mfa() { return { ok: false, error: "Demo mode" }; },
     async garmin_logout() {},
+    async list_prototypes() { return { favorite: labFav, notes: {}, model: "gpt-image-2.6-sunburst", has_key: false }; },
+    async pick_prototype(id) { labFav = id; return { favorite: id, notes: {}, model: "gpt-image-2.6-sunburst", has_key: false }; },
+    async save_prototype_note() { return true; },
+    async generate_prototypes() { return { ok: false, error: "Demo mode: add an OpenAI key in the desktop app" }; },
+    async check_update() { return { status: "ready", detail: "", current: "0.3.40", available: "0.3.41", enabled: true }; },
+    async apply_update() { return { status: "ready", detail: "", current: "0.3.40", available: "0.3.41", enabled: true, error: "Demo mode" }; },
+    async update_state() { return { status: "up_to_date", detail: "", current: "0.3.40", available: "", enabled: true }; },
   };
 }
 
 // ------------------------------------------------------------------ demo data
+let labFav = "";
 const inH = (hours: number) => new Date(Date.now() + hours * 3.6e6).toISOString();
 function demoBoard() {
   const it = (o: any) => ({ points: null, impact_pct: null, course_grade: null, missing: false, url: "", done: false,

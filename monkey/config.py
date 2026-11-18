@@ -52,6 +52,11 @@ class Settings:
     monthly_budget_usd: float = 25.0
     force_model: str = ""             # "" = automatic routing
     brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
+    # Updates + images
+    auto_update: bool = True
+    image_model: str = "gpt-image-2.6-sunburst"   # or "gpt-image-2.6-flare" (faster drafts)
+    favorite_prototype: str = ""
+    prototype_notes: dict = field(default_factory=dict)
     # Integrations
     use_gmail: bool = True
     use_outlook: bool = True

@@ -34,6 +34,16 @@ A Jarvis-style desktop voice assistant for Windows, starring a rigged 3D buff ca
   - "How did I sleep?"
 - 🗂 **Memory:** remembers your classes, people, preferences and writing style in plain markdown files you can read and edit.
 
+## Updates
+Monkey updates itself: when a new version is ready, it shows a "Restart & update" pop-up. See [docs/UPDATES.md](docs/UPDATES.md) for the one-time switch from the old zip install.
+
+## Avatar Lab and image generation
+- The 🧪 button opens the **Avatar Lab**:
+  - It has 8 Monkey design prototypes made with **GPT Image 2.6 Sunburst**, each with a jungle hero image and a front/side/back model sheet for Blender.
+  - You can pick a favorite, leave modeling notes, and generate more ideas.
+- Monkey can also make pictures on request ("draw me a banana spaceship"). Add an OpenAI key in Settings.
+- Sources and design rules: `prototypes/` (`REFERENCES.md`, `directions.json`, a `brief.md` per design). Regenerate with `python tools/prototypes/generate.py`.
+
 ## Install (Windows 10/11)
 1. Go to this repo's **Releases** page and download `MonkeySetup-<version>.exe`.
 2. Run it. It installs per-user, with no admin rights needed. Tick "Start with Windows" if you like.

@@ -9,7 +9,10 @@ import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
 import { renderAssignments, markChecked } from "./assignments";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
+import { renderAvatarLab } from "./avatarlab";
+import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
+import "./game.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const md = (text: string) => {
@@ -134,8 +137,9 @@ function emailsCard(p: any) {
 }
 
 function imagesCard(p: any) {
-  card(`🖼️ ${p.query}`, h("div", { class: "grid" }, ...p.images.filter((i: any) => safeHttp(i.src)).map((i: any) =>
-    h("img", { src: safeHttp(i.thumb || i.src), alt: i.title, title: i.title, loading: "lazy",
+  const okSrc = (u: string) => (/^data:image\/(png|jpeg|webp);base64,/.test(u) ? u : safeHttp(u));
+  card(`${p.generated ? "✨" : "🖼️"} ${p.query}`, h("div", { class: "grid" }, ...p.images.filter((i: any) => okSrc(i.src)).map((i: any) =>
+    h("img", { src: okSrc(i.thumb || i.src), alt: i.title, title: i.title, loading: "lazy",
                onclick: () => i.page && api.open_url(i.page) }))));
 }
 
@@ -211,6 +215,9 @@ function onEvent(name: string, p: any) {
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
     case "emote": avatar.emote(p.name); break;
     case "health": healthCard(p); break;
+    case "update":
+      if (p.status === "ready") updateToast(p);
+      break;
     case "sources":
       card("🔎 Sources", h("div", { class: "sources" }, ...p.sources.map((s: any) =>
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
@@ -245,6 +252,21 @@ $("#composer").addEventListener("submit", (e) => {
 $("#mic").addEventListener("click", () => api.push_to_talk());
 $("#newChat").addEventListener("click", () => { api.new_conversation(); log.replaceChildren(); addMsg("sys", "New conversation"); });
 $("#settingsBtn").addEventListener("click", () => openSettings());
+$("#labBtn").addEventListener("click", () => {
+  document.querySelectorAll(".card.lab").forEach((c) => c.remove());
+  const c = card("🧪 Avatar Lab");
+  renderAvatarLab(c, api);
+});
+
+function updateToast(u: { available: string }) {
+  document.querySelector(".update-toast")?.remove();
+  const btn = h("button", { type: "button", class: "primary" }, "Restart & update");
+  btn.addEventListener("click", async () => { btn.disabled = true; const r = await api.apply_update(); if (r.error) toast(`⚠ ${r.error}`); });
+  document.body.append(h("div", { class: "update-toast" },
+    h("strong", {}, `🍌 Monkey ${u.available} is ready`), h("span", {}, "Takes a few seconds; your memory and keys stay put."), btn,
+    h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => (e.target as HTMLElement).closest(".update-toast")?.remove() }, "Later")));
+}
+
 $("#asgBtn").addEventListener("click", async () => {
   const r = await api.get_assignments(false);
   if (!r.ok) return toast(`⚠ ${r.error}`);
@@ -265,6 +287,7 @@ const KEY_INFO: [string, string, string][] = [
   ["deepgram", "Deepgram (optional)", "Faster speech recognition. Leave empty to use free local Whisper."],
   ["youtube", "YouTube Data API (optional)", "For showing videos. Google Cloud → APIs → YouTube Data API v3 → API key."],
   ["brave", "Brave Search (optional)", "Better image search. Without it, images come from Wikimedia Commons."],
+  ["openai", "OpenAI (optional)", "For generating images and new Monkey designs with GPT Image 2.6 (Avatar Lab)."],
   ["canvas_token", "Canvas API token (optional)", "Unlocks points, grades & missing status for ranking. UW–Madison: request one via the Learn@UW 'Student Request for Canvas Access Token' form (kb.wisc.edu/156712), then activate it in Canvas."],
 ];
 
@@ -403,6 +426,30 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ brain_profile: sel.value }); toast("Saved"); });
           return sel;
         })())),
+      h("section", {}, h("h4", {}, "Images & updates"),
+        h("div", { class: "field" }, h("span", {}, "Image model"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "gpt-image-2.6-sunburst" }, "GPT Image 2.6 Sunburst (best detail)"),
+            h("option", { value: "gpt-image-2.6-flare" }, "GPT Image 2.6 Flare (faster drafts)"));
+          sel.value = s.image_model ?? "gpt-image-2.6-sunburst";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ image_model: sel.value }); toast("Saved"); });
+          return sel;
+        })()),
+        (() => {
+          const out = h("span", { class: "meta" }, "");
+          api.update_state().then((u) => { out.textContent = u.status === "unavailable" ? "Auto-update works after installing with the new MonkeySetup.exe" : `Version ${u.current || appState.version} · ${u.status.replace("_", " ")}`; });
+          const auto = h("input", { type: "checkbox", checked: s.auto_update !== false });
+          auto.addEventListener("change", async () => { appState = await api.save_settings({ auto_update: auto.checked }); toast("Saved"); });
+          return h("div", {},
+            h("div", { class: "field" }, h("span", {}, "Updates"), out,
+              h("button", { class: "ghost", type: "button", onclick: async () => {
+                out.textContent = "Checking…";
+                const u = await api.check_update();
+                out.textContent = u.status === "ready" ? `Update ${u.available} downloaded` : u.status === "up_to_date" ? "You're on the latest version" : (u.detail || u.status);
+                if (u.status === "ready") updateToast(u);
+              } }, "Check now")),
+            h("label", { class: "field" }, auto, h("span", {}, "Download updates automatically")));
+        })()),
       h("section", {}, h("h4", {}, "Memory"),
         h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Monkey to another PC (encrypted with your password).`),
         field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),

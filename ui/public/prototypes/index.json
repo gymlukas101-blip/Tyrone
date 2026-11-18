@@ -1,0 +1,66 @@
+[
+ {
+  "id": "01",
+  "title": "Jarvis+ (refined)",
+  "direction": "A refined, more polished version of the reference character: keep his exact colors, glossy eyes and banana headset, but improve the anatomy - clearer clumped stylized fur, softer calm brows, a wider expressive mouth, slightly larger hands, crisper silhouette.",
+  "traits": "1:2.5 head-to-body, clumped stylized fur, soft brows, big eyes, rim light, one accent color",
+  "hero": "prototypes/01-jarvis-plus/hero.jpg",
+  "sheet": "prototypes/01-jarvis-plus/sheet.jpg"
+ },
+ {
+  "id": "02",
+  "title": "Silverback Bruiser",
+  "direction": "Heavier gorilla-like bulk: a massive rounded brow ridge, very wide shoulders, huge knuckle-forward forearms, a slight hunch, a short silvery-grey fur saddle across the back and shoulders. Eyes stay big and warm so he reads gentle, not villainous. Rounded shapes everywhere, no pointy ears.",
+  "traits": "gargoyle-like hunched mass, knuckle stance, heavy but rounded brow, gentle eyes (contrast comedy)",
+  "hero": "prototypes/02-silverback/hero.jpg",
+  "sheet": "prototypes/02-silverback/sheet.jpg"
+ },
+ {
+  "id": "03",
+  "title": "Athletic V-Taper",
+  "direction": "Leaner sprinter-athlete build: dramatic V-taper, defined but not bulky muscles, slightly longer legs (still cartoon short), a light athletic tank top in banana yellow with a single cyan stripe, sporty wristband on one wrist. Keep the big head and huge eyes so he stays friendly.",
+  "traits": "broad chest to narrow waist, longer legs balanced by big head and eyes",
+  "hero": "prototypes/03-athletic/hero.jpg",
+  "sheet": "prototypes/03-athletic/sheet.jpg"
+ },
+ {
+  "id": "04",
+  "title": "Kawaii Chibi",
+  "direction": "Super-cute chibi version: about 1:1.6 head-to-body, very round head, extra-large sparkly eyes, a round squishy torso that still shows a tiny cartoon six-pack, short beefy stub arms, tiny feet, rosy cheeks.",
+  "traits": "1:1 to 1:2 proportions, round torso, beefy stub forearms, oversized eyes",
+  "hero": "prototypes/04-kawaii-chibi/hero.jpg",
+  "sheet": "prototypes/04-kawaii-chibi/sheet.jpg"
+ },
+ {
+  "id": "05",
+  "title": "Jungle Streetwear",
+  "direction": "Streetwear style: a sleeveless cropped hoodie vest in leaf-green that shows off his big arms, chunky oversized sneakers in white with banana-yellow accents, a simple chain-free look. No caps, no logos, no text on clothes. Clothes are simple, chunky and easy to model.",
+  "traits": "hoodie vest showing arms, oversized sneakers balance tiny legs, single accent color",
+  "hero": "prototypes/05-streetwear/hero.jpg",
+  "sheet": "prototypes/05-streetwear/sheet.jpg"
+ },
+ {
+  "id": "06",
+  "title": "Jungle Guardian",
+  "direction": "Protector of the jungle: a broad green leaf-bandana tied around his forehead (big leaf shapes, not a black band), thin green vine bands around the biceps (no hand wraps), a small carved wooden banana pendant. Earthy greens and browns, heroic but warm.",
+  "traits": "nature accessories that read as shapes, heroic stance, earthy palette with one accent",
+  "hero": "prototypes/06-jungle-guardian/hero.jpg",
+  "sheet": "prototypes/06-jungle-guardian/sheet.jpg"
+ },
+ {
+  "id": "07",
+  "title": "Retro Rubber-Hose Mascot",
+  "direction": "1930s rubber-hose cartoon style interpreted in modern 3D: bendy noodle-like limbs without visible elbows, white puffy cartoon gloves, pie-cut highlights in the eyes, bouncy exaggerated pose, his bulk toned down into a round barrel chest. Keep his brown and cream colors and the banana headset.",
+  "traits": "rubber-hose limbs, bouncy pose, round shapes, vintage appeal",
+  "hero": "prototypes/07-retro-mascot/hero.jpg",
+  "sheet": "prototypes/07-retro-mascot/sheet.jpg"
+ },
+ {
+  "id": "08",
+  "title": "Sci-Fi Sidekick",
+  "direction": "Tech-assistant look: the headset becomes a sleek banana-yellow tech band with small cyan glowing ear fins, a slim translucent cyan visor that floats in front of his eyes (eyes still visible), thin cyan glowing seams on a minimal chest harness, a tiny hovering banana-shaped drone. No glasses, no armor plates, no weapons.",
+  "traits": "tech that shows assistant state (glow/LEDs), light muzzle, soft brows",
+  "hero": "prototypes/08-scifi-sidekick/hero.jpg",
+  "sheet": "prototypes/08-scifi-sidekick/sheet.jpg"
+ }
+]

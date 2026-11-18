@@ -147,3 +147,18 @@ def test_emote_tool_emits_event(tmp_path):
     agent, client, events, *_ = build(tmp_path, script)
     agent.handle("I just finished my essay")
     assert ("emote", {"name": "dance"}) in events
+
+
+def test_generate_image_tool(tmp_path):
+    from monkey.brain.tools import Services, ToolRunner
+    from monkey.brain.approval import ApprovalGate
+    events = []
+    s = Services(emit=lambda e, p: events.append((e, p)), memory=None, approval=ApprovalGate({}),
+                 image_gen=lambda prompt, n: [{"title": "x", "src": "data:image/jpeg;base64,AAA"}] * n)
+    out, err = ToolRunner(s).run("generate_image", {"prompt": "a banana car", "count": 2})
+    assert not err and "2 image" in out
+    imgs = [p for e, p in events if e == "images"][0]
+    assert imgs["generated"] and len(imgs["images"]) == 2
+    out, err = ToolRunner(Services(emit=lambda *a: None, memory=None, approval=ApprovalGate({}))).run(
+        "generate_image", {"prompt": "x", "count": 1})
+    assert "isn't set up" in out

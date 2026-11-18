@@ -87,6 +87,13 @@ class Ledger:
             )
         return usd
 
+    def record_usd(self, model: str, purpose: str, usd: float) -> float:
+        """Log a cost that isn't token-priced like chat (e.g. image generation)."""
+        with self._lock, self._conn() as c:
+            c.execute("INSERT INTO spend VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (datetime.now(timezone.utc).isoformat(), model, "", purpose, 0, 0, 0, 0, 0, usd))
+        return usd
+
     def month_to_date(self, now: datetime | None = None) -> float:
         now = now or datetime.now(timezone.utc)
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()

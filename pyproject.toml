@@ -30,6 +30,7 @@ desktop = [
   "google-api-python-client>=2.150",
   "google-auth-oauthlib>=1.2",
   "garminconnect>=0.3.20",
+  "velopack>=1.2",
   "pywin32>=308; sys_platform == 'win32'",
 ]
 dev = ["pytest>=8", "pyinstaller>=6.10"]

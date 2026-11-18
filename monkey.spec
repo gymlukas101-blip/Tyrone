@@ -15,7 +15,7 @@ for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi",
         pass
 
 binaries = []
-for pkg in ("ctranslate2", "onnxruntime", "_sounddevice_data", "sherpa_onnx", "sentencepiece"):
+for pkg in ("ctranslate2", "onnxruntime", "_sounddevice_data", "sherpa_onnx", "sentencepiece", "velopack"):
     try:
         binaries += collect_dynamic_libs(pkg)
     except Exception:

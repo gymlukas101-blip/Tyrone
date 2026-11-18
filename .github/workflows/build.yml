@@ -37,7 +37,8 @@ jobs:
     needs: test
     runs-on: windows-latest
     env:
-      MONKEY_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0-dev' }}
+      # Every build gets a unique, increasing version so Velopack can update installed copies.
+      MONKEY_VERSION: 0.3.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -69,6 +70,10 @@ jobs:
       - name: Unit tests (Windows)
         run: pytest -q
 
+      - name: Stamp version
+        shell: bash
+        run: echo "__version__ = \"$MONKEY_VERSION\"" > monkey/_version.py
+
       - name: PyInstaller
         run: pyinstaller monkey.spec --noconfirm
 
@@ -91,9 +96,31 @@ jobs:
           name: MonkeySetup
           path: dist/installer/*.exe
 
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      # ---- Velopack: auto-updating installer + GitHub Release on every push to main ----
+      - uses: actions/setup-dotnet@v4
         with:
-          files: dist/installer/*.exe
-          generate_release_notes: true
+          dotnet-version: "9.0.x"
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Fetch previous release (for delta updates)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }} --outputDir velopack
+
+      - name: Velopack pack
+        run: >
+          vpk pack --packId Monkey --packVersion ${{ env.MONKEY_VERSION }} --packDir dist/Monkey
+          --mainExe Monkey.exe --packTitle Monkey --packAuthors Monkey --icon assets/monkey.ico --outputDir velopack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonkeySetup-Velopack
+          path: velopack/*Setup.exe
+
+      - name: Publish release (Velopack feed + installer)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: >
+          vpk upload github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+          --outputDir velopack --publish --releaseName "Monkey ${{ env.MONKEY_VERSION }}" --tag v${{ env.MONKEY_VERSION }}
