@@ -430,7 +430,7 @@ class MonkeyApp:
         self.ui.emit("heard", {"text": text})
         if source == "conversation" and not conversation.worth_answering(text):
             # Background noise, someone else talking, an "uh": keep waiting, same quiet deadline.
-            log.info("ignored in conversation: %r", text)
+            log.info("ignored a %d-character utterance in conversation mode", len(text))   # never log speech
             self._agent_state = "idle"
             if self._in_conversation and self.listener is not None:
                 self.listener.enter_conversation(self.cfg.settings.conversation_idle_s)

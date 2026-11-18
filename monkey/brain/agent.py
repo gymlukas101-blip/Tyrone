@@ -208,12 +208,14 @@ class Agent:
                 return msg
 
             # 2. Fresh session after a long idle gap keeps cost and latency down. Memory persists.
-            if time.time() - self.last_activity > SESSION_IDLE_RESET_S:
+            #    Measure the idle gap ONCE, before touching last_activity (it used to be refreshed first, which
+            #    made every follow-up in a session look "sticky").
+            now = time.time()
+            idle = now - self.last_activity
+            if idle > SESSION_IDLE_RESET_S:
                 self.new_session()
-            self.last_activity = time.time()
-
-            sticky = self._last_route if time.time() - self.last_activity < STICKY_S else None
-            self.last_activity = time.time()
+            sticky = self._last_route if idle < STICKY_S else None
+            self.last_activity = now
 
             route = self.router.route(text, importance, sticky=sticky)  # type: ignore[arg-type]
             self._emit_route(route)
