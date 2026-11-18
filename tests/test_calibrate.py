@@ -88,8 +88,85 @@ def test_apply_picks(tmp_path):
         "chat": {"runs": [
             {"model": HAIKU, "effort": "low", "usd": 0.0001, "first_words_s": 0.6, "total_s": 0.9, "error": ""},
             {"model": SONNET, "effort": "low", "usd": 0.002, "first_words_s": 1.2, "total_s": 1.8, "error": ""}]}}}
-    changed = apply_picks(p, results, {"general": "all", "chat": 0})
-    assert changed == ["general"]
+    changed = apply_picks(p, results, {"general": "all", "chat": 1})
+    assert changed == ["chat"]
     reloaded = ModelPolicy(tmp_path / "model_policy.json")
     assert reloaded.choice("general") == Choice(HAIKU, "medium")
     assert reloaded.task("general")["measured"]["usd"] == 0.001
+    assert reloaded.choice("chat") == Choice(SONNET, "low")
+
+
+# ------------------------------------------------------------------ fixes from the first real run
+from monkey.brain.calibrate import _StubTools  # noqa: E402
+from monkey.brain.ranking import RankedItem, Ranking  # noqa: E402
+
+
+def test_warm_up_runs_once_per_model_and_is_not_in_results(tmp_path):
+    p = ModelPolicy(tmp_path / "model_policy.json")
+    client = Client()
+    cal = Calibration(client, p, Ledger(tmp_path / "db.sqlite"), tmp_path / "c.json", tasks=["chat"])
+    out = cal.run()
+    models_in_plan = {c.model for t, c in plan(p) if t == "chat"}
+    warmups = [c for c in client.calls
+               if len(c["messages"]) == 1 and c["messages"][0]["content"][0]["text"].endswith("\nhi")]
+    assert len(warmups) == len(models_in_plan)
+    assert list(out["tasks"]) == ["chat"] and len(out["tasks"]["chat"]["runs"]) == len(models_in_plan)
+
+
+def test_drafts_are_captured_for_review(tmp_path):
+    p = ModelPolicy(tmp_path / "model_policy.json")
+    out = Calibration(Client(), p, Ledger(tmp_path / "db.sqlite"), tmp_path / "c.json", tasks=["draft_email"],
+                      warm_up=False).run()
+    o = out["tasks"]["draft_email"]["runs"][0]["outputs"][0]
+    assert o["kind"] == "Email draft" and o["to"] == "x@wisc.edu" and o["text"] == "b"
+
+
+def test_rerun_keeps_other_tasks(tmp_path):
+    p = ModelPolicy(tmp_path / "model_policy.json")
+    f = tmp_path / "c.json"
+    Calibration(Client(), p, Ledger(tmp_path / "db"), f, tasks=["chat"], warm_up=False).run()
+    out = Calibration(Client(), p, Ledger(tmp_path / "db"), f, tasks=["weather"], warm_up=False).run()
+    assert set(out["tasks"]) == {"chat", "weather"} and out["rerun"] == ["weather"]
+
+
+def test_two_samples_average_cost(tmp_path):
+    p = ModelPolicy(tmp_path / "model_policy.json")
+    out = Calibration(Client(), p, Ledger(tmp_path / "db"), tmp_path / "c.json", tasks=["chat"], samples=2,
+                      warm_up=False).run()
+    assert out["tasks"]["chat"]["runs"][0]["samples"] == 2
+
+
+def test_triage_ranking_really_runs_with_candidate_model(tmp_path):
+    seen = {}
+
+    def parse(**kw):
+        seen.update(kw)
+        return NS(parsed_output=Ranking(items=[RankedItem(id="e1", tier="critical", reason="missing lab")],
+                                        summary="Reply to Prof. Lee first."), stop_reason="end_turn",
+                  usage=NS(input_tokens=2000, output_tokens=300, cache_read_input_tokens=0,
+                           cache_creation_input_tokens=0, server_tool_use=None))
+
+    client = NS(messages=NS(parse=parse))
+    tools = _StubTools(client, Choice(SONNET, "medium"), Ledger(tmp_path / "db"))
+    out, err = tools.run("rank_items", {"days_ahead": 2, "include_emails": True})
+    assert not err and "Reply to Prof. Lee first." in out and "BIO 151 lab report" in out
+    assert seen["model"] == SONNET and seen["output_config"]["effort"] == "medium"
+    assert tools.extra_usd > 0
+
+
+def test_stub_texts_dont_mention_calibration():
+    tools = _StubTools()
+    for name in ("draft_email", "escalate", "open_website"):
+        text, _ = tools.run(name, {"to": [], "subject": "", "body": ""} if name == "draft_email" else {})
+        assert "calibration" not in text.lower() and "test run" not in text.lower()
+
+
+def test_pick_index_matches_screen_even_with_errors(tmp_path):
+    p = ModelPolicy(tmp_path / "model_policy.json")
+    results = {"tasks": {"general": {"runs": [
+        {"model": HAIKU, "effort": "medium", "usd": 0.0, "first_words_s": 0, "total_s": 0, "error": "boom"},
+        {"model": SONNET, "effort": "low", "usd": 0.008, "first_words_s": 1.5, "total_s": 3.0, "error": ""}]}}}
+    apply_picks(p, results, {"general": 1})
+    assert p.choice("general") == Choice(SONNET, "low")
+    apply_picks(p, results, {"general": 0})            # picking a failed run changes nothing
+    assert p.choice("general") == Choice(SONNET, "low")

@@ -15,8 +15,8 @@ A Jarvis-style desktop voice assistant for Windows, starring a rigged 3D buff ca
   - "Hey Monkey" works out of the box: open-vocabulary keyword spotting (sherpa-onnx), so no training is needed. There's also a push-to-talk hotkey.
   - Monkey answers in his own designed voice (Fish Audio), and the avatar lip-syncs.
 - 🧠 **Smart routing with a stored model policy:** every request is matched to a task, and each task has its own model and effort ([docs/MODEL-POLICY.md](docs/MODEL-POLICY.md)):
-  - Haiku for everyday talk, commands, Canvas, Garmin, calendar and quick web lookups.
-  - Sonnet for everyday questions, email summaries, triage, briefings and study help.
+  - Haiku for everyday talk and questions, commands, Canvas, Garmin, calendar and quick web lookups.
+  - Sonnet for email summaries, triage, briefings and study help.
   - Opus for email drafts in your voice, hard problems and deep research.
   - Say "this is important" or "quick", or use the ⚡/★ buttons, to steer it.
   - See or change the table, and **calibrate it with real measured runs**, in Settings → Brain. There's a monthly budget cap.
@@ -106,7 +106,7 @@ Email and web content is treated as untrusted data: Monkey is instructed not to 
 ## Cost (typical student use)
 | Service | Approx. per month |
 |---|---|
-| Claude (auto-routed per task) | ~$29 at heavy use with the recommended policy (~$17 Saver, ~$64 if everything were "Important"). **$0 extra with Claude Max**, whose $100/month of API credits cover it (see docs/MODEL-POLICY.md, docs/LLM-ACCESS.md) |
+| Claude (auto-routed per task) | ~$15–25 at heavy use with the calibrated policy (measured ~$15–17; ~$51 if everything were "Important"). **$0 extra with Claude Max**, whose $100/month of API credits cover it (see docs/MODEL-POLICY.md, docs/LLM-ACCESS.md) |
 | Fish Audio voice | $1–3 |
 | Speech-to-text (local Whisper) | $0 |
 | Google, YouTube, NWS weather, Canvas feed | $0 |

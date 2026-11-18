@@ -75,3 +75,19 @@ def test_docs_table_matches_policy():
     assert f"Auto **${p.monthly_total():.2f}**" in doc, "re-run: python -m tools.model_policy.report"
     for row in p.table():
         assert row["label"] in doc
+
+
+def test_persona_has_calibration_fixes():
+    from monkey.brain.agent import load_persona
+
+    persona = load_persona()
+    assert "Don't assume anyone's gender" in persona
+    assert "Small talk" in persona and "offer to draft the reply" in persona
+
+
+def test_calibrated_policy_changes():
+    p = ModelPolicy()
+    assert p.choice("calendar") == Choice(HAIKU, "low")
+    assert p.choice("general") == Choice(HAIKU, "medium")
+    assert p.choice("image_request") == Choice(HAIKU, "low")
+    assert p.choice("read_email") == Choice(SONNET, "low")

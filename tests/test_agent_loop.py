@@ -193,7 +193,7 @@ class FailingOnceClient(FakeClient):
 def test_effort_change_uses_per_message_effort_and_keeps_top_level(tmp_path):
     agent, client, *_ = build(tmp_path, [([text_block("Sup.")], "end_turn"), ([text_block("Here's why.")], "end_turn")])
     agent.handle("yo")                                   # chat: Haiku low
-    agent.handle("quick fact: how many ounces are in a cup, roughly?")
+    agent.handle("how did I sleep?")                     # health: Haiku medium
     first, second = client.calls
     assert first["output_config"]["effort"] == second["output_config"]["effort"] == "low"  # cache-safe
     sys_msgs = [m for m in second["messages"] if m.get("role") == "system"]
@@ -206,7 +206,7 @@ def test_per_message_effort_rejected_falls_back(tmp_path):
     agent.handle("yo")
     agent.client = FailingOnceClient([([text_block("Okay.")], "end_turn")],
                                      _bad_request("messages: role 'system' with output_config is not supported"))
-    agent.handle("quick fact: how many ounces are in a cup, roughly?")
+    agent.handle("how did I sleep?")
     retry = agent.client.calls[-1]
     assert agent.per_message_effort is False
     assert not any(m.get("role") == "system" for m in retry["messages"])

@@ -78,7 +78,7 @@ def test_classifier_failure_defaults_to_general():
         raise RuntimeError("offline")
 
     route = r("Why do cats purr when they're happy", boom)
-    assert route.task == "general" and route.model == SONNET
+    assert route.task == "general" and route.model == HAIKU
 
 
 def test_refine_task():

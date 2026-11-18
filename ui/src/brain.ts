@@ -78,6 +78,7 @@ function tableView(api: Api, pol: Policy, rerender: (v?: "table" | "results") =>
   });
   const progress = h("div", { class: "calprogress" });
   progressEl = progress;
+  const twice = h("input", { type: "checkbox" }) as HTMLInputElement;
   return h("div", {},
     h("p", { class: "help" },
       "Each task has three settings: ⚡ Quick (cheapest that works), Auto (normal) and ★ Important (most worth paying for). " +
@@ -94,13 +95,11 @@ function tableView(api: Api, pol: Policy, rerender: (v?: "table" | "results") =>
       h("tbody", {}, ...rows))),
     h("div", { class: "field" },
       h("button", { class: "primary", type: "button", disabled: pol.calibrating, onclick: async () => {
-        if (!confirm(`Calibrate models?\n\nMonkey runs a sample request for every task on its Quick, Auto and Important ` +
-                     `settings (about 50 runs, ~5 minutes). Canvas, Garmin, email and calendar data are fake and nothing ` +
-                     `is sent or changed. Estimated cost: about ${money(pol.calibration_estimate)} of your API credits.`)) return;
-        const r = await api.calibrate_start();
-        if (!r.ok) return toast(`⚠ ${r.error}`);
-        progress.textContent = "Starting…";
+        const samples = twice.checked ? 2 : 1;
+        if (await startCalibration(api, [], samples)) progress.textContent = "Warming up…";
       } }, pol.calibrating ? "Calibrating…" : `Calibrate models (≈${money(pol.calibration_estimate)})`),
+      h("label", { class: "allfine", title: "Runs every setting twice and keeps the middle result: steadier numbers, about 2x the cost" },
+        twice, " 2 samples each"),
       pol.calibrating && h("button", { class: "ghost", type: "button", onclick: () => api.calibrate_cancel() }, "Cancel"),
       pol.has_results && h("button", { class: "ghost", type: "button", onclick: () => rerender("results") }, "Rate last results"),
       h("button", { class: "ghost", type: "button", onclick: async () => {
@@ -110,10 +109,29 @@ function tableView(api: Api, pol: Policy, rerender: (v?: "table" | "results") =>
     progress);
 }
 
+async function startCalibration(api: Api, tasks: string[], samples: number): Promise<boolean> {
+  const est = await api.calibration_estimate(tasks, samples);
+  const what = tasks.length ? `${tasks.length} task(s) again` : "a sample request for every task";
+  if (!confirm(`Calibrate models?\n\nMonkey runs ${what} on its Quick, Auto and Important settings` +
+               `${samples > 1 ? `, ${samples} times each` : ""}, after one warm-up request per model. Canvas, Garmin, email and ` +
+               `calendar data are fake and nothing is sent or changed (email drafts are shown to you here, not saved). ` +
+               `Estimated cost: about ${money(est.usd)} of your API credits.`)) return false;
+  const r = await api.calibrate_start(samples, tasks);
+  if (!r.ok) { toast(`⚠ ${r.error}`, 9000); return false; }
+  return true;
+}
+
+function outputBox(o: { kind: string; to?: string; subject?: string; text: string }) {
+  return h("details", { class: "calout", open: o.kind === "Email draft" },
+    h("summary", {}, `${o.kind === "Email draft" ? "📧" : "🖥"} ${o.kind}${o.subject ? `: ${o.subject}` : ""}${o.to ? ` (to ${o.to})` : ""}`),
+    h("pre", {}, o.text));
+}
+
 async function resultsView(api: Api, _pol: Policy, back: () => void) {
   const res: CalResults = await api.calibration_results();
   if (!res.ok) return h("p", {}, res.error ?? "No results yet.");
   const picks: Record<string, string> = {};
+  const rerun = new Set<string>();
   const tasks = Object.entries(res.tasks);
   const blocks = tasks.map(([id, t]) => {
     picks[id] = "all";
@@ -128,12 +146,20 @@ async function resultsView(api: Api, _pol: Policy, back: () => void) {
       h("div", { class: "runs" }, ...t.runs.map((r, i) => h("label", { class: "run" + (r.error ? " failed" : "") },
         h("div", { class: "runhead" }, radio(String(i)), h("b", {}, r.label),
           h("span", {}, `${money(r.usd)} · ${r.first_words_s}s first words · ${r.total_s}s total`)),
-        h("div", { class: "answer" }, r.error ? `⚠ ${r.error}` : r.answer || "(no text)")))),
-      h("label", { class: "allfine" }, radio("all", true), " All fine: use the cheapest"));
+        h("div", { class: "answer" }, r.error ? `⚠ ${r.error}` : r.answer || "(no text)"),
+        ...(r.outputs ?? []).map(outputBox)))),
+      h("div", { class: "field" },
+        h("label", { class: "allfine" }, radio("all", true), " All fine: use the cheapest"),
+        h("label", { class: "allfine", title: "Tick, then press 'Re-run checked tasks' at the bottom" }, (() => {
+          const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
+          cb.addEventListener("change", () => { if (cb.checked) rerun.add(id); else rerun.delete(id); });
+          return cb;
+        })(), " Re-run this task")));
   });
   return h("div", {},
     res.setup_error && h("p", { class: "keynote bad" }, `⚠ Calibration stopped: ${res.setup_error}`),
-    h("p", { class: "help" }, `Calibrated ${res.date}${res.complete ? "" : " (stopped early)"} · spent ${money(res.spent_usd)}. ` +
+    h("p", { class: "help" }, `Calibrated ${res.date}${res.complete ? "" : " (stopped early)"} · spent ${money(res.spent_usd)}` +
+      `${res.samples && res.samples > 1 ? ` · ${res.samples} samples each` : ""}${res.rerun?.length ? ` · re-ran ${res.rerun.length} task(s)` : ""}. ` +
       "For each task, pick the answer you like best (Monkey makes it the Auto choice) or leave “All fine” to use the cheapest."),
     ...blocks,
     h("div", { class: "field" },
@@ -143,5 +169,9 @@ async function resultsView(api: Api, _pol: Policy, back: () => void) {
         toast(r.changed?.length ? `Updated ${r.changed.length} task(s). Monkey remembers this.` : "Saved: measured numbers recorded.", 4000);
         back();
       } }, "Save my choices"),
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        if (!rerun.size) return toast("Tick “Re-run this task” on the tasks you want to measure again.");
+        if (await startCalibration(api, [...rerun], 1)) back();   // the table view shows progress
+      } }, "Re-run checked tasks"),
       h("button", { class: "ghost", type: "button", onclick: back }, "Back to table")));
 }

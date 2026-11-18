@@ -518,7 +518,12 @@ class Api:
     def test_anthropic(self):
         return self._app.verify_anthropic()
 
-    def calibrate_start(self):
+    def calibration_estimate(self, tasks=None, samples: int = 1):
+        from .brain.calibrate import estimate_cost
+
+        return {"usd": estimate_cost(self._app.policy, list(tasks or []) or None, int(samples or 1))}
+
+    def calibrate_start(self, samples: int = 1, tasks=None):
         a = self._app
         if a._ensure_client() is None:
             return {"ok": False, "error": "Add your Anthropic API key first."}
@@ -530,7 +535,8 @@ class Api:
         from .brain.calibrate import Calibration
 
         cal = Calibration(a.client, a.policy, a.ledger, a.cfg.data_dir / "calibration.json",
-                          progress=lambda p: a.ui.emit("calibration", p))
+                          progress=lambda p: a.ui.emit("calibration", p), samples=int(samples or 1),
+                          tasks=list(tasks or []) or None)
         a._calibration = cal
 
         def run():

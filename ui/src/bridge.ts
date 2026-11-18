@@ -62,7 +62,8 @@ export interface Api {
   get_policy(): Promise<Policy>;
   set_policy_entry(task: string, tier: string, model: string, effort: string): Promise<{ ok: boolean; error?: string }>;
   reset_policy(task: string): Promise<Policy>;
-  calibrate_start(): Promise<{ ok: boolean; error?: string }>;
+  calibrate_start(samples: number, tasks: string[]): Promise<{ ok: boolean; error?: string }>;
+  calibration_estimate(tasks: string[], samples: number): Promise<{ usd: number }>;
   calibrate_cancel(): Promise<{ ok: boolean }>;
   calibration_results(): Promise<CalResults>;
   calibration_apply(picks: Record<string, string>): Promise<{ ok: boolean; error?: string; changed?: string[] }>;
@@ -79,9 +80,10 @@ export interface Policy {
   models: { id: string; name: string }[]; efforts: string[];
   calibration_estimate: number; calibrating: boolean; has_results: boolean;
 }
-export interface CalRun { model: string; effort: string; label: string; usd: number; first_words_s: number; total_s: number; answer: string; error: string }
+export interface CalOutput { kind: string; to?: string; subject?: string; text: string }
+export interface CalRun { model: string; effort: string; label: string; usd: number; first_words_s: number; total_s: number; answer: string; error: string; outputs?: CalOutput[]; samples?: number }
 export interface CalResults {
-  ok: boolean; error?: string; date: string; complete: boolean; spent_usd: number; setup_error?: string;
+  ok: boolean; error?: string; date: string; complete: boolean; spent_usd: number; setup_error?: string; samples?: number; rerun?: string[];
   tasks: Record<string, { label: string; sample: string; runs: CalRun[] }>;
 }
 
@@ -252,6 +254,7 @@ function mockApi(): Api {
       return { ok: true };
     },
     async calibrate_cancel() { return { ok: true }; },
+    async calibration_estimate(tasks, samples) { return { usd: (tasks.length ? 0.1 * tasks.length : 3.0) * samples }; },
     async calibration_results() { return demoCalibration(); },
     async calibration_apply() { return { ok: true, changed: ["general"] }; },
     async update_state() { return { status: "up_to_date", detail: "", current: "0.3.40", available: "", enabled: true }; },
@@ -343,9 +346,13 @@ function demoCalibration() {
           answer: "A neural oscillator in the brainstem makes the laryngeal muscles twitch 25–150 times per second, on both the in-breath and out-breath. It signals contentment, but cats also purr when stressed, giving birth or injured, likely to self-soothe." }] },
       draft_email: { label: "Draft an email in your voice", sample: "draft a reply to Professor Lee asking for a two-day extension on the lab report", runs: [
         { model: O, effort: "low", label: "Opus 5.5 · low", usd: 0.051, first_words_s: 5.8, total_s: 9.9, error: "",
-          answer: "Draft's on your screen: short and polite, asks for two days and mentions you'll submit by Thursday." },
+          answer: "Draft's on your screen: short and polite, asks for two days and mentions you'll submit by Thursday.",
+          outputs: [{ kind: "Email draft", to: "lee@wisc.edu", subject: "Re: BIO 151 lab report",
+            text: "Hi Professor Lee,\n\nSorry for the late lab report. Would it be possible to have a two-day extension? I can submit it by Thursday.\n\nThanks,\nSam" }] },
         { model: O, effort: "medium", label: "Opus 5.5 · medium", usd: 0.083, first_words_s: 9.2, total_s: 15.1, error: "",
-          answer: "Done, the draft's up. I apologized for the late lab report, asked for a two-day extension and offered Thursday 5 PM. Read it over and say send it when you're good." }] },
+          answer: "Done, the draft's up. I apologized for the late lab report, asked for a two-day extension and offered Thursday 5 PM. Read it over and say send it when you're good.",
+          outputs: [{ kind: "Email draft", to: "lee@wisc.edu", subject: "Re: BIO 151 lab report",
+            text: "Hi Professor Lee,\n\nThanks for the heads up, and sorry for missing the deadline. Could I have a two-day extension on lab report 5? I can have it in by Thursday at 5 PM.\n\nThanks,\nSam" }] }] },
     },
   };
 }

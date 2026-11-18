@@ -1,4 +1,4 @@
-# Monkey's model policy: which Claude model + effort for each task (researched 2026-11-18)
+# Monkey's model policy: which Claude model + effort for each task (researched and calibrated 2026-11-18)
 
 Monkey routes every request to a **task**, then reads that task's model and effort from a stored policy:
 - shipped defaults: `monkey/brain/model_policy.json`
@@ -31,27 +31,53 @@ Generated with `python -m tools.model_policy.report`.
 | Canvas assignments / what to work on | Haiku 5.5 · low ($0.0007) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.014) | $0.0008 | 3.4s | $0.100 |
 | Check off an assignment | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0035) | $0.0003 | 1.8s | $0.020 |
 | Garmin sleep / heart rate | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.011) | $0.0006 | 3.0s | $0.040 |
-| Calendar (what's on today) | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.011) | $0.0006 | 3.0s | $0.050 |
+| Calendar (what's on today) | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · low** | Sonnet 5.5 · medium ($0.011) | $0.0005 | 2.0s | $0.040 |
 | Remember / forget something | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0042) | $0.0003 | 1.8s | $0.020 |
-| Everyday question (no rule matched) | Haiku 5.5 · medium ($0.0035) | **Sonnet 5.5 · low** | Opus 5.5 · medium ($0.022) | $0.0083 | 3.2s | $1.65 |
+| Everyday question (no rule matched) | Haiku 5.5 · low ($0.0033) | **Haiku 5.5 · medium** | Opus 5.5 · medium ($0.022) | $0.0035 | 3.6s | $0.700 |
 | Read and summarize an email | Haiku 5.5 · medium ($0.0011) | **Sonnet 5.5 · low** | Opus 5.5 · medium ($0.040) | $0.017 | 5.6s | $1.05 |
 | Email & calendar triage (ranking) | Haiku 5.5 · high ($0.0050) | **Sonnet 5.5 · medium** | Opus 5.5 · medium ($0.150) | $0.075 | 19.4s | $3.37 |
-| Daily briefing (my day / my week) | Sonnet 5.5 · medium ($0.043) | **Sonnet 5.5 · medium** | Opus 5.5 · medium ($0.085) | $0.043 | 19.4s | $1.28 |
-| Study help / explain a concept | Sonnet 5.5 · medium ($0.022) | **Sonnet 5.5 · medium** | Opus 5.5 · high ($0.088) | $0.022 | 16.0s | $1.95 |
-| Hard reasoning (proofs, tricky problems, planning) | Sonnet 5.5 · medium ($0.040) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.170) | $0.080 | 41.5s | $2.40 |
-| Draft an email in your voice | Opus 5.5 · low ($0.063) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.151) | $0.091 | 32.7s | $4.11 |
-| Deep research | Sonnet 5.5 · medium ($0.196) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.492) | $0.342 | 82.5s | $10.27 |
-| Make a picture (writing the image prompt) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · medium** | Sonnet 5.5 · low ($0.0053) | $0.0004 | 2.5s | $0.010 |
+| Daily briefing (my day / my week) | Sonnet 5.5 · medium ($0.032) | **Sonnet 5.5 · medium** | Opus 5.5 · medium ($0.063) | $0.032 | 8.4s | $0.950 |
+| Study help / explain a concept | Sonnet 5.5 · medium ($0.015) | **Sonnet 5.5 · medium** | Opus 5.5 · high ($0.053) | $0.015 | 9.0s | $1.32 |
+| Hard reasoning (proofs, tricky problems, planning) | Sonnet 5.5 · medium ($0.016) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.050) | $0.032 | 9.5s | $0.960 |
+| Draft an email in your voice | Opus 5.5 · low ($0.055) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.084) | $0.064 | 14.7s | $2.90 |
+| Deep research | Sonnet 5.5 · medium ($0.176) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.392) | $0.302 | 55.9s | $9.07 |
+| Make a picture (writing the image prompt) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0053) | $0.0003 | 1.9s | $0.010 |
 | Router (which task is this?) | Haiku 5.5 · low ($0.0001) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0001) | $0.0001 | 0.6s | $0.020 |
 | Learn my writing style (one time) | Sonnet 5.5 · high ($0.230) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.460) | $0.400 | 28.1s | $0.0000 |
 
-Monthly totals (heavy use): Auto **$29.02**, all Quick $17.04, all Important $64.31.
+Monthly totals (heavy use): Auto **$23.25**, all Quick $14.36, all Important $50.86.
 
 The policy also has two internal tasks that don't show up as chat requests:
 - **Router:** classifies requests that no rule catches.
 - **Learn my writing style:** runs once.
 
 The numbers come from the Settings → Brain screen and are the same as above.
+
+## Calibration results (2026-11-18, $1.10, one sample per setting)
+What the first real calibration run showed, and what changed because of it:
+
+| Task | Result | Decision |
+|---|---|---|
+| Chit-chat, quick facts, commands, weather, check-off, memory, pictures | Haiku matched Sonnet's answers at about 1/12 the cost and as fast or faster | Haiku (pictures moved to low) |
+| Calendar | Identical answers; Haiku low fastest (1.8 s) | **Changed to Haiku low** |
+| Everyday questions | Haiku medium was as good as Sonnet low ($0.0004 vs $0.005, 3 s vs 5.4 s) | **Changed to Haiku medium** |
+| Web lookup | Same facts; Haiku $0.012 / 11 s vs Sonnet $0.051 / 16 s | Haiku medium |
+| Canvas, Garmin | All accurate; Haiku medium explained grade weights best | Haiku medium |
+| Read an email | All accurate; Sonnet offered to draft a reply | Sonnet low. It costs about $0.50/month more, but real emails are messier |
+| Email triage | Sonnet medium clearly best; Haiku mixed in non-emails | Sonnet medium |
+| Daily briefing | Sonnet medium excellent (6 s, $0.01); Opus slower, not better | Sonnet medium |
+| Study help | Sonnet medium good; Opus high more exam-focused at 3x the cost | Sonnet medium, with Opus high as ★ Important |
+| Hard reasoning | Opus medium sharpest (caught a wrong due date) at about Sonnet's cost | Opus medium |
+| Email drafts | All Opus settings behaved well and cost about the same | Opus medium. Re-test with the drafts visible (now shown in results) |
+| Deep research | Biggest gap: Sonnet generic; Opus medium specific and engineering-aware ($0.21, 55 s); Opus high no better | Opus medium |
+
+Caveats from that run:
+- **Cold cache:** the first request to each model was inflated by writing the prompt cache. Calibration now sends an untimed warm-up first.
+- **Stubbed ranking:** triage's ranking step was stubbed, but now really runs.
+- **Hidden drafts:** email drafts weren't visible, and now are.
+- **Wrong guesses about people:** models assumed a professor's gender. The persona now says not to.
+- **Over-sharing in small talk:** Haiku listed tasks in reply to small talk. The persona now says to keep small talk short and offer instead.
+- **Small fake data:** with real data, costs are a bit higher than measured. Measured heavy-use total: about $15–17/month.
 
 ## Why each choice (the short version)
 - **Everyday talk, commands, Canvas, Garmin, calendar, weather and memory notes → Haiku 5.5.**
@@ -62,8 +88,8 @@ The numbers come from the Settings → Brain screen and are the same as above.
   - Haiku 5.5 supports web search, so Monkey's old "no web for Haiku" rule is gone.
   - Monkey gives it today's date plus Anthropic's recommended nudge to search for anything that may have changed.
   - Every search costs $0.01 on any model, so most of this task's cost is the search itself.
-- **Everyday questions with no specific task → Sonnet 5.5 low.**
-  - Answers well and starts in about a second.
+- **Everyday questions with no specific task → Haiku 5.5 medium** (changed after calibration).
+  - Same quality as Sonnet on the test, faster and cheaper. Hard questions still go to Opus.
 - **Reading and summarizing an email → Sonnet 5.5 low.**
   - Needs judgment about someone else's writing.
 - **Triage and ranking of email and calendar → Sonnet 5.5 medium, plus "think the problem through first".**
@@ -89,9 +115,9 @@ The numbers come from the Settings → Brain screen and are the same as above.
 
 ## Calibrate (measure instead of estimate)
 **Settings → Brain → Calibrate models** works like this:
-1. It runs one sample request per task on each of its Quick, Auto and Important settings. That's about 50 runs, about 5 minutes, and **about $3** of API credits; the exact estimate is shown before you confirm.
-2. Canvas, Garmin, email and calendar data are **fake**, and the draft and send tools are stubbed, so nothing real is read, sent or changed. Web search is real.
-3. It records real cost, time to first words and total time, then shows the answers side by side.
+1. It sends one untimed warm-up request per model, then runs one sample request per task on each of its Quick, Auto and Important settings. That's about 50 runs, about 5 minutes, and about $1–3 of API credits; the exact estimate is shown before you confirm. Tick "2 samples each" for steadier numbers at about 2x the cost, or re-run only the tasks you tick on the results page.
+2. Canvas, Garmin, email and calendar data are **fake**, and the draft and send tools are stubbed, so nothing real is read, sent or changed. Web search and the triage ranking step are real.
+3. It records real cost, time to first words and total time, then shows the answers side by side, including the email drafts and on-screen content each model produced.
 4. For each task, you pick the best answer (it becomes Auto) or leave "All fine" (the cheapest is kept).
 5. The measured numbers appear in the table and in Monkey's memory note.
 
