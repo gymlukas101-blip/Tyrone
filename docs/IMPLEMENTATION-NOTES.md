@@ -168,9 +168,9 @@ There was no cross-session recall, no provenance, and no correct or forget tools
 - **Not measured:** whether the model actually picks the right skill. That needs live calls; run the calibration with a key.
 
 **Routing benchmark** (`tools/bench_routing.py`, 42 labeled fake requests across school, BBU, Monkey and life), offline result:
-- Rules cover **28/42** at **27/28 correct (96%)**.
+- Rules cover **28/42**, all 28 correct (100%).
 - The remaining **14** go to the Haiku classifier.
-- The only miss was ambiguous ("open my email": inbox vs. Gmail website) and is now labeled as either.
+- Before relabeling it was 27/28: the one miss, "open my email", is ambiguous (inbox vs. Gmail website) and now accepts either label.
 - **Decision: no routing change in this sprint.** Replacing the classifier needs its live accuracy, latency and cost on those 14. `python -m tools.bench_routing --live` measures exactly that with your key (about 14 Haiku calls, well under $0.01). Removing the classifier also changes how cache-warm follow-ups stick (sticky routing is now fixed and tested), so compare after a week of real use.
 
 ## Deferred, with protocols (not started on purpose)
