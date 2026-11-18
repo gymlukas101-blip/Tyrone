@@ -107,6 +107,7 @@ class MonkeyApp:
             budget_usd=lambda: self.cfg.settings.monthly_budget_usd,
             spent_usd=self.ledger.month_to_date,
             forced_model=lambda: self.cfg.settings.force_model,
+            profile=lambda: self.cfg.settings.brain_profile,
         )
         self.agent = Agent(None, self.router, ToolRunner(self.services), self.memory, self.ledger,
                            emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name)

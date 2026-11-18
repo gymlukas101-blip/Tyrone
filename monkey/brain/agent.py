@@ -120,7 +120,8 @@ class Agent:
         params: dict[str, Any] = {
             "model": route.model,
             "max_tokens": 16000,
-            "system": [{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral"}}],
+            # 1-hour cache on the stable prefix (tools + persona): voice chats often pause > 5 minutes.
+            "system": [{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             "tools": self._tools_for(route.model),
             "messages": list(self.history),
             "output_config": {"effort": route.effort},

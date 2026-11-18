@@ -86,7 +86,7 @@ Email and web content is treated as untrusted data: Monkey is instructed not to 
 ## Cost (typical student use)
 | Service | Approx. per month |
 |---|---|
-| Claude (auto-routed) | $5–20 |
+| Claude (auto-routed) | ~$20–25 on the "Saver" profile, ~$40–50 on "Best" at heavy use (see docs/LLM-ACCESS.md) |
 | Fish Audio voice | $1–3 |
 | Speech-to-text (local Whisper) | $0 |
 | Google, YouTube, NWS weather, Canvas feed | $0 |

@@ -45,9 +45,23 @@ class Route:
         return f"{name} · {self.effort}"
 
 
-def _route(level: int, importance: Importance, reason: str) -> Route:
-    level = max(0, min(level, len(LADDER) - 1))
-    model, effort = LADDER[level]
+# "Saver" profile: same decisions, cheaper models. Heavy work runs on Sonnet; Opus only for
+# the top two levels (you said it's important / very hard). Roughly halves a heavy month's bill.
+SAVER_LADDER: list[tuple[str, Effort]] = [
+    (HAIKU, "low"),
+    (SONNET, "low"),
+    (SONNET, "low"),
+    (SONNET, "medium"),
+    (OPUS, "medium"),
+    (OPUS, "high"),
+]
+PROFILES = {"best": LADDER, "saver": SAVER_LADDER}
+
+
+def _route(level: int, importance: Importance, reason: str, profile: str = "best") -> Route:
+    ladder = PROFILES.get(profile, LADDER)
+    level = max(0, min(level, len(ladder) - 1))
+    model, effort = ladder[level]
     return Route(model=model, effort=effort, importance=importance, level=level, reason=reason)
 
 
@@ -169,11 +183,13 @@ class Router:
         budget_usd: Callable[[], float] | None = None,
         spent_usd: Callable[[], float] | None = None,
         forced_model: Callable[[], str] | None = None,
+        profile: Callable[[], str] | None = None,
     ):
         self._classify = classify
         self._budget = budget_usd or (lambda: float("inf"))
         self._spent = spent_usd or (lambda: 0.0)
         self._forced = forced_model or (lambda: "")
+        self._profile = profile or (lambda: "best")
 
     def route(self, text: str, explicit_importance: Importance | None = None) -> Route:
         importance: Importance = explicit_importance or detect_importance(text)
@@ -220,9 +236,9 @@ class Router:
             level = 2
             reason += " | near monthly budget"
 
-        return _route(level, importance, reason)
+        return _route(level, importance, reason, self._profile())
 
     def escalate(self, route: Route) -> Route:
         """One step up the ladder - used when a cheap model asks for help."""
         nxt = max(route.level + 1, 1)
-        return _route(nxt, route.importance, route.reason + " → escalated")
+        return _route(nxt, route.importance, route.reason + " → escalated", self._profile())

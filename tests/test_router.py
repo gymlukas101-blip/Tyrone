@@ -85,3 +85,11 @@ def test_escalate_steps_up():
 
 def test_rule_level_none_for_open_question():
     assert rule_level("why do cats purr")[0] is None
+
+
+def test_saver_profile_uses_sonnet_for_heavy_work():
+    saver = Router(profile=lambda: "saver")
+    assert saver.route("research the best laptops for engineering students").model == SONNET
+    assert saver.route("draft an email to my professor about the exam").model == SONNET
+    assert saver.route("research laptops, this is important").model == OPUS
+    assert saver.route("yo what's up").model == HAIKU

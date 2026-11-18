@@ -53,6 +53,9 @@ def test_costs_and_ledger(tmp_path):
     u = Usage(input_tokens=1_000_000, output_tokens=100_000)
     assert cost_usd(OPUS, u) == pytest.approx(6.0)
     assert cost_usd(HAIKU, u) == pytest.approx(0.15)
+    # 1-hour cache writes cost 2x input; 5-minute writes 1.25x.
+    assert cost_usd(OPUS, Usage(cache_creation_input_tokens=1_000_000, cache_creation_1h_tokens=1_000_000)) == pytest.approx(8.0)
+    assert cost_usd(OPUS, Usage(cache_creation_input_tokens=1_000_000)) == pytest.approx(5.0)
     led = Ledger(tmp_path / "t.db")
     led.record(OPUS, "low", "chat", u)
     assert led.month_to_date() == pytest.approx(6.0)

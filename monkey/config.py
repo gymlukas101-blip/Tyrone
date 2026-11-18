@@ -51,6 +51,7 @@ class Settings:
     # Brain
     monthly_budget_usd: float = 25.0
     force_model: str = ""             # "" = automatic routing
+    brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
     # Integrations
     use_gmail: bool = True
     use_outlook: bool = True

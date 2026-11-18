@@ -372,6 +372,14 @@ async function openSettings() {
           sel.value = s.force_model ?? "";
           sel.addEventListener("change", async () => { appState = await api.save_settings({ force_model: sel.value }); toast("Saved"); });
           return sel;
+        })()),
+        h("div", { class: "field" }, h("span", {}, "Brain profile"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "best" }, "Best: Opus for research & email drafts (~$40–50/mo heavy use)"),
+            h("option", { value: "saver" }, "Saver: Sonnet for heavy work, Opus only when important (~$20–25/mo)"));
+          sel.value = s.brain_profile ?? "best";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ brain_profile: sel.value }); toast("Saved"); });
+          return sel;
         })())),
       h("section", {}, h("h4", {}, "Memory"),
         h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Monkey to another PC (encrypted with your password).`),

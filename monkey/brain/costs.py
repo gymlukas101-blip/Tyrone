@@ -26,6 +26,7 @@ class Usage:
     output_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_creation_input_tokens: int = 0
+    cache_creation_1h_tokens: int = 0     # subset of the above written with the 1-hour TTL (2x input price)
     web_searches: int = 0
 
     @classmethod
@@ -38,6 +39,7 @@ class Usage:
             output_tokens=getattr(usage, "output_tokens", 0) or 0,
             cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
             cache_creation_input_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            cache_creation_1h_tokens=getattr(getattr(usage, "cache_creation", None), "ephemeral_1h_input_tokens", 0) or 0,
             web_searches=(getattr(stu, "web_search_requests", 0) or 0) if stu else 0,
         )
 
@@ -48,7 +50,8 @@ def cost_usd(model: str, u: Usage) -> float:
         u.input_tokens * inp
         + u.output_tokens * out
         + u.cache_read_input_tokens * cread
-        + u.cache_creation_input_tokens * cwrite
+        + (u.cache_creation_input_tokens - u.cache_creation_1h_tokens) * cwrite
+        + u.cache_creation_1h_tokens * inp * 2
     ) / 1_000_000 + u.web_searches * WEB_SEARCH_USD
 
 

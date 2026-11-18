@@ -87,7 +87,7 @@ def test_simple_reply_spoken_and_cached(tmp_path):
     assert spoken and "What's good" in " ".join(spoken)
     p = client.calls[0]
     assert p["model"] == HAIKU and "betas" not in p
-    assert p["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert p["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     names = [t.get("name") for t in p["tools"]]
     assert "web_search" not in names and "escalate" in names
 
