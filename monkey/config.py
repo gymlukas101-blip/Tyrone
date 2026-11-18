@@ -51,6 +51,7 @@ class Settings:
     # Brain
     monthly_budget_usd: float = 25.0
     force_model: str = ""             # "" = automatic routing
+    max_credits: bool = False         # paying with Claude Max's monthly API credits ($100): budget kept under it
     brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
     # Updates + images
     auto_update: bool = True

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, keys
+from . import __version__, keys, secretstore
 from .brain.agent import Agent
 from .brain.approval import ApprovalGate
 from .brain.costs import HAIKU, Ledger, Usage
@@ -86,6 +86,7 @@ class MonkeyApp:
         self.ui = UIBus()
         self.memory = MonkeyMemory(self.cfg.memory_dir)
         self.ledger = Ledger(self.cfg.db_path)
+        self._bot_text: list[str] = []
 
         # Integrations
         self.google = GoogleAuth()
@@ -210,7 +211,24 @@ class MonkeyApp:
             self._agent_state = (payload or {}).get("state", "idle")
             self._publish_state()
             return
+        if name in ("user", "delta", "done"):
+            self._remember_chat(name, payload or {})
         self.ui.emit(name, payload)
+
+    def _remember_chat(self, name: str, p: dict) -> None:
+        """Keep the chat (exactly as shown on screen) so it's still there next time Monkey opens."""
+        if name == "delta":
+            self._bot_text.append(str(p.get("text", "")))
+            return
+        try:
+            if name == "user":
+                self._bot_text = []
+                self.ledger.add_transcript("user", str(p.get("text", "")))
+            else:
+                self.ledger.add_transcript("bot", "".join(self._bot_text) or str(p.get("text", "")))
+                self._bot_text = []
+        except Exception:  # noqa: BLE001
+            log.debug("transcript save failed", exc_info=True)
 
     def _publish_state(self) -> None:
         if self.speaker is not None and self.speaker.speaking:
@@ -378,6 +396,8 @@ class Api:
         return {
             "settings": a.cfg.as_dict(),
             "keys": ks,
+            "key_hints": keys.hints(),
+            "secrets_backend": secretstore.BACKEND,
             "wakeword": a.wakeword_label,
             "connections": {
                 "gmail": ks.get("google_token", False),
@@ -395,16 +415,36 @@ class Api:
         }
 
     def save_key(self, name: str, value: str):
+        """Save, then read it back from disk, so "Saved" really means it'll be there after a restart."""
         if name not in keys.KNOWN_KEYS:
-            return False
-        keys.set(name, value.strip())
+            return {"ok": False, "error": "Unknown key"}
+        value = (value or "").strip()
+        if not value:
+            return {"ok": False, "error": "Paste a key first"}
+        try:
+            keys.set(name, value)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("saving key %s failed", name)
+            return {"ok": False, "error": str(exc)}
         a = self._app
         if name == "anthropic":
             a._ensure_client()
             a.cfg.update(first_run_complete=True)
         if name == "youtube":
             a.services.video_search = a._videos
-        return True
+        return {"ok": True, "hint": keys.hints().get(name, "")}
+
+    def delete_key(self, name: str):
+        if name in keys.KNOWN_KEYS:
+            keys.delete(name)
+        return {"ok": True}
+
+    def get_transcript(self, limit: int = 40):
+        try:
+            return self._app.ledger.recent_transcript(max(1, min(int(limit), 200)))
+        except Exception:  # noqa: BLE001
+            log.exception("transcript load failed")
+            return []
 
     def save_settings(self, changes: dict):
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
@@ -499,6 +539,7 @@ class Api:
 
     def new_conversation(self):
         self._app.agent.new_session()
+        self._app.ledger.add_transcript("reset", "")
 
     # drafts (the ONLY way email gets sent)
     def approve(self, draft_id: str, token: str):
@@ -776,6 +817,39 @@ def run() -> None:
                   storage_path=str(app.cfg.data_dir / "webview"))
 
 
+def _selftest_secrets(tmp: Path) -> list[str]:
+    """Keys must survive a restart. CI runs the exe twice against the same file: the 2nd run checks that the
+    secret the 1st run saved is still readable (MONKEY_SELFTEST_EXPECT_SAVED=1)."""
+    from .secretstore import SecretStore
+
+    problems: list[str] = []
+    path = Path(os.environ.get("MONKEY_SELFTEST_SECRETS") or tmp / "selftest-secrets.dat")
+    big = "sk-selftest-" + "x" * 5000 + "-end"  # bigger than Credential Manager allows, like a Google token
+    try:
+        st = SecretStore(path)
+        before = st.get("selftest_big")
+        if os.environ.get("MONKEY_SELFTEST_EXPECT_SAVED") and before != big:
+            problems.append("a key saved by the previous run was NOT readable after restart")
+        st.set("selftest_big", big)
+        if SecretStore(path).get("selftest_big") != big:
+            problems.append("saved key didn't read back")
+        raw = path.read_text(encoding="utf-8")
+        if sys.platform == "win32" and ("xxxxxxxx" in raw or '"dpapi:' not in raw):
+            problems.append("keys are not DPAPI-encrypted on disk")
+        # The real keys module, as Settings uses it.
+        keys.use_store(tmp / "keys-selftest.dat")
+        try:
+            keys.set("fish", "selftest-fish-key-1234")
+            if keys.saved("fish") != "selftest-fish-key-1234" or keys.hints().get("fish") != "1234":
+                problems.append("keys.set/get round trip failed")
+            keys.store().delete("fish")  # (not keys.delete: never touch the real Credential Manager)
+        finally:
+            keys.use_store(None)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"secret store: {exc}")
+    return problems
+
+
 def selftest() -> int:
     """Used by CI on the built .exe: load everything that doesn't need a mic or a window."""
     import tempfile
@@ -805,6 +879,8 @@ def selftest() -> int:
             plan_cleanup()  # must not crash on a clean machine
         except Exception as exc:  # noqa: BLE001
             problems.append(f"cleanup scan: {exc}")
+
+        problems += _selftest_secrets(Path(tmp))
 
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")

@@ -1,6 +1,10 @@
-"""Model price table + a spend ledger so Monkey can respect a monthly budget."""
+"""Model price table + a spend ledger so Monkey can respect a monthly budget.
+
+The same SQLite file also keeps the chat transcript and the live conversation, so both survive a restart.
+"""
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -68,6 +72,8 @@ class Ledger:
                     input INTEGER, output INTEGER, cache_read INTEGER, cache_write INTEGER,
                     searches INTEGER, usd REAL)"""
             )
+            c.execute("CREATE TABLE IF NOT EXISTS transcript(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, role TEXT, text TEXT)")
+            c.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT, ts REAL)")
 
     def _conn(self):
         return sqlite3.connect(self.db_path)
@@ -110,3 +116,42 @@ class Ledger:
                 (start,),
             ).fetchall()
         return [{"model": m, "calls": n, "usd": round(u or 0, 4)} for m, n, u in rows]
+
+    # ------------------------------------------------------------ transcript (what you see in the chat)
+    def add_transcript(self, role: str, text: str) -> None:
+        """role: "user" | "bot" | "reset" (a "New conversation" divider)."""
+        if role != "reset" and not (text or "").strip():
+            return
+        with self._lock, self._conn() as c:
+            c.execute("INSERT INTO transcript(ts, role, text) VALUES (?,?,?)",
+                      (datetime.now(timezone.utc).isoformat(), role, (text or "")[:20000]))
+            # Keep the file small: the newest 2000 lines are plenty.
+            c.execute("DELETE FROM transcript WHERE id <= (SELECT MAX(id) FROM transcript) - 2000")
+
+    def recent_transcript(self, limit: int = 40) -> list[dict]:
+        """The last `limit` messages since the most recent "New conversation", oldest first."""
+        with self._conn() as c:
+            last_reset = c.execute("SELECT COALESCE(MAX(id), 0) FROM transcript WHERE role = 'reset'").fetchone()[0]
+            rows = c.execute(
+                "SELECT ts, role, text FROM transcript WHERE id > ? ORDER BY id DESC LIMIT ?", (last_reset, int(limit))
+            ).fetchall()
+        return [{"ts": ts, "role": role, "text": text} for ts, role, text in reversed(rows)]
+
+    # ------------------------------------------------------------ small key/value state
+    def put_state(self, key: str, value, ts: float) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO kv(k, v, ts) VALUES (?,?,?)", (key, json.dumps(value), ts))
+
+    def get_state(self, key: str) -> tuple[object, float] | None:
+        with self._conn() as c:
+            row = c.execute("SELECT v, ts FROM kv WHERE k = ?", (key,)).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0]), float(row[1] or 0)
+        except ValueError:
+            return None
+
+    def clear_state(self, key: str) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM kv WHERE k = ?", (key,))

@@ -81,9 +81,16 @@ jobs:
         shell: pwsh
         run: |
           $env:MONKEY_SELFTEST_OUT = "$PWD\selftest.txt"
+          $env:MONKEY_SELFTEST_SECRETS = "$PWD\selftest-secrets.dat"
           $p = Start-Process -FilePath "dist\Monkey\Monkey.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
+          # Second launch = "after a restart": the DPAPI-encrypted key saved by the first run must still be readable.
+          $env:MONKEY_SELFTEST_EXPECT_SAVED = "1"
+          $p = Start-Process -FilePath "dist\Monkey\Monkey.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+          Remove-Item selftest-secrets.dat
 
       # ---- Velopack: auto-updating installer + GitHub Release on every push to main ----
       - uses: actions/setup-dotnet@v4

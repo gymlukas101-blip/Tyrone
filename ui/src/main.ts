@@ -329,14 +329,33 @@ async function openSettings() {
   const dlg = $<HTMLDialogElement>("#settings");
   const status = (on: boolean) => h("span", { class: `dot ${on ? "on" : ""}` });
   const keyRow = ([name, label, help]: [string, string, string]) => {
-    const inp = h("input", { type: "password", placeholder: appState.keys[name] ? "•••••• saved" : "paste key" });
+    const hint = appState.key_hints?.[name];
+    const inp = h("input", { type: "password", placeholder: appState.keys[name] ? `saved ••••${hint ?? ""}` : "paste key" });
+    const note = h("p", { class: "keynote" },
+      appState.keys[name] ? `✓ Saved${hint ? ` (ends in ${hint})` : ""}. Stays saved after restarts and updates.` : "");
+    const save = async () => {
+      if (!inp.value.trim()) return;
+      const r = await api.save_key(name, inp.value.trim());
+      if (!r.ok) { note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; return; }
+      inp.value = ""; toast(`✓ ${label} saved. It'll be there next time you open Monkey.`, 4000);
+      await openSettings();
+    };
+    inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") { e.preventDefault(); save(); } });
     return h("div", {},
       h("div", { class: "field" }, status(!!appState.keys[name]), h("span", {}, label), inp,
-        h("button", { class: "ghost", type: "button", onclick: async () => {
-          if (!inp.value.trim()) return;
-          await api.save_key(name, inp.value.trim()); inp.value = ""; toast(`${label} saved`); openSettings();
-        } }, "Save")),
-      h("p", { class: "help" }, help));
+        h("button", { class: "ghost", type: "button", onclick: save }, "Save"),
+        appState.keys[name] && h("button", { class: "ghost", type: "button", title: "Remove this key", onclick: async () => {
+          if (!confirm(`Remove the saved ${label} key?`)) return;
+          await api.delete_key(name); toast(`${label} removed`); openSettings();
+        } }, "✕")),
+      note,
+      h("p", { class: "help" }, help),
+      name === "anthropic" && h("p", { class: "help maxhelp" },
+        "Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
+        h("b", {}, "API credits"), " → link a Console org, then create a key at platform.claude.com → API keys and paste it here. ",
+        h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); api.open_url("https://claude.ai/settings/billing"); } }, "Open billing settings"),
+        " · ",
+        h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); api.open_url("https://platform.claude.com/settings/keys"); } }, "Create a key")));
   };
   const field = (label: string, key: string, type = "text", extra: Record<string, any> = {}) => {
     const inp = h("input", { type, value: s[key] ?? "", ...extra });
@@ -358,7 +377,8 @@ async function openSettings() {
     h("div", { class: "body" },
       h("section", {}, h("h4", {}, "You"), field("Your first name", "user_name")),
       h("section", {}, h("h4", {}, "API keys"),
-        h("p", { class: "help" }, "Stored in Windows Credential Manager on this PC, never in files or the repo."),
+        h("p", { class: "help" }, "Encrypted with your Windows account (" + (appState.secrets_backend ?? "DPAPI") +
+          ") in Monkey's own folder on this PC. They stay saved through restarts and updates, and never go in the repo or memory exports."),
         ...KEY_INFO.map(keyRow)),
       h("section", {}, h("h4", {}, "Monkey's voice (Fish Audio)"),
         h("p", { class: "help" }, "Design an original voice from a description, pick a candidate, and Monkey keeps it. Or design it on fish.audio and paste the voice ID."),
@@ -396,7 +416,8 @@ async function openSettings() {
           return h("div", { class: "field" }, status(!!appState.keys.google_client), h("span", {}, "Google client"), ta,
             h("button", { class: "ghost", type: "button", onclick: async () => {
               if (!ta.value.trim()) return;
-              await api.save_key("google_client", ta.value.trim()); toast("Saved"); openSettings();
+              const r = await api.save_key("google_client", ta.value.trim());
+              toast(r.ok ? "✓ Saved" : `⚠ Not saved: ${r.error}`); openSettings();
             } }, "Save"));
         })(),
         h("div", { class: "field" }, status(!!appState.connections.gmail), h("span", {}, "Gmail + Google Calendar"),
@@ -439,6 +460,18 @@ async function openSettings() {
       h("section", {}, h("h4", {}, "Brain & budget"),
         h("p", { class: "help" }, `This month: $${appState.month_usd.toFixed(2)} of $${appState.budget_usd.toFixed(2)}. ` +
           appState.breakdown.map((b) => `${b.model.replace("claude-", "")}: ${b.calls} calls $${b.usd.toFixed(2)}`).join(" · ")),
+        h("label", { class: "field toggle" }, (() => {
+          const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
+          cb.checked = !!s.max_credits;
+          cb.addEventListener("change", async () => {
+            appState = await api.save_settings(cb.checked
+              ? { max_credits: true, monthly_budget_usd: 95, brain_profile: "best" }
+              : { max_credits: false });
+            toast(cb.checked ? "Budget set to $95 so Monkey stays inside your free $100 of Max credits" : "Saved", 4000);
+            openSettings();
+          });
+          return cb;
+        })(), h("span", {}, "I'm paying with my Claude Max plan's API credits ($100/month)")),
         field("Monthly budget (USD)", "monthly_budget_usd", "number", { min: "1", step: "1" }),
         h("div", { class: "field" }, h("span", {}, "Model"), (() => {
           const sel = h("select", {},
@@ -503,6 +536,20 @@ async function openSettings() {
   if (!dlg.open) dlg.showModal();
 }
 
+// ------------------------------------------------------------------ earlier chat (survives restarts)
+async function restoreTranscript() {
+  let items: { ts: string; role: string; text: string }[] = [];
+  try { items = await api.get_transcript(40); } catch { return; }
+  if (!items?.length) return;
+  const when = new Date(items[items.length - 1].ts);
+  const label = isNaN(+when) ? "Earlier" :
+    `Earlier · ${when.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} ` +
+    when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  for (const it of items) addMsg(it.role === "user" ? "user" : "bot", it.text).classList.add("earlier");
+  log.append(h("div", { class: "divider" }, h("span", {}, label.replace("Earlier", "↑ Earlier"))));
+  log.scrollTop = log.scrollHeight;
+}
+
 // ------------------------------------------------------------------ boot
 (async () => {
   api = await waitForApi();
@@ -511,6 +558,7 @@ async function openSettings() {
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
+  await restoreTranscript();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {
     addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");
     openSettings();

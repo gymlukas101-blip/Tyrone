@@ -5,6 +5,8 @@ export type Importance = "low" | "normal" | "high";
 export interface AppState {
   settings: Record<string, any>;
   keys: Record<string, boolean>;
+  key_hints?: Record<string, string>;
+  secrets_backend?: string;
   wakeword: string;
   connections: Record<string, boolean>;
   month_usd: number;
@@ -16,7 +18,9 @@ export interface AppState {
 
 export interface Api {
   get_state(): Promise<AppState>;
-  save_key(name: string, value: string): Promise<boolean>;
+  save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string }>;
+  delete_key(name: string): Promise<{ ok: boolean }>;
+  get_transcript(limit: number): Promise<{ ts: string; role: "user" | "bot"; text: string }[]>;
   save_settings(changes: Record<string, any>): Promise<AppState>;
   send_text(text: string, importance: Importance | null): Promise<void>;
   push_to_talk(): Promise<void>;
@@ -94,6 +98,7 @@ function mockApi(): Api {
   const state: AppState = {
     settings: { user_name: "", monthly_budget_usd: 25, wakeword_threshold: 0.5, stt_engine: "whisper",
                 canvas_ics_url: "", fish_voice_id: "", push_to_talk_hotkey: "ctrl+alt+space", first_run_complete: true },
+    key_hints: { anthropic: "x9Qa", fish: "4s0I" }, secrets_backend: "Windows DPAPI",
     keys: { anthropic: true, fish: true, deepgram: false, youtube: false, brave: false, google_client: false, google_token: false },
     wakeword: "Demo mode (browser)",
     connections: { gmail: false, google_calendar: false, outlook: false, canvas: false },
@@ -119,7 +124,16 @@ function mockApi(): Api {
   };
   return {
     async get_state() { return state; },
-    async save_key() { return true; },
+    async save_key(name, value) {
+      state.keys[name] = true; (state.key_hints ??= {})[name] = value.slice(-4); return { ok: true, hint: value.slice(-4) };
+    },
+    async delete_key(name) { state.keys[name] = false; delete state.key_hints?.[name]; return { ok: true }; },
+    async get_transcript() {
+      return [
+        { ts: new Date(Date.now() - 3600e3).toISOString(), role: "user", text: "what's due this week?" },
+        { ts: new Date(Date.now() - 3590e3).toISOString(), role: "bot", text: "Math 222 problem set Thursday and the CS 400 project on Friday. Start with the project, it's worth more." },
+      ];
+    },
     async save_settings(c) { Object.assign(state.settings, c); return state; },
     async send_text(text) {
       emit([["user", { text }], ["route", { label: "Opus 5.5 · medium", reason: "email drafting", importance: "normal" }],

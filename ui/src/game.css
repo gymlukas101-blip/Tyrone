@@ -221,3 +221,16 @@ dialog {
 }
 .update-toast strong { font-family: var(--display); font-size: 18px; color: var(--banana); text-shadow: 0 2px 0 var(--ink); font-weight: 400; }
 .update-toast span { font-size: 12px; color: #d9f5cc; }
+
+/* Saved-key confirmation, Max credits help, restored chat */
+.settings p.keynote { margin: -2px 0 4px 17px; font-size: 12px; font-weight: 700; color: var(--ok); min-height: 0; }
+.settings p.keynote:empty { display: none; }
+.settings p.keynote.bad { color: #ff8a80; }
+.settings p.maxhelp { background: rgba(255, 214, 10, .12); border: 2px solid rgba(255, 214, 10, .45); border-radius: 10px; padding: 8px 10px; color: #fff3c4; }
+.settings p.maxhelp a { color: var(--banana); font-weight: 700; }
+.settings label.toggle { cursor: pointer; }
+.settings label.toggle input { width: 18px; height: 18px; flex: none; min-width: 0; margin: 0; padding: 0; accent-color: var(--banana); }
+.settings label.toggle span { min-width: 0; flex: 1; text-align: left; color: #fff3c4; font-weight: 700; }
+.msg.earlier { opacity: .72; }
+#log .divider { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; color: var(--banana); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+#log .divider::before, #log .divider::after { content: ""; flex: 1; height: 2px; background: rgba(255, 214, 10, .35); border-radius: 2px; }

@@ -1,10 +1,33 @@
 # What should power Monkey's brain? (researched 2026-11-18)
 
 ## Short answer
-- **Keep the Anthropic API key.** It's the only option that is fully allowed by the terms, fast enough for voice, and supports all of Monkey's tools as-is: web search, memory, email, Canvas, Garmin.
-- **Use the "Saver" brain profile** (Settings → Brain & budget). It sends heavy work to Sonnet and saves Opus for things you say are important. That's **about $20–25 a month** at heavy use, instead of about $40–50.
-- **Your ChatGPT subscription can help, but not through OpenClaw.** Use OpenAI's official **Sign in with ChatGPT**, built directly into Monkey; that's a possible next step. OpenClaw works, but it's a heavy extra program with a bad security record, and running Monkey through it is a grey area.
-- **Don't use your Claude Pro/Max login inside Monkey.** Anthropic's terms forbid custom apps from sending requests through subscription credentials, and Anthropic has enforced this since early 2026.
+- **You have Claude Max, so Monkey is basically free.**
+  - Since 2026, **Max includes $100/month of Claude API credits**; Ultra includes $200.
+  - They work with a normal API key in "your own applications and agents", which is exactly what Monkey is. Monkey's heavy use is about $40–50/month on the Best profile, well inside $100.
+- **Don't use your Claude Pro/Max *login* inside Monkey.** Use the API credits with an API key instead (below).
+  - Anthropic's terms forbid custom apps from sending requests through subscription logins (OAuth). Anthropic has enforced this since early 2026.
+  - That rules out `claude -p` / Agent SDK on your login and community "Max proxies".
+- **ChatGPT:**
+  - **Plus includes no API credits.**
+  - **ChatGPT Pro** includes OpenAI API credits equal to its price each month. Those can pay for Monkey's image generation (OpenAI key in Settings).
+  - Running Monkey's whole brain on ChatGPT would need a rewrite and isn't needed while Max credits cover it.
+- **OpenClaw and other harnesses:** not worth it. They're a heavy extra program with a bad security record, running Monkey through them is a grey area, and they add delay to voice replies.
+
+## Using your Claude Max plan's API credits (recommended)
+1. Be on Claude Max (or Ultra) for at least 7 days.
+2. Go to **claude.ai → Settings → Billing → API credits**, click **Claim**, and link a Claude Console organization. Create a new one if you don't have one. No credit card is needed.
+3. In the Console (platform.claude.com) go to **API keys → Create key**. Copy it.
+4. In Monkey go to **Settings → API keys → Anthropic** → paste → **Save**. You'll see "✓ Saved (ends in …)".
+5. In **Settings → Brain & budget**, tick **"I'm paying with my Claude Max plan's API credits"**.
+   - This sets Monkey's monthly budget to $95, so it slows down to cheaper models before the $100 runs out.
+   - It keeps the Best brain profile.
+
+Details:
+- Credits renew every billing cycle and **don't roll over**.
+- When they run out, API requests stop until the next cycle. Monkey tells you so instead of showing an error. Your plan is never charged extra unless you add a card to the Console yourself.
+- They cover the Claude API, the Agent SDK and Managed Agents, but **not** Claude Code usage (that uses your plan's normal limits).
+- Optional safety net: Console → Settings → Limits → set a monthly spend limit.
+- Source: [API credits for Max, Ultra, and Team plans](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers).
 
 ## The math
 Assumed usage per day:
@@ -46,6 +69,7 @@ Heavy turns dominate the cost: 5 Opus research or drafting turns a day cost abou
 | Local Ollama model on the XPS | $0 | ✅ | Several seconds | Weak | Offline fallback only |
 
 ## Sources
+- Anthropic: API credits for subscribers: https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers
 - [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing)
 - [Claude Code legal & compliance](https://code.claude.com/docs/en/legal-and-compliance) (subscription login vs. API key)
 - [The Register: Anthropic clarifies third-party access ban (2026-02-20)](https://www.theregister.com/2026/02/20/anthropic_clarifies_ban_third_party_claude_access)

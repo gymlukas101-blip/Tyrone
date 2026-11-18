@@ -8,7 +8,7 @@ What it looks for (and nothing else):
     (MonkeySetup*.zip/.exe, TyroneSetup*.zip/.exe, Monkey-win-Setup*.exe, Monkey-win-Portable*.zip,
      and MonkeySetup*/TyroneSetup* folders that contain only .exe/.zip files)
 
-It never touches %APPDATA%\\Monkey (memory, settings), Windows Credential Manager (keys),
+It never touches %APPDATA%\\Monkey (memory, settings), your saved keys (secrets.dat, Credential Manager),
 or the current Velopack install (%LocalAppData%\\Monkey). Downloads go to the Recycle Bin.
 """
 from __future__ import annotations

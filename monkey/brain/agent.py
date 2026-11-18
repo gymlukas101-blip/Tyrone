@@ -34,6 +34,21 @@ WEB_TOOLS = [
     {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 5},
 ]
 MEMORY_TOOL = {"type": "memory_20250818", "name": "memory"}
+STATE_KEY = "conversation"
+CREDITS_GONE = ("Your Claude API credits are used up for now. If you're using your Claude Max plan's monthly "
+                "credits, they refresh on your billing date; otherwise add credits at platform.claude.com.")
+
+
+def _jsonable(block: Any) -> Any:
+    """SDK content blocks -> plain dicts so the conversation can be saved and replayed after a restart."""
+    if hasattr(block, "model_dump"):
+        return block.model_dump(mode="json", exclude_none=True)
+    return block
+
+
+def _out_of_credits(exc: Exception) -> bool:
+    text = f"{getattr(exc, 'message', '')} {exc}".lower()
+    return "credit balance" in text or ("billing" in text and "too low" in text)
 
 
 def load_persona() -> str:
@@ -65,6 +80,8 @@ class Agent:
         self.last_activity = 0.0
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        self._restored = False
+        self._restore()
 
     # ------------------------------------------------------------ public
     def cancel(self) -> None:
@@ -73,6 +90,39 @@ class Agent:
 
     def new_session(self) -> None:
         self.history = []
+        self._restored = False
+        if self.ledger is not None:
+            try:
+                self.ledger.clear_state(STATE_KEY)
+            except Exception:  # noqa: BLE001
+                pass
+
+    # ------------------------------------------------------------ survive restarts
+    def _restore(self) -> None:
+        """Reopened Monkey within the session window? Pick the conversation back up where it was."""
+        if self.ledger is None:
+            return
+        try:
+            saved = self.ledger.get_state(STATE_KEY)
+        except Exception:  # noqa: BLE001
+            return
+        if not saved:
+            return
+        history, ts = saved
+        if isinstance(history, list) and history and time.time() - ts < SESSION_IDLE_RESET_S:
+            self.history = history
+            self.last_activity = ts
+            self._restored = True
+
+    def _persist(self) -> None:
+        if self.ledger is None:
+            return
+        try:
+            self.history = [{"role": m["role"], "content": [_jsonable(b) for b in m["content"]]
+                             if isinstance(m["content"], list) else m["content"]} for m in self.history]
+            self.ledger.put_state(STATE_KEY, self.history, time.time())
+        except Exception:  # noqa: BLE001 - never break a reply over saving
+            pass
 
     def handle(self, text: str, importance: str | None = None) -> str:
         text = text.strip()
@@ -154,10 +204,18 @@ class Agent:
                         return " ".join(spoken_all)
                     final = stream.get_final_message()
             except anthropic.APIStatusError as exc:
+                if _out_of_credits(exc):
+                    return self._fail(CREDITS_GONE)
+                if self._restored and exc.status_code == 400 and self.history and self.history[-1]["role"] == "user":
+                    # The conversation restored after a restart wasn't accepted: start fresh with this message.
+                    self._restored = False
+                    self.history = [self.history[-1]]
+                    continue
                 return self._fail(f"API error {exc.status_code}: {exc.message}")
             except anthropic.APIConnectionError:
                 return self._fail("I can't reach the internet right now.")
 
+            self._restored = False
             for s in chunker.flush():
                 spoken_all.append(s)
                 self.speak(s)
@@ -185,6 +243,7 @@ class Agent:
         self.emit("done", {"text": " ".join(spoken_all)})
         self.emit("state", {"state": "idle"})
         self.last_activity = time.time()
+        self._persist()
         return " ".join(spoken_all)
 
     def _run_tools(self, final) -> tuple[list[dict], str | None]:
@@ -245,5 +304,6 @@ class Agent:
         # Remove nothing from history; add an assistant note so the next turn stays valid.
         if self.history and self.history[-1]["role"] == "user":
             self.history.append({"role": "assistant", "content": [{"type": "text", "text": f"({msg})"}]})
+        self._persist()
         self._say_full(msg)
         return msg

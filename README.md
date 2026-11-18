@@ -55,7 +55,7 @@ The first time you talk to him, Monkey downloads the local speech-recognition mo
 ## Setup checklist
 | Step | Where | Required? |
 |---|---|---|
-| Anthropic API key | console.anthropic.com → API keys | **Yes** |
+| Anthropic API key | **Have Claude Max?** Claim your free $100/month of API credits (claude.ai → Settings → Billing → API credits), then platform.claude.com → API keys. See [docs/LLM-ACCESS.md](docs/LLM-ACCESS.md#using-your-claude-max-plans-api-credits-recommended) | **Yes** |
 | Fish Audio API key | fish.audio → API | Yes, for his real voice. Without it he falls back to the Windows voice. |
 | Design Monkey's voice | Settings → *Design voices* → listen → *Use this one* | Recommended |
 | Google (Gmail + Calendar) | See [Google setup](#google-setup) | Optional |
@@ -82,7 +82,7 @@ UW–Madison's Microsoft 365 requires IT admin approval for third-party apps tha
 ## Moving to another PC (e.g. your Dell XPS)
 1. On the old PC, go to Settings → Memory → enter a password → **Export**. This saves `Documents\Monkey-backup-*.monkey`.
 2. On the new PC, install from Releases, then go to Settings → Memory → **Import** with the same password.
-3. Re-enter your API keys. They live in each PC's Windows Credential Manager and are never exported.
+3. Re-enter your API keys. They're encrypted to your Windows account on each PC, so they can't be copied over and are never exported.
 
 Alternatively, set the memory **sync folder** to a OneDrive folder on both PCs.
 
@@ -91,7 +91,8 @@ Alternatively, set the memory **sync folder** to a OneDrive folder on both PCs.
 |---|---|
 | Memory | `%APPDATA%\Monkey\memory\memories\*.md` (plain text, yours to edit) |
 | Settings and spend ledger | `%APPDATA%\Monkey\` |
-| API keys and Google token | Windows Credential Manager |
+| API keys and Google token | `%APPDATA%\Monkey\secrets.dat`, encrypted with Windows DPAPI (only your Windows account on this PC can read it). Keys saved by older versions in Credential Manager move over automatically |
+| Chat history | `%APPDATA%\Monkey\monkey.db` (last messages show again when you reopen Monkey; ⟲ starts fresh) |
 
 What gets sent where:
 - **Anthropic** receives your requests and the email, calendar and memory content needed to answer them.
@@ -103,7 +104,7 @@ Email and web content is treated as untrusted data: Monkey is instructed not to 
 ## Cost (typical student use)
 | Service | Approx. per month |
 |---|---|
-| Claude (auto-routed) | ~$20–25 on the "Saver" profile, ~$40–50 on "Best" at heavy use (see docs/LLM-ACCESS.md) |
+| Claude (auto-routed) | ~$20–25 on the "Saver" profile, ~$40–50 on "Best" at heavy use. **$0 extra with Claude Max**, whose $100/month of API credits cover it (see docs/LLM-ACCESS.md) |
 | Fish Audio voice | $1–3 |
 | Speech-to-text (local Whisper) | $0 |
 | Google, YouTube, NWS weather, Canvas feed | $0 |
