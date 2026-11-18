@@ -1,0 +1,365 @@
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+
+import { Avatar, type AvatarState } from "./avatar";
+import { type Api, type AppState, type Importance, waitForApi } from "./bridge";
+import "./style.css";
+
+// ------------------------------------------------------------------ helpers
+type Child = Node | string | null | undefined | false;
+function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K, attrs: Record<string, any> = {}, ...children: Child[]
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else if (k in el && typeof v !== "string") (el as any)[k] = v;
+    else el.setAttribute(k, String(v));
+  }
+  for (const c of children) if (c !== null && c !== undefined && c !== false) el.append(c);
+  return el;
+}
+const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+const md = (text: string) => {
+  const div = h("div", { class: "md" });
+  div.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
+  div.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); api.open_url(a.href); }));
+  return div;
+};
+const fmtTime = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
+function toast(text: string, ms = 3500) {
+  const t = h("div", { class: "toast" }, text);
+  document.body.append(t);
+  setTimeout(() => t.remove(), ms);
+}
+const safeHttp = (u: string) => /^https:\/\//i.test(u) ? u : "";
+
+// ------------------------------------------------------------------ state
+let api: Api;
+let appState: AppState;
+let importance: Importance = "normal";
+let botBubble: HTMLElement | null = null;
+const avatar = new Avatar($("#avatar"));
+const LABELS: Record<AvatarState, string> = {
+  idle: "Chillin'", listening: "Listening…", transcribing: "Got it…", thinking: "Thinking…", speaking: "Talking",
+};
+function setState(s: AvatarState) {
+  avatar.setState(s);
+  $("#stateLabel").textContent = LABELS[s] ?? s;
+}
+
+// ------------------------------------------------------------------ log + cards
+const log = $("#log");
+function addMsg(kind: "user" | "bot" | "sys", text: string) {
+  const el = h("div", { class: `msg ${kind}` }, text);
+  log.append(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+const cards = $("#cards");
+function card(title: string, ...body: Child[]) {
+  const c = h("div", { class: "card" },
+    h("button", { class: "close", title: "Close", onclick: () => c.remove() }, "✕"),
+    h("h3", {}, title), ...body);
+  cards.prepend(c);
+  while (cards.children.length > 4) cards.lastElementChild!.remove();
+  return c;
+}
+
+function draftCard(d: any) {
+  document.querySelectorAll(`.draft[data-id="${d.draft_id}"]`).forEach((n) => n.remove());
+  const subj = h("input", { value: d.subject });
+  const body = h("textarea", {}, d.body);
+  const status = h("span", { class: "badge" }, d.account === "outlook" ? "wisc.edu Outlook" : "Gmail");
+  const c = card("✉️ Draft for your approval",
+    h("div", {}, status, " ", h("span", { class: "meta" }, "Nothing is sent until you approve.")),
+    h("label", {}, "To"), h("input", { value: [...d.to, ...(d.cc?.length ? ["cc: " + d.cc.join(", ")] : [])].join(", "), readOnly: true }),
+    h("label", {}, "Subject"), subj,
+    h("label", {}, "Message"), body,
+  );
+  c.classList.add("draft");
+  c.dataset.id = d.draft_id;
+  const send = h("button", { class: "send", type: "button" }, "Send");
+  send.addEventListener("click", async () => {
+    send.disabled = true;
+    if (subj.value !== d.subject || body.value !== d.body) {
+      const r = await api.edit_draft(d.draft_id, d.token, subj.value, body.value);
+      if (!r.ok) { toast(r.error ?? "Couldn't save edits"); send.disabled = false; return; }
+    }
+    const r = await api.approve(d.draft_id, d.token);
+    if (r.ok) {
+      c.classList.add("sent");
+      c.querySelector(".actions")!.replaceChildren(h("strong", {}, "✓ Sent"));
+      addMsg("sys", `Email sent to ${d.to.join(", ")}`);
+    } else { toast(r.error ?? "Send failed"); send.disabled = false; }
+  });
+  c.append(h("div", { class: "actions" },
+    send,
+    h("button", { class: "ghost", type: "button", onclick: () => api.open_draft(d.draft_id) },
+      d.account === "outlook" ? "Open in Outlook" : "Open in Gmail"),
+    h("button", { class: "ghost", type: "button", onclick: () => { api.cancel_draft(d.draft_id); c.remove(); } }, "Discard"),
+  ));
+}
+
+function rankingCard(p: any) {
+  card("📋 What matters", h("p", {}, p.summary),
+    h("ul", { class: "items" }, ...p.items.map((it: any) => h("li", {},
+      h("span", { class: `tier ${it.tier}` }, it.tier),
+      h("div", {},
+        h("div", {}, it.kind === "event" ? it.title : it.subject),
+        h("div", { class: "meta" },
+          it.kind === "event" ? `${fmtTime(it.start)} · ${it.source}` : `${it.sender} · ${fmtTime(it.received)}`,
+          " — ", it.reason))))));
+}
+
+function eventsCard(p: any) {
+  if (!p.events.length) return;
+  card("📅 Calendar", h("ul", { class: "items" }, ...p.events.map((e: any) => h("li", {},
+    h("span", { class: "badge" }, e.source),
+    h("div", {}, h("div", {}, e.title), h("div", { class: "meta" }, `${fmtTime(e.start)}${e.location ? " · " + e.location : ""}`))))));
+}
+
+function emailsCard(p: any) {
+  if (!p.emails.length) return;
+  card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {},
+    h("span", { class: "badge" }, e.account),
+    h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
+      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`))))));
+}
+
+function imagesCard(p: any) {
+  card(`🖼️ ${p.query}`, h("div", { class: "grid" }, ...p.images.filter((i: any) => safeHttp(i.src)).map((i: any) =>
+    h("img", { src: safeHttp(i.thumb || i.src), alt: i.title, title: i.title, loading: "lazy",
+               onclick: () => i.page && api.open_url(i.page) }))));
+}
+
+function videosCard(p: any) {
+  const vids = p.videos as any[];
+  if (!vids.length) return;
+  const player = h("iframe", {
+    class: "video", allow: "autoplay; encrypted-media; picture-in-picture", allowFullscreen: true,
+    src: `${vids[0].embed}?autoplay=${p.autoplay ? 1 : 0}`,
+  });
+  card(`▶️ ${p.query}`, player, h("div", { class: "vlist" }, ...vids.map((v) => h("button", {
+    type: "button", onclick: () => { player.src = `${v.embed}?autoplay=1`; },
+  }, h("img", { src: safeHttp(v.thumb), alt: "" }), v.title))));
+}
+
+function weatherCard(p: any) {
+  card(`🌤️ Weather ${p.location ? "· " + p.location : ""}`, h("ul", { class: "items" },
+    ...p.periods.map((x: any) => h("li", {}, h("strong", {}, x.temp), h("div", {}, h("div", {}, `${x.name}: ${x.short}`),
+      h("div", { class: "meta" }, x.wind))))));
+}
+
+// ------------------------------------------------------------------ events from Python
+function onEvent(name: string, p: any) {
+  switch (name) {
+    case "state": setState(p.state); if (p.state === "idle") botBubble = null; break;
+    case "level": avatar.setLevel(p.v); break;
+    case "user": addMsg("user", p.text); botBubble = null; break;
+    case "delta":
+      if (!botBubble) botBubble = addMsg("bot", "");
+      botBubble.textContent += p.text; log.scrollTop = log.scrollHeight; break;
+    case "done": botBubble = null; break;
+    case "route":
+      $("#routeChip").textContent = p.label;
+      $("#routeChip").title = p.reason; break;
+    case "panel": card(p.title, md(p.markdown)); break;
+    case "draft": draftCard(p); break;
+    case "approval":
+      if (p.action === "sent") document.querySelectorAll(".draft:not(.sent)").forEach((c) => {
+        c.classList.add("sent"); c.querySelector(".actions")?.replaceChildren(h("strong", {}, "✓ Sent"));
+      });
+      if (p.action === "cancelled") document.querySelectorAll(".draft:not(.sent)").forEach((c) => c.remove());
+      break;
+    case "ranking": rankingCard(p); break;
+    case "events": eventsCard(p); break;
+    case "emails": emailsCard(p); break;
+    case "images": imagesCard(p); break;
+    case "videos": videosCard(p); break;
+    case "weather": weatherCard(p); break;
+    case "sources":
+      card("🔎 Sources", h("div", { class: "sources" }, ...p.sources.map((s: any) =>
+        h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
+      break;
+    case "opened": addMsg("sys", `Opened ${p.url}`); break;
+    case "memory": addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
+    case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
+    case "warning": addMsg("sys", "⚠ " + p.message); break;
+    case "wake": addMsg("sys", "👂 Yo Tyrone"); break;
+    case "heard": if (!p.text) addMsg("sys", "Didn't catch that."); break;
+    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); break;
+    case "hint": $("#hint").textContent = p.text; break;
+  }
+}
+window.__tyroneEvents = (events) => { for (const [n, p] of events) { try { onEvent(n, p); } catch (e) { console.error(n, e); } } };
+
+// ------------------------------------------------------------------ composer
+$("#importance").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest("button");
+  if (!b) return;
+  importance = b.dataset.v as Importance;
+  document.querySelectorAll("#importance button").forEach((x) => x.classList.toggle("on", x === b));
+});
+$("#composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $<HTMLInputElement>("#input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  api.send_text(text, importance === "normal" ? null : importance);
+});
+$("#mic").addEventListener("click", () => api.push_to_talk());
+$("#newChat").addEventListener("click", () => { api.new_conversation(); log.replaceChildren(); addMsg("sys", "New conversation"); });
+$("#settingsBtn").addEventListener("click", () => openSettings());
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") api.stop_speaking(); });
+
+// ------------------------------------------------------------------ settings
+const KEY_INFO: [string, string, string][] = [
+  ["anthropic", "Anthropic (Claude)", "Required. console.anthropic.com → API keys."],
+  ["fish", "Fish Audio", "Tyrone's voice. fish.audio → API keys."],
+  ["deepgram", "Deepgram (optional)", "Faster speech recognition. Leave empty to use free local Whisper."],
+  ["youtube", "YouTube Data API (optional)", "For showing videos. Google Cloud → APIs → YouTube Data API v3 → API key."],
+  ["brave", "Brave Search (optional)", "Better image search. Without it, images come from Wikimedia Commons."],
+];
+
+async function openSettings() {
+  appState = await api.get_state();
+  const s = appState.settings;
+  const dlg = $<HTMLDialogElement>("#settings");
+  const status = (on: boolean) => h("span", { class: `dot ${on ? "on" : ""}` });
+  const keyRow = ([name, label, help]: [string, string, string]) => {
+    const inp = h("input", { type: "password", placeholder: appState.keys[name] ? "•••••• saved" : "paste key" });
+    return h("div", {},
+      h("div", { class: "field" }, status(!!appState.keys[name]), h("span", {}, label), inp,
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          if (!inp.value.trim()) return;
+          await api.save_key(name, inp.value.trim()); inp.value = ""; toast(`${label} saved`); openSettings();
+        } }, "Save")),
+      h("p", { class: "help" }, help));
+  };
+  const field = (label: string, key: string, type = "text", extra: Record<string, any> = {}) => {
+    const inp = h("input", { type, value: s[key] ?? "", ...extra });
+    inp.addEventListener("change", async () => {
+      const v = type === "number" ? Number(inp.value) : inp.value;
+      appState = await api.save_settings({ [key]: v });
+      toast("Saved");
+    });
+    return h("div", { class: "field" }, h("span", {}, label), inp);
+  };
+  const resultToast = (r: { ok: boolean; error?: string }, ok: string) => toast(r.ok ? ok : `⚠ ${r.error}`);
+  const voiceOut = h("div", {});
+  const instr = h("textarea", { rows: 3 },
+    "An original adult male character voice, around 40, from New York City. Deep, smooth, slightly raspy baritone, calm laid-back confident delivery, subtle New York accent, warm and a little playful.");
+
+  dlg.replaceChildren(h("div", { class: "settings" },
+    h("header", {}, h("strong", {}, "Settings"), h("div", { class: "spacer" }),
+      h("button", { class: "icon", onclick: () => dlg.close() }, "✕")),
+    h("div", { class: "body" },
+      h("section", {}, h("h4", {}, "You"), field("Your first name", "user_name")),
+      h("section", {}, h("h4", {}, "API keys"),
+        h("p", { class: "help" }, "Stored in Windows Credential Manager on this PC, never in files or the repo."),
+        ...KEY_INFO.map(keyRow)),
+      h("section", {}, h("h4", {}, "Tyrone's voice (Fish Audio)"),
+        h("p", { class: "help" }, "Design an original voice from a description, pick a candidate, and Tyrone keeps it. Or design it on fish.audio and paste the voice ID."),
+        instr,
+        h("div", { class: "field" },
+          h("button", { class: "primary", type: "button", onclick: async () => {
+            voiceOut.replaceChildren("Designing voices… (takes ~30s)");
+            const r = await api.voice_design(instr.value);
+            if (!r.ok) { voiceOut.replaceChildren(`⚠ ${r.error}`); return; }
+            voiceOut.replaceChildren(...(r.candidates ?? []).map((b64, i) => h("div", { class: "field" },
+              h("audio", { controls: true, src: `data:audio/wav;base64,${b64}` }),
+              h("button", { class: "ghost", type: "button", onclick: async () => {
+                const c = await api.choose_voice(i); resultToast(c, "Voice saved — that's Tyrone now"); openSettings();
+              } }, "Use this one"))));
+          } }, "Design voices"),
+          h("button", { class: "ghost", type: "button", onclick: () => api.test_voice() }, "Test voice")),
+        voiceOut,
+        field("Fish voice ID", "fish_voice_id", "text", { placeholder: "reference_id from fish.audio" }),
+        field("Fish model", "fish_model")),
+      h("section", {}, h("h4", {}, "Wake word & mic"),
+        h("p", { class: "help" }, `Active wake word: ${appState.wakeword}. Push-to-talk hotkey works anytime.`),
+        field("Sensitivity (0.3–0.9)", "wakeword_threshold", "number", { step: "0.05", min: "0.3", max: "0.9" }),
+        field("Push-to-talk hotkey", "push_to_talk_hotkey"),
+        h("div", { class: "field" }, h("span", {}, "Speech recognition"), (() => {
+          const sel = h("select", {}, h("option", { value: "whisper" }, "Local Whisper (free, private)"),
+            h("option", { value: "deepgram" }, "Deepgram Nova-3 (faster, needs key)"));
+          sel.value = s.stt_engine;
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ stt_engine: sel.value }); toast("Saved"); });
+          return sel;
+        })())),
+      h("section", {}, h("h4", {}, "Accounts"),
+        h("p", { class: "help" }, "Gmail/Google Calendar: paste your Google OAuth Desktop-client JSON, then Sign in. wisc.edu: needs classic Outlook signed in on this PC. Canvas: Calendar → Calendar Feed → copy link."),
+        (() => {
+          const ta = h("textarea", { rows: 2, placeholder: appState.keys.google_client ? "Google client JSON saved" : "Google OAuth client JSON" });
+          return h("div", { class: "field" }, status(!!appState.keys.google_client), h("span", {}, "Google client"), ta,
+            h("button", { class: "ghost", type: "button", onclick: async () => {
+              if (!ta.value.trim()) return;
+              await api.save_key("google_client", ta.value.trim()); toast("Saved"); openSettings();
+            } }, "Save"));
+        })(),
+        h("div", { class: "field" }, status(!!appState.connections.gmail), h("span", {}, "Gmail + Google Calendar"),
+          h("button", { class: "primary", type: "button", onclick: async () => {
+            const r = await api.google_sign_in(); resultToast(r, "Google connected"); openSettings();
+          } }, appState.connections.gmail ? "Reconnect" : "Sign in"),
+          appState.connections.gmail && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
+        h("div", { class: "field" }, status(!!appState.connections.outlook), h("span", {}, "wisc.edu Outlook"),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
+          } }, "Test connection")),
+        field("Canvas calendar feed URL", "canvas_ics_url", "url", { placeholder: "https://canvas.wisc.edu/feeds/calendars/user_….ics" }),
+        h("div", { class: "field" }, h("span", {}, "Email writing style"),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            toast("Reading your sent emails… (about a minute)", 6000);
+            const r = await api.learn_style(); resultToast(r, "Learned your writing style");
+          } }, "Learn my writing style"))),
+      h("section", {}, h("h4", {}, "Brain & budget"),
+        h("p", { class: "help" }, `This month: $${appState.month_usd.toFixed(2)} of $${appState.budget_usd.toFixed(2)}. ` +
+          appState.breakdown.map((b) => `${b.model.replace("claude-", "")}: ${b.calls} calls $${b.usd.toFixed(2)}`).join(" · ")),
+        field("Monthly budget (USD)", "monthly_budget_usd", "number", { min: "1", step: "1" }),
+        h("div", { class: "field" }, h("span", {}, "Model"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "" }, "Automatic (recommended)"),
+            h("option", { value: "claude-opus-5-5" }, "Always Opus 5.5"),
+            h("option", { value: "claude-sonnet-5-5" }, "Always Sonnet 5.5"),
+            h("option", { value: "claude-haiku-5-5" }, "Always Haiku 5.5"));
+          sel.value = s.force_model ?? "";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ force_model: sel.value }); toast("Saved"); });
+          return sel;
+        })())),
+      h("section", {}, h("h4", {}, "Memory"),
+        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Tyrone to another PC (encrypted with your password).`),
+        field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Tyrone" }),
+        (() => {
+          const pw = h("input", { type: "password", placeholder: "export/import password (8+ chars)" });
+          return h("div", { class: "field" }, pw,
+            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.export_memory(pw.value), "Exported") }, "Export"),
+            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.import_memory(pw.value), "Imported — restart Tyrone") }, "Import"),
+            h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open folder"));
+        })()),
+      h("p", { class: "help" }, `Tyrone ${appState.version}`),
+    )));
+  if (!dlg.open) dlg.showModal();
+}
+
+// ------------------------------------------------------------------ boot
+(async () => {
+  api = await waitForApi();
+  appState = await api.get_state();
+  setState("idle");
+  $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
+  $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
+  if (!appState.keys.anthropic || !appState.settings.first_run_complete) {
+    addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");
+    openSettings();
+  } else {
+    addMsg("sys", "Tyrone's ready.");
+  }
+})();

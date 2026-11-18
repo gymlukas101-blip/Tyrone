@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tyrone</title>
+  </head>
+  <body>
+    <div id="app">
+      <section id="stage">
+        <div id="avatar"></div>
+        <div id="status">
+          <span id="stateLabel">Starting up…</span>
+          <span id="routeChip" title=""></span>
+        </div>
+        <div id="hint"></div>
+      </section>
+
+      <section id="side">
+        <header>
+          <div class="brand">TYRONE</div>
+          <div class="spacer"></div>
+          <span id="spend" title="Claude spend this month"></span>
+          <button id="newChat" class="icon" title="New conversation">⟲</button>
+          <button id="settingsBtn" class="icon" title="Settings">⚙</button>
+        </header>
+        <div id="cards"></div>
+        <div id="log"></div>
+        <form id="composer" autocomplete="off">
+          <div id="importance" role="radiogroup" title="How important is this?">
+            <button type="button" data-v="low" title="Quick: cheapest, fastest">⚡ Quick</button>
+            <button type="button" data-v="normal" class="on" title="Tyrone decides">Auto</button>
+            <button type="button" data-v="high" title="Important: best model, more thinking">★ Important</button>
+          </div>
+          <div class="row">
+            <button type="button" id="mic" title="Push to talk">🎙</button>
+            <input id="input" placeholder="Say “Yo Tyrone” or type here…" />
+            <button id="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <dialog id="settings"></dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

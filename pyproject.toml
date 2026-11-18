@@ -1,0 +1,48 @@
+[project]
+name = "tyrone"
+version = "0.1.0"
+description = "Tyrone - a Jarvis-style desktop voice assistant"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=2.10",
+  "pydantic>=2.6",
+  "httpx>=0.27",
+  "keyring>=25",
+  "icalendar>=6",
+  "python-dateutil>=2.9",
+  "cryptography>=42",
+]
+
+[project.optional-dependencies]
+desktop = [
+  "pywebview>=5.3",
+  "pystray>=0.19",
+  "pillow>=10",
+  "sounddevice>=0.5",
+  "numpy>=1.26",
+  "soundfile>=0.12",
+  "openwakeword>=0.6",
+  "faster-whisper>=1.1",
+  "keyboard>=0.13",
+  "pyttsx3>=2.98",
+  "google-api-python-client>=2.150",
+  "google-auth-oauthlib>=1.2",
+  "pywin32>=308; sys_platform == 'win32'",
+]
+dev = ["pytest>=8", "pyinstaller>=6.10"]
+
+[project.scripts]
+tyrone = "tyrone.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["tyrone*"]
+
+[tool.setuptools.package-data]
+tyrone = ["brain/*.md"]

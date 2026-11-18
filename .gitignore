@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+ui/node_modules/
+ui/dist/
+*.spec.bak
+.pytest_cache/
+# Never commit personal data or secrets
+memory/
+*.db
+credentials*.json
+token*.json
+.env
