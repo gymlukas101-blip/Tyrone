@@ -29,7 +29,7 @@ hiddenimports = (
     + [
         "pyttsx3.drivers", "pyttsx3.drivers.sapi5", "comtypes.client",
         "win32com", "win32com.client", "pythoncom", "pywintypes",
-        "pystray._win32", "google_auth_oauthlib.flow",
+        "pystray._win32", "google_auth_oauthlib.flow", "send2trash", "psutil", "winreg",
     ]
 )
 

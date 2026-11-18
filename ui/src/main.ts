@@ -215,6 +215,7 @@ function onEvent(name: string, p: any) {
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
     case "emote": avatar.emote(p.name); break;
     case "health": healthCard(p); break;
+    case "cleanup": cleanupCard(p); break;
     case "update":
       if (p.status === "ready") updateToast(p);
       break;
@@ -257,6 +258,37 @@ $("#labBtn").addEventListener("click", () => {
   const c = card("🧪 Avatar Lab");
   renderAvatarLab(c, api);
 });
+
+function cleanupCard(plan: { items?: { kind: string; label: string; path: string; status?: string; detail?: string }[] }) {
+  document.querySelectorAll(".card.cleanup").forEach((c) => c.remove());
+  const items = plan.items ?? [];
+  if (!items.length) return toast("No old Monkey installs or downloads found 👍");
+  const c = card("🧹 Clean up old Monkey");
+  c.classList.add("cleanup");
+  const list = h("ul", { class: "items" }, ...items.map((i) => h("li", {},
+    h("span", { class: "badge" }, i.kind === "download" ? "file" : i.kind),
+    h("div", {}, h("div", {}, i.label), h("div", { class: "meta" }, i.path)))));
+  const go = h("button", { type: "button", class: "primary" }, "Clean up");
+  const later = h("button", { type: "button", class: "ghost" }, "Not now");
+  go.addEventListener("click", async () => {
+    go.disabled = true;
+    go.textContent = "Cleaning…";
+    const r = await api.cleanup_run();
+    if (!r.ok) { toast(`⚠ ${r.error}`); go.disabled = false; go.textContent = "Clean up"; return; }
+    const done = (r.items ?? []).filter((i) => i.status === "ok").length;
+    const failed = (r.items ?? []).filter((i) => i.status === "error");
+    list.replaceChildren(...(r.items ?? []).map((i) => h("li", {},
+      h("span", { class: `badge` }, i.status === "ok" ? "✓" : "⚠"),
+      h("div", {}, h("div", {}, i.label), h("div", { class: "meta" }, i.detail)))));
+    go.remove(); later.remove();
+    toast(`Cleaned up ${done} item${done === 1 ? "" : "s"}${failed.length ? ` · ${failed.length} couldn't be removed` : ""}`);
+    if (done) avatar.emote("celebrate");
+  });
+  later.addEventListener("click", () => { api.cleanup_dismiss(); c.remove(); });
+  c.append(
+    h("p", { class: "meta" }, "These are from earlier Monkey/Tyrone versions. Old apps get uninstalled, and downloads go to the Recycle Bin so you can undo. Your memory, settings and keys are kept."),
+    list, h("div", { class: "actions draft" }, go, later));
+}
 
 function updateToast(u: { available: string }) {
   document.querySelector(".update-toast")?.remove();
@@ -447,7 +479,13 @@ async function openSettings() {
                 const u = await api.check_update();
                 out.textContent = u.status === "ready" ? `Update ${u.available} downloaded` : u.status === "up_to_date" ? "You're on the latest version" : (u.detail || u.status);
                 if (u.status === "ready") updateToast(u);
-              } }, "Check now")),
+              } }, "Check now"),
+              h("button", { class: "ghost", type: "button", onclick: async () => {
+                const r = await api.cleanup_plan();
+                if (!r.ok) return toast(`⚠ ${r.error}`);
+                $<HTMLDialogElement>("#settings").close();
+                cleanupCard(r);
+              } }, "Clean up old installs")),
             h("label", { class: "field" }, auto, h("span", {}, "Download updates automatically")));
         })()),
       h("section", {}, h("h4", {}, "Memory"),

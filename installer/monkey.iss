@@ -1,3 +1,5 @@
+; RETIRED: Monkey now installs and updates through Velopack (see docs/UPDATES.md).
+; Kept only because monkey/cleanup.py uses this AppId to find and uninstall old installs.
 ; Inno Setup script - builds MonkeySetup-<version>.exe from the PyInstaller output.
 ; Per-user install (no admin rights needed).
 

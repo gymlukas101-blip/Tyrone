@@ -45,9 +45,10 @@ Monkey updates itself: when a new version is ready, it shows a "Restart & update
 - Sources and design rules: `prototypes/` (`REFERENCES.md`, `directions.json`, a `brief.md` per design). Regenerate with `python tools/prototypes/generate.py`.
 
 ## Install (Windows 10/11)
-1. Go to this repo's **Releases** page and download `MonkeySetup-<version>.exe`.
-2. Run it. It installs per-user, with no admin rights needed. Tick "Start with Windows" if you like.
-3. Monkey opens Settings on first launch. Work through the **Setup checklist** below.
+1. Download and run **[Monkey-win-Setup.exe](https://github.com/gymlukas101-blip/Tyrone/releases/latest/download/Monkey-win-Setup.exe)**. This link is always the newest version.
+   - If SmartScreen warns you, click More info → Run anyway.
+2. On first launch, Monkey offers to **clean up old versions**: old Monkey/Tyrone installs, and old zips or installers in Downloads (they go to the Recycle Bin). It then opens Settings; work through the **Setup checklist** below.
+3. After that, updates arrive by themselves ("Restart & update").
 
 The first time you talk to him, Monkey downloads the local speech-recognition model (about 250 MB, once).
 

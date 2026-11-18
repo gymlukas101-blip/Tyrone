@@ -56,6 +56,7 @@ class Settings:
     auto_update: bool = True
     image_model: str = "gpt-image-2.6-sunburst"   # or "gpt-image-2.6-flare" (faster drafts)
     favorite_prototype: str = ""
+    cleanup_done: bool = False        # old installs/downloads cleanup offered and run
     prototype_notes: dict = field(default_factory=dict)
     # Integrations
     use_gmail: bool = True

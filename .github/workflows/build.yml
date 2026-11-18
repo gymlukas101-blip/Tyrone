@@ -85,17 +85,6 @@ jobs:
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
 
-      - name: Build installer
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress -y
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\monkey.iss
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MonkeySetup
-          path: dist/installer/*.exe
-
       # ---- Velopack: auto-updating installer + GitHub Release on every push to main ----
       - uses: actions/setup-dotnet@v4
         with:

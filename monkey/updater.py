@@ -105,11 +105,14 @@ class Updater:
         threading.Thread(target=loop, name="updater", daemon=True).start()
 
 
+FIRST_RUN = threading.Event()   # set when Velopack says this is the first launch after installing
+
+
 def velopack_startup() -> None:
     """Must run first thing in the frozen app (handles install/update/uninstall hooks)."""
     try:
         import velopack
 
-        velopack.App().run()
+        velopack.App().on_first_run(lambda *_: FIRST_RUN.set()).run()
     except Exception as exc:  # noqa: BLE001 - dev runs / missing package
         log.debug("velopack startup skipped: %s", exc)

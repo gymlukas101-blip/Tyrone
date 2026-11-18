@@ -50,7 +50,13 @@ export interface Api {
   check_update(): Promise<UpdateState>;
   apply_update(): Promise<UpdateState & { error?: string }>;
   update_state(): Promise<UpdateState>;
+  cleanup_plan(): Promise<CleanupResult>;
+  cleanup_run(): Promise<CleanupResult>;
+  cleanup_dismiss(): Promise<void>;
 }
+
+export interface CleanupItem { kind: string; label: string; path: string; status: string; detail: string }
+export interface CleanupResult { ok: boolean; error?: string; items?: CleanupItem[]; count?: number }
 
 export interface UpdateState { status: string; detail: string; current: string; available: string; enabled: boolean }
 
@@ -176,12 +182,21 @@ function mockApi(): Api {
     async generate_prototypes() { return { ok: false, error: "Demo mode: add an OpenAI key in the desktop app" }; },
     async check_update() { return { status: "ready", detail: "", current: "0.3.40", available: "0.3.41", enabled: true }; },
     async apply_update() { return { status: "ready", detail: "", current: "0.3.40", available: "0.3.41", enabled: true, error: "Demo mode" }; },
+    async cleanup_plan() { return { ok: true, count: demoCleanup().length, items: demoCleanup() }; },
+    async cleanup_run() { return { ok: true, count: 4, items: demoCleanup().map((i) => ({ ...i, status: "ok", detail: i.kind === "download" ? "moved to Recycle Bin" : "uninstalled" })) }; },
+    async cleanup_dismiss() {},
     async update_state() { return { status: "up_to_date", detail: "", current: "0.3.40", available: "", enabled: true }; },
   };
 }
 
 // ------------------------------------------------------------------ demo data
 let labFav = "";
+const demoCleanup = () => [
+  { kind: "app", label: "Old app: Monkey 0.1.0-dev (previous installer)", path: "C:\\Users\\you\\AppData\\Local\\Programs\\Monkey", status: "found", detail: "" },
+  { kind: "download", label: "Download: MonkeySetup.zip", path: "C:\\Users\\you\\Downloads\\MonkeySetup.zip", status: "found", detail: "" },
+  { kind: "download", label: "Unzipped folder: MonkeySetup\\", path: "C:\\Users\\you\\Downloads\\MonkeySetup", status: "found", detail: "" },
+  { kind: "download", label: "Download: TyroneSetup.zip", path: "C:\\Users\\you\\Downloads\\TyroneSetup.zip", status: "found", detail: "" },
+];
 const inH = (hours: number) => new Date(Date.now() + hours * 3.6e6).toISOString();
 function demoBoard() {
   const it = (o: any) => ({ points: null, impact_pct: null, course_grade: null, missing: false, url: "", done: false,

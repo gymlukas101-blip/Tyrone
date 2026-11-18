@@ -9,8 +9,14 @@ Monkey updates itself through [Velopack](https://docs.velopack.io/) and this rep
 2. **Install the Velopack version once.**
    - Download `Monkey-win-Setup.exe` from [Releases → latest](https://github.com/gymlukas101-blip/Tyrone/releases/latest) and run it.
    - It installs to `%LocalAppData%\Monkey` with Start menu and desktop shortcuts.
-3. **Uninstall the old version** ("Monkey" from the zip/Inno installer) in Windows Settings → Apps.
-   - Your memory, settings and keys stay: they live outside the app folder.
+3. **Old versions are cleaned up for you.**
+   - On first launch, Monkey shows a "Clean up old Monkey" card listing what it found:
+     - old installs from the zip/Inno installer, named "Monkey" or "Tyrone"
+     - old `MonkeySetup`/`TyroneSetup` zips, unzipped folders and installers in your Downloads
+   - One click uninstalls the old apps and moves the downloads to the Recycle Bin.
+   - Your memory, settings and keys stay.
+   - You can run it again any time: Settings → Images & updates → **Clean up old installs**.
+   - Monkey also adds itself to "start with Windows" (the setting is in Settings).
 
 ## After that
 - **Checks:** Monkey checks for updates on launch and every 6 hours.
@@ -25,4 +31,4 @@ Every push to `main` triggers `.github/workflows/build.yml`:
 3. It runs `vpk pack`, which builds the installer, the full package and a delta from the previous release.
 4. It runs `vpk upload github --publish`, which creates the GitHub Release with `releases.win.json`, the packages and `Setup.exe`.
 
-The old Inno Setup installer is still built as a CI artifact for one more round, then it'll be retired.
+The old Inno Setup installer is retired. `installer/monkey.iss` stays only as the record of its AppId, which the cleanup uses to find old installs.

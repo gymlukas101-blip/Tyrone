@@ -293,6 +293,32 @@ class MonkeyApp:
     def _record_usage(self, model: str, effort: str, purpose: str, usage) -> None:
         self.ledger.record(model, effort, purpose, Usage.from_response(usage))
 
+    def after_install_tasks(self) -> None:
+        """First launch of an installed copy: start-with-Windows entry + offer to clean up old installs."""
+        from . import cleanup
+        from .updater import FIRST_RUN
+
+        def work():
+            installed = getattr(sys, "frozen", False)
+            if installed and (FIRST_RUN.is_set() or not self.cfg.settings.cleanup_done):
+                try:
+                    cleanup.set_autostart(self.cfg.settings.start_with_windows)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("autostart: %s", exc)
+            if self.cfg.settings.cleanup_done and not FIRST_RUN.is_set():
+                return
+            try:
+                plan = cleanup.plan_cleanup()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("cleanup scan failed: %s", exc)
+                return
+            if plan.items:
+                self.ui.emit("cleanup", plan.to_dict())
+            else:
+                self.cfg.update(cleanup_done=True)
+
+        threading.Thread(target=work, name="after-install", daemon=True).start()
+
     def _generate_images(self, prompt: str, count: int, refs=None, rules: bool = False) -> list[dict]:
         """GPT Image generation -> thumbnails (data URIs) for the UI; full PNGs saved in %APPDATA%\\Monkey\\images."""
         from .integrations.image_gen import MONKEY_RULES, generate
@@ -383,6 +409,10 @@ class Api:
     def save_settings(self, changes: dict):
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
         self._app.cfg.update(**allowed)
+        if "start_with_windows" in allowed and getattr(sys, "frozen", False):
+            from . import cleanup
+
+            cleanup.set_autostart(bool(allowed["start_with_windows"]))
         return self.get_state()
 
     # conversation
@@ -431,6 +461,28 @@ class Api:
             return {"ok": True, "images": imgs}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
+
+    # cleanup of old installs / downloads
+    def cleanup_plan(self):
+        from . import cleanup
+
+        try:
+            return {"ok": True, **cleanup.plan_cleanup().to_dict()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def cleanup_run(self):
+        from . import cleanup
+
+        try:
+            plan = cleanup.clean(cleanup.plan_cleanup())
+            self._app.cfg.update(cleanup_done=True)
+            return {"ok": True, **plan.to_dict()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def cleanup_dismiss(self):
+        self._app.cfg.update(cleanup_done=True)
 
     # updates
     def check_update(self):
@@ -668,6 +720,7 @@ def run() -> None:
         app.start_audio()
         _tray(app, window)
         app.updater.start_background()
+        app.after_install_tasks()
 
     # A plain file path (not file://) makes pywebview serve ui/dist over its local HTTP server,
     # which the 3D avatar needs to fetch models/monkey.glb. http_server=True makes that explicit.
@@ -693,11 +746,17 @@ def selftest() -> int:
         if "profile.md" not in app.memory.files():
             problems.append("memory not seeded")
         from .audio.kws import find_model
+        from .cleanup import plan_cleanup
+
+        try:
+            plan_cleanup()  # must not crash on a clean machine
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"cleanup scan: {exc}")
 
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")
         for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray",
-                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack"):
+                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack", "psutil", "send2trash"):
             try:
                 __import__(mod)
             except Exception as exc:  # noqa: BLE001
