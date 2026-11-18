@@ -18,6 +18,7 @@ from typing import Callable
 from .agent import Agent
 from .policy import TIERS, Choice, ModelPolicy, estimate, unique
 from .router import Route
+from .workspace import is_setup_error
 
 SAMPLES: dict[str, str] = {
     "chat": "yo monkey, what's good?",
@@ -145,6 +146,7 @@ class Calibration:
         self.out_file = Path(out_file)
         self.progress = progress
         self.cancel = threading.Event()
+        self.setup_error = ""
 
     def run_one(self, task: str, choice: Choice) -> dict:
         events: list[tuple[float, str, dict]] = []
@@ -165,6 +167,8 @@ class Calibration:
         usd = sum(float(p.get("usd", 0)) for _, e, p in events if e == "cost")
         shown = "".join(str(p.get("text", "")) for _, e, p in events if e == "delta") or answer
         errors = [p.get("message") for _, e, p in events if e == "error"]
+        if not error and not errors and usd == 0 and is_setup_error(shown):
+            errors = [shown.strip()]   # the agent explained a key/workspace/credits problem instead of answering
         return {"model": choice.model, "effort": choice.effort, "label": choice.label, "usd": round(usd, 5),
                 "first_words_s": round(first, 1), "total_s": round(total, 1), "answer": shown.strip(),
                 "error": error or "; ".join(m for m in errors if m)}
@@ -177,12 +181,19 @@ class Calibration:
                 break
             self.progress({"done": i, "total": len(jobs), "task": self.policy.task(task)["label"], "config": choice.label})
             entry = results.setdefault(task, {"label": self.policy.task(task)["label"], "sample": SAMPLES[task], "runs": []})
-            entry["runs"].append(self.run_one(task, choice))
+            run = self.run_one(task, choice)
+            entry["runs"].append(run)
+            if run["error"] and is_setup_error(run["error"]):
+                # Key/workspace/credits problem: every other run would fail the same way, so stop now.
+                self.setup_error = run["error"]
+                self.cancel.set()
         out = {"date": date.today().isoformat(), "complete": not self.cancel.is_set(), "tasks": results,
+               "setup_error": self.setup_error,
                "spent_usd": round(sum(r["usd"] for t in results.values() for r in t["runs"]), 4)}
         self.out_file.parent.mkdir(parents=True, exist_ok=True)
         self.out_file.write_text(json.dumps(out, indent=1), encoding="utf-8")
-        self.progress({"done": len(jobs), "total": len(jobs), "finished": True})
+        self.progress({"done": len(jobs), "total": len(jobs), "finished": True,
+                       **({"error": self.setup_error} if self.setup_error else {})})
         return out
 
 

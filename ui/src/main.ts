@@ -339,7 +339,9 @@ async function openSettings() {
       if (!inp.value.trim()) return;
       const r = await api.save_key(name, inp.value.trim());
       if (!r.ok) { note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; return; }
-      inp.value = ""; toast(`✓ ${label} saved. It'll be there next time you open Monkey.`, 4000);
+      inp.value = "";
+      if (r.warning) { toast(`Saved, but: ${r.warning}`, 9000); }
+      else toast(r.note ? `✓ ${label} saved. ${r.note}` : `✓ ${label} saved. It'll be there next time you open Monkey.`, r.note ? 7000 : 4000);
       await openSettings();
     };
     inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") { e.preventDefault(); save(); } });
@@ -352,6 +354,18 @@ async function openSettings() {
         } }, "✕")),
       note,
       h("p", { class: "help" }, help),
+      name === "anthropic" && h("div", { class: "field" }, h("span", {}, "Claude workspace ID"),
+        (() => {
+          const ws = h("input", { value: appState.settings.anthropic_workspace_id ?? "", placeholder: "found automatically if your key needs one (wrkspc_…)" });
+          ws.addEventListener("change", async () => { appState = await api.save_settings({ anthropic_workspace_id: ws.value.trim() }); toast("Saved"); });
+          return ws;
+        })(),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          toast("Testing your Claude key…");
+          const r = await api.test_anthropic();
+          toast(r.ok ? `✓ Claude key works.${r.note ? " " + r.note : ""}` : `⚠ ${r.error}`, r.ok ? 5000 : 10000);
+          if (r.ok) openSettings();
+        } }, "Test")),
       name === "anthropic" && h("p", { class: "help maxhelp" },
         "Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
         h("b", {}, "API credits"), " → link a Console org, then create a key at platform.claude.com → API keys and paste it here. ",

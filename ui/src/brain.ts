@@ -16,7 +16,8 @@ let refresh: (() => void) | null = null;
 export function brainEvent(p: any) {
   if (progressEl) {
     if (p.finished) {
-      progressEl.textContent = p.error ? `⚠ ${p.error}` : "Done! Rate the answers below.";
+      if (p.error) { progressEl.textContent = `⚠ Stopped: ${p.error}`; toast(`⚠ ${p.error}`, 10000); return; }
+      progressEl.textContent = "Done! Rate the answers below.";
       refresh?.();
     } else {
       const pct = p.total ? Math.round((100 * p.done) / p.total) : 0;
@@ -131,6 +132,7 @@ async function resultsView(api: Api, _pol: Policy, back: () => void) {
       h("label", { class: "allfine" }, radio("all", true), " All fine: use the cheapest"));
   });
   return h("div", {},
+    res.setup_error && h("p", { class: "keynote bad" }, `⚠ Calibration stopped: ${res.setup_error}`),
     h("p", { class: "help" }, `Calibrated ${res.date}${res.complete ? "" : " (stopped early)"} · spent ${money(res.spent_usd)}. ` +
       "For each task, pick the answer you like best (Monkey makes it the Auto choice) or leave “All fine” to use the cheapest."),
     ...blocks,

@@ -18,7 +18,8 @@ export interface AppState {
 
 export interface Api {
   get_state(): Promise<AppState>;
-  save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string }>;
+  save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string; warning?: string; note?: string }>;
+  test_anthropic(): Promise<{ ok: boolean; error?: string; note?: string }>;
   delete_key(name: string): Promise<{ ok: boolean }>;
   get_transcript(limit: number): Promise<{ ts: string; role: "user" | "bot"; text: string }[]>;
   save_settings(changes: Record<string, any>): Promise<AppState>;
@@ -80,7 +81,7 @@ export interface Policy {
 }
 export interface CalRun { model: string; effort: string; label: string; usd: number; first_words_s: number; total_s: number; answer: string; error: string }
 export interface CalResults {
-  ok: boolean; error?: string; date: string; complete: boolean; spent_usd: number;
+  ok: boolean; error?: string; date: string; complete: boolean; spent_usd: number; setup_error?: string;
   tasks: Record<string, { label: string; sample: string; runs: CalRun[] }>;
 }
 
@@ -151,6 +152,7 @@ function mockApi(): Api {
     async save_key(name, value) {
       state.keys[name] = true; (state.key_hints ??= {})[name] = value.slice(-4); return { ok: true, hint: value.slice(-4) };
     },
+    async test_anthropic() { return { ok: true, note: "Your key is organization-wide, so Monkey found your workspace and saved its ID." }; },
     async delete_key(name) { state.keys[name] = false; delete state.key_hints?.[name]; return { ok: true }; },
     async get_transcript() {
       return [

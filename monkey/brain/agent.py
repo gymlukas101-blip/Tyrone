@@ -18,6 +18,7 @@ from typing import Any, Callable
 import anthropic
 from anthropic.lib.tools import ToolError
 
+from . import workspace
 from .costs import HAIKU, SONNET, Ledger, Usage
 from .router import Route, Router
 from .speech_text import SentenceChunker
@@ -96,6 +97,7 @@ class Agent:
         self._effort_now: str | None = None
         self.per_message_effort = True
         self.purpose = ""                # ledger label override (calibration runs)
+        self.on_workspace_error: Callable[[], bool] | None = None   # app hook: find + save workspace ID
         self.persist = persist           # False for throwaway agents (calibration) - never touch the saved chat
         self._haiku_web_direct = False   # set if the API wants Haiku's web search called directly
         self._restore()
@@ -290,6 +292,11 @@ class Agent:
             except anthropic.APIStatusError as exc:
                 if _out_of_credits(exc):
                     return self._fail(CREDITS_GONE)
+                if workspace.needs_workspace(exc):
+                    hook, self.on_workspace_error = self.on_workspace_error, None   # try the fix once
+                    if hook is not None and hook():
+                        continue
+                    return self._fail(workspace.HELP)
                 msg = f"{getattr(exc, 'message', '')}".lower()
                 effort_rejected = "output_config" in msg or ("role" in msg and "system" in msg)
                 if exc.status_code == 400 and self.per_message_effort and effort_rejected \

@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from . import __version__, keys, secretstore
+from .brain import workspace
 from .brain.agent import Agent
 from .brain.approval import ApprovalGate
 from .brain.costs import HAIKU, Ledger, Usage
@@ -157,11 +158,50 @@ class MonkeyApp:
             return None
         import anthropic
 
-        if self.client is None or getattr(self.client, "api_key", None) != key:
-            self.client = anthropic.Anthropic(api_key=key, max_retries=2)
+        ws = (self.cfg.settings.anthropic_workspace_id or "").strip()
+        sig = (key, ws)
+        if self.client is None or getattr(self, "_client_sig", None) != sig:
+            headers = {workspace.HEADER: ws} if ws else None
+            self.client = anthropic.Anthropic(api_key=key, max_retries=2, default_headers=headers)
+            self._client_sig = sig
             self.agent.client = self.client
             self.services.anthropic_client = self.client
         return self.client
+
+    def _fix_workspace(self) -> bool:
+        """Org-wide Console key without a workspace header? Find the workspace, save it, rebuild the client."""
+        if self.cfg.settings.anthropic_workspace_id or self._ensure_client() is None:
+            return False
+        ws, note = workspace.discover(self.client)
+        log.info("workspace discovery: %s %s", ws, note)
+        if not ws:
+            return False
+        self.cfg.update(anthropic_workspace_id=ws)
+        self._ensure_client()
+        return True
+
+    def verify_anthropic(self) -> dict:
+        """Free check (token counting) that the key works; fixes the workspace header automatically."""
+        import anthropic
+
+        client = self._ensure_client()
+        if client is None:
+            return {"ok": False, "error": "No Anthropic key saved yet."}
+        probe = {"model": HAIKU, "messages": [{"role": "user", "content": "hi"}]}
+        try:
+            client.messages.count_tokens(**probe)
+            return {"ok": True}
+        except anthropic.APIStatusError as exc:
+            if workspace.needs_workspace(exc) and self._fix_workspace():
+                try:
+                    self.client.messages.count_tokens(**probe)
+                    return {"ok": True, "note": "Your key is organization-wide, so Monkey found your workspace and "
+                                                "saved its ID. You're all set."}
+                except anthropic.APIStatusError as exc2:
+                    return {"ok": False, "error": workspace.describe(exc2)}
+            return {"ok": False, "error": workspace.describe(exc)}
+        except anthropic.APIConnectionError:
+            return {"ok": False, "error": "Couldn't reach Anthropic. Check your internet connection."}
 
     def start_audio(self) -> None:
         from .audio.listener import Listener, load_wakeword
@@ -295,6 +335,8 @@ class MonkeyApp:
         self.agent.cancel()
         if self.speaker:
             self.speaker.stop()
+
+        self.agent.on_workspace_error = self._fix_workspace   # re-armed each request; used at most once
 
         def run():
             try:
@@ -434,8 +476,11 @@ class Api:
             return {"ok": False, "error": str(exc)}
         a = self._app
         if name == "anthropic":
-            a._ensure_client()
-            a.cfg.update(first_run_complete=True)
+            a.cfg.update(first_run_complete=True, anthropic_workspace_id="")
+            check = a.verify_anthropic()
+            if not check.get("ok"):
+                return {"ok": True, "hint": keys.hints().get(name, ""), "warning": check.get("error", "")}
+            return {"ok": True, "hint": keys.hints().get(name, ""), "note": check.get("note", "")}
         if name == "youtube":
             a.services.video_search = a._videos
         return {"ok": True, "hint": keys.hints().get(name, "")}
@@ -470,10 +515,16 @@ class Api:
         self._app.policy.write_memory_note(self._app.memory)
         return self.get_policy()
 
+    def test_anthropic(self):
+        return self._app.verify_anthropic()
+
     def calibrate_start(self):
         a = self._app
         if a._ensure_client() is None:
             return {"ok": False, "error": "Add your Anthropic API key first."}
+        check = a.verify_anthropic()   # free; also fixes the workspace header if needed
+        if not check.get("ok"):
+            return {"ok": False, "error": check.get("error", "Your Claude key isn't working yet.")}
         if a._calibration is not None:
             return {"ok": False, "error": "Calibration is already running."}
         from .brain.calibrate import Calibration
