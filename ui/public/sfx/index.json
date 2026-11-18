@@ -1,0 +1,240 @@
+{
+ "version": 1,
+ "cues": {
+  "boing": [
+   "sfx/boing_1.ogg",
+   "sfx/boing_2.ogg",
+   "sfx/boing_3.ogg",
+   "sfx/boing_4.ogg"
+  ],
+  "brrr": [
+   "sfx/brrr_1.ogg",
+   "sfx/brrr_2.ogg"
+  ],
+  "check": [
+   "sfx/check_1.ogg",
+   "sfx/check_2.ogg",
+   "sfx/check_3.ogg",
+   "sfx/check_4.ogg"
+  ],
+  "chest_thump": [
+   "sfx/chest_thump_1.ogg",
+   "sfx/chest_thump_2.ogg",
+   "sfx/chest_thump_3.ogg",
+   "sfx/chest_thump_4.ogg",
+   "sfx/chest_thump_5.ogg"
+  ],
+  "chomp": [
+   "sfx/chomp_1.ogg",
+   "sfx/chomp_2.ogg",
+   "sfx/chomp_3.ogg",
+   "sfx/chomp_4.ogg"
+  ],
+  "clap": [
+   "sfx/clap_1.ogg",
+   "sfx/clap_2.ogg",
+   "sfx/clap_3.ogg"
+  ],
+  "confetti": [
+   "sfx/confetti_1.ogg",
+   "sfx/confetti_2.ogg",
+   "sfx/confetti_3.ogg"
+  ],
+  "crack": [
+   "sfx/crack_1.ogg",
+   "sfx/crack_2.ogg",
+   "sfx/crack_3.ogg"
+  ],
+  "ding": [
+   "sfx/ding_1.ogg",
+   "sfx/ding_2.ogg",
+   "sfx/ding_3.ogg"
+  ],
+  "dizzy_loop": [
+   "sfx/dizzy_loop_1.ogg"
+  ],
+  "dust": [
+   "sfx/dust_1.ogg",
+   "sfx/dust_2.ogg",
+   "sfx/dust_3.ogg",
+   "sfx/dust_4.ogg"
+  ],
+  "ear_perk": [
+   "sfx/ear_perk_1.ogg",
+   "sfx/ear_perk_2.ogg",
+   "sfx/ear_perk_3.ogg"
+  ],
+  "flop": [
+   "sfx/flop_1.ogg",
+   "sfx/flop_2.ogg",
+   "sfx/flop_3.ogg"
+  ],
+  "footstep": [
+   "sfx/footstep_1.ogg",
+   "sfx/footstep_2.ogg",
+   "sfx/footstep_3.ogg",
+   "sfx/footstep_4.ogg",
+   "sfx/footstep_5.ogg"
+  ],
+  "heart_pop": [
+   "sfx/heart_pop_1.ogg",
+   "sfx/heart_pop_2.ogg",
+   "sfx/heart_pop_3.ogg"
+  ],
+  "jungle_loop": [
+   "sfx/jungle_loop_1.ogg"
+  ],
+  "notify": [
+   "sfx/notify_1.ogg",
+   "sfx/notify_2.ogg",
+   "sfx/notify_3.ogg"
+  ],
+  "peel": [
+   "sfx/peel_1.ogg",
+   "sfx/peel_2.ogg",
+   "sfx/peel_3.ogg"
+  ],
+  "pop": [
+   "sfx/pop_1.ogg",
+   "sfx/pop_2.ogg",
+   "sfx/pop_3.ogg",
+   "sfx/pop_4.ogg"
+  ],
+  "question": [
+   "sfx/question_1.ogg",
+   "sfx/question_2.ogg",
+   "sfx/question_3.ogg"
+  ],
+  "reward": [
+   "sfx/reward_1.ogg",
+   "sfx/reward_2.ogg"
+  ],
+  "rustle": [
+   "sfx/rustle_1.ogg",
+   "sfx/rustle_2.ogg",
+   "sfx/rustle_3.ogg",
+   "sfx/rustle_4.ogg"
+  ],
+  "sad_trombone": [
+   "sfx/sad_trombone_1.ogg",
+   "sfx/sad_trombone_2.ogg"
+  ],
+  "scratch": [
+   "sfx/scratch_1.ogg",
+   "sfx/scratch_2.ogg",
+   "sfx/scratch_3.ogg"
+  ],
+  "shockwave": [
+   "sfx/shockwave_1.ogg",
+   "sfx/shockwave_2.ogg",
+   "sfx/shockwave_3.ogg"
+  ],
+  "slam": [
+   "sfx/slam_1.ogg",
+   "sfx/slam_2.ogg",
+   "sfx/slam_3.ogg"
+  ],
+  "slide_down": [
+   "sfx/slide_down_1.ogg",
+   "sfx/slide_down_2.ogg",
+   "sfx/slide_down_3.ogg"
+  ],
+  "slide_up": [
+   "sfx/slide_up_1.ogg",
+   "sfx/slide_up_2.ogg",
+   "sfx/slide_up_3.ogg"
+  ],
+  "snore": [
+   "sfx/snore_1.ogg",
+   "sfx/snore_2.ogg",
+   "sfx/snore_3.ogg"
+  ],
+  "sparkle": [
+   "sfx/sparkle_1.ogg",
+   "sfx/sparkle_2.ogg",
+   "sfx/sparkle_3.ogg",
+   "sfx/sparkle_4.ogg"
+  ],
+  "startle": [
+   "sfx/startle_1.ogg",
+   "sfx/startle_2.ogg",
+   "sfx/startle_3.ogg"
+  ],
+  "steam": [
+   "sfx/steam_1.ogg",
+   "sfx/steam_2.ogg",
+   "sfx/steam_3.ogg"
+  ],
+  "sweat": [
+   "sfx/sweat_1.ogg",
+   "sfx/sweat_2.ogg",
+   "sfx/sweat_3.ogg",
+   "sfx/sweat_4.ogg"
+  ],
+  "tap": [
+   "sfx/tap_1.ogg",
+   "sfx/tap_2.ogg",
+   "sfx/tap_3.ogg",
+   "sfx/tap_4.ogg"
+  ],
+  "tear": [
+   "sfx/tear_1.ogg",
+   "sfx/tear_2.ogg",
+   "sfx/tear_3.ogg"
+  ],
+  "thump": [
+   "sfx/thump_1.ogg",
+   "sfx/thump_2.ogg",
+   "sfx/thump_3.ogg",
+   "sfx/thump_4.ogg"
+  ],
+  "tick": [
+   "sfx/tick_1.ogg",
+   "sfx/tick_2.ogg",
+   "sfx/tick_3.ogg",
+   "sfx/tick_4.ogg"
+  ],
+  "ticktock_loop": [
+   "sfx/ticktock_loop_1.ogg"
+  ],
+  "ui_click": [
+   "sfx/ui_click_1.ogg",
+   "sfx/ui_click_2.ogg",
+   "sfx/ui_click_3.ogg",
+   "sfx/ui_click_4.ogg"
+  ],
+  "ui_close": [
+   "sfx/ui_close_1.ogg",
+   "sfx/ui_close_2.ogg",
+   "sfx/ui_close_3.ogg"
+  ],
+  "ui_error": [
+   "sfx/ui_error_1.ogg",
+   "sfx/ui_error_2.ogg",
+   "sfx/ui_error_3.ogg"
+  ],
+  "ui_open": [
+   "sfx/ui_open_1.ogg",
+   "sfx/ui_open_2.ogg",
+   "sfx/ui_open_3.ogg"
+  ],
+  "whoosh": [
+   "sfx/whoosh_1.ogg",
+   "sfx/whoosh_2.ogg",
+   "sfx/whoosh_3.ogg",
+   "sfx/whoosh_4.ogg",
+   "sfx/whoosh_5.ogg"
+  ],
+  "xylo_run": [
+   "sfx/xylo_run_1.ogg",
+   "sfx/xylo_run_2.ogg",
+   "sfx/xylo_run_3.ogg"
+  ],
+  "zPop": [
+   "sfx/zPop_1.ogg",
+   "sfx/zPop_2.ogg",
+   "sfx/zPop_3.ogg",
+   "sfx/zPop_4.ogg"
+  ]
+ }
+}

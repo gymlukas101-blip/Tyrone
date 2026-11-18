@@ -56,6 +56,7 @@ class Settings:
     juice_level: str = "auto"         # animation/VFX/SFX intensity: auto (follows Windows) | full | calm | minimal
     sfx_volume: int = 70              # 0-100, Monkey's sound effects (his voice has its own level)
     sleep_after_min: int = 8          # idle minutes before he dozes off (ZZZ)
+    sfx_rejects: list = field(default_factory=list)  # sound takes you turned off in the Sound Lab ("laugh_2", ...)
     max_credits: bool = False         # paying with Claude Max's monthly API credits ($100): budget kept under it
     brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
     # Updates + images

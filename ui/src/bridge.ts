@@ -59,6 +59,9 @@ export interface Api {
   cleanup_run(): Promise<CleanupResult>;
   cleanup_dismiss(): Promise<void>;
   report_ui_error(info: string): Promise<void>;
+  make_voice_kit(takes: number): Promise<{ ok: boolean; error?: string }>;
+  get_user_sounds(): Promise<Record<string, string[]>>;
+  get_sound(rel: string): Promise<string>;
   get_policy(): Promise<Policy>;
   set_policy_entry(task: string, tier: string, model: string, effort: string): Promise<{ ok: boolean; error?: string }>;
   reset_policy(task: string): Promise<Policy>;
@@ -237,6 +240,13 @@ function mockApi(): Api {
     async cleanup_run() { return { ok: true, count: 4, items: demoCleanup().map((i) => ({ ...i, status: "ok", detail: i.kind === "download" ? "moved to Recycle Bin" : "uninstalled" })) }; },
     async cleanup_dismiss() {},
     async report_ui_error() {},
+    async make_voice_kit() {
+      let i = 0;
+      const iv = setInterval(() => { i += 6; emit([["voicekit", i >= 64 ? { finished: true, ok: true, made: { laugh: 4 } } : { done: i, total: 64, what: "laugh" }]]); if (i >= 64) clearInterval(iv); }, 250);
+      return { ok: true };
+    },
+    async get_user_sounds() { return {}; },
+    async get_sound() { return ""; },
     async get_policy() { return demoPolicy(); },
     async set_policy_entry(task, tier, model, effort) {
       const row = POLICY_ROWS.find((r) => r[0] === task);

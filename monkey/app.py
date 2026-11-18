@@ -818,6 +818,48 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
+    # sound kit (vocal set generated on this PC; effects bundled with the app)
+    def make_voice_kit(self, takes: int = 4):
+        """Generate Monkey's vocal set + voice reference with Fish's free model, in the background."""
+        from .audio.voicekit import VoiceKit
+
+        a = self._app
+        key = keys.get("fish")
+        if not key:
+            return {"ok": False, "error": "Add your Fish Audio key first (Settings → API keys)."}
+        if getattr(a, "_voicekit", None) is not None:
+            return {"ok": False, "error": "Already making the voice set."}
+        kit = VoiceKit(key, a.cfg.settings.fish_voice_id, a.cfg.data_dir, progress=lambda p: a.ui.emit("voicekit", p))
+        a._voicekit = kit
+
+        def run():
+            from .audio.tts import explain_fish_error
+
+            try:
+                res = kit.run(takes=max(1, min(int(takes), 6)))
+                a.ui.emit("voicekit", {"finished": True, **res})
+            except Exception as exc:  # noqa: BLE001
+                log.exception("voice kit failed")
+                a.ui.emit("voicekit", {"finished": True, "ok": False, "error": explain_fish_error(exc)})
+            finally:
+                a._voicekit = None
+
+        threading.Thread(target=run, name="voicekit", daemon=True).start()
+        return {"ok": True}
+
+    def get_user_sounds(self):
+        from .audio.voicekit import user_sounds
+
+        return user_sounds(self._app.cfg.data_dir)
+
+    def get_sound(self, rel: str):
+        """A sound generated on this PC (base64 WAV), only from %APPDATA%/Monkey/sfx."""
+        root = (self._app.cfg.data_dir / "sfx").resolve()
+        p = (root / str(rel)).resolve()
+        if root not in p.parents or p.suffix.lower() != ".wav" or not p.exists():
+            return ""
+        return base64.b64encode(p.read_bytes()).decode()
+
     def test_voice(self):
         """Check Monkey's Fish voice directly (so the reason shows up if it fails), then say a test line."""
         from .audio.tts import FishTTS, explain_fish_error, normalize_voice_id
@@ -1039,6 +1081,15 @@ def selftest() -> int:
             problems.append("UI must be a single self-contained index.html (external JS/CSS found)")
         if not resource_path("ui", "dist", "models", "monkey.glb").exists():
             problems.append("3D monkey model not bundled")
+        sfx_index = resource_path("ui", "dist", "sfx", "index.json")
+        if not sfx_index.exists():
+            problems.append("sound kit manifest not bundled")
+        else:
+            import json as _json
+
+            first = next(iter(_json.loads(sfx_index.read_text(encoding="utf-8"))["cues"].values()), [None])[0]
+            if not first or not resource_path("ui", "dist", *first.split("/")).exists():
+                problems.append("sound kit files not bundled")
         if "Monkey" not in app.agent.system:
             problems.append("persona missing")
         from .brain.calibrate import SAMPLES

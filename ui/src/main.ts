@@ -51,6 +51,88 @@ if (!forceSvg && webglAvailable()) {
 }
 decorateJungle($("#stage"));
 
+/** Hook the recorded sound kit into the avatar's sound engine (bundled files + sounds made on this PC). */
+let soundsAttached = false;
+function attachSounds(s: Record<string, any>) {
+  const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
+  if (!a3) return;
+  a3.sfx.rejects = new Set<string>(s.sfx_rejects ?? []);
+  if (soundsAttached) return;
+  soundsAttached = true;
+  void a3.sfx.attach({
+    bundled: async () => (await (await fetch("sfx/index.json")).json()).cues ?? {},
+    user: async () => (await api.get_user_sounds()) ?? {},
+    userData: async (rel) => {
+      const b64 = await api.get_sound(rel);
+      if (!b64) return null;
+      const bin = atob(b64); const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out.buffer;
+    },
+  });
+  // Quiet, short UI clicks (common tier: very low level, cooldown in the engine).
+  document.addEventListener("pointerdown", (e) => {
+    if ((e.target as HTMLElement)?.closest("button")) a3.sfx.play("ui_click");
+  }, { capture: true });
+}
+
+/** Settings → Sound: make Monkey's vocal set on this PC (Fish free model), and a Sound Lab to audition takes. */
+function soundSection(s: Record<string, any>) {
+  const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
+  const status = h("span", { class: "meta", id: "voiceKitStatus" }, "");
+  const lab = h("div", { class: "soundlab" });
+  const rejects = new Set<string>(s.sfx_rejects ?? []);
+  const renderLab = () => {
+    const cues = a3?.sfx.cues() ?? {};
+    const names = Object.keys(cues).sort((x, y) => Number(y.startsWith("vocal/")) - Number(x.startsWith("vocal/")) || x.localeCompare(y));
+    lab.replaceChildren(...(names.length ? names.map((cue) => h("div", { class: "cue" },
+      h("span", { class: "name" }, cue.replace("vocal/", "🗣 ").replace(/_/g, " ")),
+      ...cues[cue].map((src, i) => {
+        const take = a3!.sfx.takeOf(src);
+        const b = h("button", { type: "button", class: "take" + (rejects.has(take) ? " off" : ""),
+          title: "Click to play · right-click to turn this take on/off" }, String(i + 1));
+        b.addEventListener("click", () => void a3!.sfx.preview(src));
+        b.addEventListener("contextmenu", async (e) => {
+          e.preventDefault();
+          if (rejects.has(take)) rejects.delete(take); else rejects.add(take);
+          b.classList.toggle("off", rejects.has(take));
+          appState = await api.save_settings({ sfx_rejects: [...rejects] });
+          a3!.sfx.rejects = new Set(rejects);
+        });
+        return b;
+      }))) : [h("p", { class: "help" }, "No recorded sounds loaded yet.")]));
+  };
+  renderLab();
+  const make = h("button", { class: "primary", type: "button", onclick: async () => {
+    const r = await api.make_voice_kit(4);
+    status.textContent = r.ok ? "Starting…" : `⚠ ${r.error}`;
+  } }, "🎙 Make Monkey's voice set");
+  voiceKitHooks = { status, done: async () => { await a3?.sfx.reloadUser(); renderLab(); } };
+  return h("section", {}, h("h4", {}, "Sound"),
+    h("p", { class: "help" }, "Monkey's grunts, laughs, yawns and snorts are made in his own Fish voice with Fish's free model " +
+      "(free until Nov 30, 2026) and saved on this PC, so they keep working after that. Takes about 3–5 minutes, once. " +
+      "It also saves a clean sample of his voice for the offline voice."),
+    h("div", { class: "field" }, h("span", {}, "Voice set"), make, status),
+    h("details", {}, h("summary", {}, "Sound Lab: hear every sound (click a number; right-click to turn a take off)"), lab));
+}
+let voiceKitHooks: { status: HTMLElement; done: () => Promise<void> } | null = null;
+function voiceKitEvent(p: any) {
+  const st = voiceKitHooks?.status ?? document.getElementById("voiceKitStatus");
+  if (p.finished) {
+    const n = Object.values(p.made ?? {}).reduce((a: number, b: any) => a + Number(b), 0);
+    const msg = p.ok ? `✓ Made ${n} sounds${p.reference ? " + voice sample" : ""}` : `⚠ ${p.error ?? "Stopped"}`;
+    if (st) st.textContent = msg;
+    toast(msg);
+    if (p.ok) {
+      void voiceKitHooks?.done();
+      if (!voiceKitHooks) void ((window as any).__monkeyAvatarObj as Avatar3D | undefined)?.sfx.reloadUser();
+      ((window as any).__monkeyAvatarObj as Avatar3D | undefined)?.sfx.play("vocal/woohoo");
+    }
+    return;
+  }
+  if (st) st.textContent = `${Math.round((100 * p.done) / Math.max(1, p.total))}% · ${p.what}`;
+}
+
 /** Apply Settings → Look & feel to the 3D avatar (juice level, SFX volume, sleep timer). */
 function applyLook(s: Record<string, any>) {
   const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
@@ -207,6 +289,7 @@ function onEvent(name: string, p: any) {
       $("#routeChip").textContent = p.label;
       $("#routeChip").title = `${p.task ? p.task.replace(/_/g, " ") + ": " : ""}${p.reason}`; break;
     case "calibration": brainEvent(p); break;
+    case "voicekit": voiceKitEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
     case "draft": draftCard(p); break;
     case "approval":
@@ -572,6 +655,7 @@ async function openSettings() {
           return r;
         })()),
         field("Doze off after (minutes idle)", "sleep_after_min", "number", { min: "1", max: "120", step: "1" })),
+      soundSection(s),
       h("section", {}, h("h4", {}, "Images & updates"),
         h("div", { class: "field" }, h("span", {}, "Image model"), (() => {
           const sel = h("select", {},
@@ -637,6 +721,7 @@ async function restoreTranscript() {
   (window as any).__monkeyBooted = true;
   appState = await api.get_state();
   applyLook(appState.settings);
+  attachSounds(appState.settings);
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;

@@ -218,7 +218,7 @@ export class Avatar3D implements AvatarLike {
     this.stateSince = performance.now();
     if (s !== "idle") this.poke();
     if (s === "listening" && prev === "idle") this.sfx.play("pop");   // earcon on transitions only
-    this.sfx.duck(s === "speaking" || s === "listening" || s === "transcribing");
+    this.sfx.duck(s === "speaking" || s === "listening" || s === "transcribing", s === "speaking");
     if (!this.emoting) this.play(STATE_CLIP[s]);
   }
 
@@ -273,6 +273,7 @@ export class Avatar3D implements AvatarLike {
       const pos = this.head(0.2);
       this.vfx.spawn({ kind: "bang", at: pos, size: 0.26, life: 1.0, pop: true });
       this.sfx.play("startle");
+      this.sfx.play("vocal/snort_wake");
     }
     this.sleepAmt = 0.25;               // snap most of the way awake (it's a startle)
     this.emote("surprised");
@@ -309,6 +310,8 @@ export class Avatar3D implements AvatarLike {
     const head = this.head(0.2);
     switch (name) {
       case "celebrate": case "flex": case "dance":
+        if (name === "celebrate") { this.sfx.play("vocal/woohoo"); this.sfx.play("confetti", 0.7); }
+        if (name === "flex") this.sfx.play("vocal/hngh");
         // staggered twinkles on a ring around him (0.25 s each), so they read against the jungle, not his chest
         this.around(10, 0.48).forEach((p, i) => this.vfx.spawn({ kind: "sparkle", at: p, size: 0.1 + Math.random() * 0.06,
           life: 0.55, pop: true, delay: i * 0.06, spin: 2 }));
@@ -317,18 +320,23 @@ export class Avatar3D implements AvatarLike {
         break;
       case "happy": case "wave":
         this.vfx.burst("heart", head, 4, 0.45, 0.09, 1.2);
-        this.sfx.play("pop");
+        this.sfx.play(this.sfx.has("heart_pop") ? "heart_pop" : "pop");
+        if (name === "happy") this.sfx.play("vocal/hoohoo");
         break;
       case "laugh":
         this.vfx.burst("star", head, 4, 0.5, 0.06, 1.0);
-        this.sfx.play("boing");
+        this.sfx.play(this.sfx.has("vocal/laugh") ? "vocal/laugh" : "boing");
         break;
       case "surprised":
-        if (!this.sleeping && this.sleepAmt < 0.3) this.vfx.spawn({ kind: "bang", at: this.head(0.2), size: 0.22, life: 0.8, pop: true });
+        if (!this.sleeping && this.sleepAmt < 0.3) {
+          this.vfx.spawn({ kind: "bang", at: this.head(0.2), size: 0.22, life: 0.8, pop: true });
+          this.sfx.play("vocal/gasp");
+        }
         break;
       case "shrug":
         this.vfx.spawn({ kind: "question", at: this.head(0.2), size: 0.16, life: 1.4, pop: true, sway: 0.02 });
-        this.sfx.play("boing", 0.6);
+        this.sfx.play(this.sfx.has("question") ? "question" : "boing", 0.6);
+        this.sfx.play("vocal/huh");
         break;
       default:
         break;
@@ -341,7 +349,7 @@ export class Avatar3D implements AvatarLike {
     const a = this.brain.tick(now, busy);
     if (a.kind === "glance") this.life.glance();
     else if (a.kind === "clip") this.emote(a.name as Emote);
-    else if (a.kind === "yawn") { this.yawnT = 0; this.sfx.play("yawn"); }
+    else if (a.kind === "yawn") { this.yawnT = 0; this.sfx.play(this.sfx.has("vocal/yawn") ? "vocal/yawn" : "yawn"); }
     else if (a.kind === "sleep") this.fallAsleep();
   }
 
@@ -384,6 +392,7 @@ export class Avatar3D implements AvatarLike {
       const temple = this.life.worldPos("head", new THREE.Vector3(), new THREE.Vector3(0.2, 0.34, 0.12));
       this.vfx.spawn({ kind: "sweat", at: temple, size: 0.06, life: 0.9, pop: true,
         vel: new THREE.Vector3(0.12, 0.15, 0), gravity: 1.2, onSpawn: () => this.sfx.play("sweat") });
+      if (t - this.stateSince > 6000) this.sfx.play("vocal/hmm", 0.8);
     }
     this.vfx.update(dt);
 
