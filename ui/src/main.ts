@@ -34,7 +34,9 @@ let avatar: AvatarLike;
 const avatarHost = $("#avatar");
 const forceSvg = new URLSearchParams(location.search).has("svg");
 if (!forceSvg && webglAvailable()) {
-  const a3 = new Avatar3D(avatarHost);
+  // ?model=rt.glb loads models/rt.glb instead (previewing a Blender export in the demo build).
+  const alt = new URLSearchParams(location.search).get("model");
+  const a3 = new Avatar3D(avatarHost, alt && /^[\w.-]+\.glb$/.test(alt) ? `models/${alt}` : undefined);
   (window as any).__monkeyAvatarObj = a3;
   avatar = a3;
   (window as any).__monkeyAvatar = { ready: false, kind: "3d", clips: [], morphs: [] };

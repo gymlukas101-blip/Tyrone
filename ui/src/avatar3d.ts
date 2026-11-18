@@ -371,7 +371,23 @@ export class Avatar3D implements AvatarLike {
     for (const r of this.morphMap.get(name) ?? []) r.influences[r.index] = v;
   }
 
+  /** Contact sheets / model diffs: hold one clip at time t (seconds) with no idle life, springs or effects. */
+  poseAt(clip: string, t: number) {
+    const a = this.actions.get(clip);
+    if (!a || !this.mixer) return false;
+    this.frozen = true;
+    this.mixer.stopAllAction();
+    a.reset().setEffectiveWeight(1).play();
+    a.paused = true;
+    a.time = Math.min(t, a.getClip().duration);
+    this.mixer.update(0);
+    this.renderer.render(this.scene, this.camera);
+    return true;
+  }
+  private frozen = false;
+
   private frame() {
+    if (this.frozen) { this.renderer.render(this.scene, this.camera); return; }
     const dt = Math.min(0.1, this.clock.getDelta());
     const t = performance.now();
     this.mixer?.update(dt);
