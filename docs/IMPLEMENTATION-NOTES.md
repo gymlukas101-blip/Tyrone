@@ -148,3 +148,40 @@ There was no cross-session recall, no provenance, and no correct or forget tools
 - how WakeToRun behaves on your laptop (Windows may not wake a sleeping mobile PC by design).
 
 **The class times in your imported notes are deliberately unused.** Confirm them in Settings → Morning brief first (Detect from calendar, check, then Confirm).
+
+## P3: skills, and the routing benchmark ✅ (scoped)
+
+**Skills** (`monkey/skills/loader.py`, two bundled skills):
+- **What gets loaded when:**
+  - The system prompt lists only each skill's name and description (537 characters for both, stable, so it stays inside the cached prefix).
+  - `load_skill(name)` returns the SKILL.md body.
+  - `read_skill_file(name, file)` returns `.md`/`.txt` files inside that skill's folder only (path-guarded).
+- **Safety and overrides:**
+  - Skills never execute anything and grant no capabilities.
+  - A user skill in `%APPDATA%\Monkey\skills\<name>\SKILL.md` overrides the bundled one.
+  - Invalid names, and frontmatter that doesn't match its folder, are ignored.
+  - `monkey.spec` bundles `monkey/skills`.
+- **The two skills:**
+  - `canvas-triage`: missing → due within 24 h → grade impact/points → deadline; "points unknown" for feed data; one next step; checking off ≠ submitting.
+  - `email-professor-draft`: facts first, never invent addresses, match the writing style, ≤ 120 words, `draft_email` only.
+- **Tests** (`tests/test_skills.py`): parsing, the listing size, lazy bodies, overrides, bad names, reference confinement, runner tools, system-prompt inclusion.
+- **Not measured:** whether the model actually picks the right skill. That needs live calls; run the calibration with a key.
+
+**Routing benchmark** (`tools/bench_routing.py`, 42 labeled fake requests across school, BBU, Monkey and life), offline result:
+- Rules cover **28/42** at **27/28 correct (96%)**.
+- The remaining **14** go to the Haiku classifier.
+- The only miss was ambiguous ("open my email": inbox vs. Gmail website) and is now labeled as either.
+- **Decision: no routing change in this sprint.** Replacing the classifier needs its live accuracy, latency and cost on those 14. `python -m tools.bench_routing --live` measures exactly that with your key (about 14 Haiku calls, well under $0.01). Removing the classifier also changes how cache-warm follow-ups stick (sticky routing is now fixed and tested), so compare after a week of real use.
+
+## Deferred, with protocols (not started on purpose)
+- **STT (faster-whisper small.en vs Parakeet-TDT-0.6B-v3 int8 via sherpa-onnx):** record 30 of *your* typical commands on your mic, then compare word error rate (hand-checked), time to text and CPU %. Switch only if WER improves by ≥ 2 points or latency halves, with no regression on names and course codes.
+- **Visemes:** `monkey/audio/visemes.py` estimates mouth shapes from FFT and loudness. Compare against (a) phoneme timestamps from a forced aligner and (b) a neural audio-to-face model, on 10 clips of Monkey's voice. Measure lip-sync offset and CPU cost. The avatar, GLB, clips and shape keys are unchanged in this sprint.
+- **Not set up or installed (by decision):** Telegram, Honcho, Hermes, OpenClaw, subagents, and notifications or other outward-facing automations.
+- **`bbu-project-status` skill:** needs a read-only GitHub tool and your approval of a fine-grained, read-only token for the BBU repo. It must read real commits, issues and releases, not design docs.
+
+## Your one-time steps (nothing here was done on your PC)
+1. Update Monkey to a build from this branch (after you approve the merge or release).
+2. Settings → Memory → **Import context files…**: pick `profile.md`, `preferences.md`, `projects.md` and `classes.md` from your pack (not `README_IMPORT.md` or `IMPLEMENTATION_BRIEF.md`). Read the preview, then **Apply**. The backup lands in `%APPDATA%\Monkey\memory\memories\backups\import-…` and **Undo import** restores it.
+3. Settings → **Morning brief**: **Detect from calendar** (needs Google or Outlook connected), check the times, then **Confirm schedule**.
+4. Optional: enter your Canvas token's expiry date; preview and then **Enable** the scheduled task.
+5. Optional: `python -m tools.bench_routing --live` for the classifier numbers.

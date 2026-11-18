@@ -174,6 +174,9 @@ class Agent:
         self.speak = speak
         self.user_name = user_name
         self.system = load_persona()
+        skills = getattr(getattr(tools, "s", None), "skills", None)
+        if skills is not None and skills.listing():
+            self.system += "\n\n" + skills.listing()       # stable text: stays inside the cached prefix
         self.history: list[dict] = []
         self.last_activity = 0.0
         self._cancel = threading.Event()

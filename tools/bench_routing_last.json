@@ -1,0 +1,26 @@
+{
+ "offline": {
+  "cases": 42,
+  "rule_covered": 28,
+  "rule_correct": 28,
+  "rule_precision": 1.0,
+  "fall_through_to_classifier": 14,
+  "rule_misses": [],
+  "fallthrough": [
+   "do I have anything after 3 today",
+   "what's my recovery like today",
+   "is it gonna snow this weekend",
+   "forget what I said about the club meeting",
+   "what's the capital of australia",
+   "how many ounces in a cup",
+   "help me design a ranked draft system that won't let people dodge",
+   "debug why my lua remote event fires twice",
+   "learn how I write emails",
+   "what did we decide about the boss fight last time",
+   "give me speech note cards for a 3 minute persuasive speech",
+   "write a 16 bar verse with triplet flow about snowboarding",
+   "is it worth adding a survival mode before ranked",
+   "tell me a joke"
+  ]
+ }
+}

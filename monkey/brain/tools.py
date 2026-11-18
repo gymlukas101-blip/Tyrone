@@ -111,7 +111,13 @@ MEMORY_TOOLS: list[dict] = [
           "and the search index.",
           {"fact_id": S, "evidence": S}),
 ]
-LOCAL_TOOLS += MEMORY_TOOLS
+SKILL_TOOLS: list[dict] = [
+    _tool("load_skill", "Load a skill's playbook by name (see the Skills list in your instructions). Read-only text.",
+          {"name": S}),
+    _tool("read_skill_file", "Read a reference file that a loaded skill mentions. Read-only text.",
+          {"name": S, "file": S}),
+]
+LOCAL_TOOLS += MEMORY_TOOLS + SKILL_TOOLS
 
 # Tools whose output is text from other people / the internet. While it's in context, durable memory writes need
 # the user's own explicit request in their current message (prompt-injection guard).
@@ -146,6 +152,7 @@ class Services:
     open_url: Callable[[str], None] = webbrowser.open
     email_cache: dict[str, Email] = field(default_factory=dict)
     history: Any = None                                    # HistoryStore (cross-conversation search)
+    skills: Any = None                                     # SkillLibrary (read-only playbooks)
 
 
 class ToolRunner:
@@ -243,6 +250,17 @@ class ToolRunner:
         self._reindex()
         self.s.emit("memory", {"command": "forget", "path": f.file})
         return f"Forgot [{f.file} {f.id}]."
+
+    # ------------------------------------------------------------ skills (read-only playbooks)
+    def t_load_skill(self, name: str):
+        if self.s.skills is None:
+            return "No skills are installed."
+        return self.s.skills.load(name)
+
+    def t_read_skill_file(self, name: str, file: str):
+        if self.s.skills is None:
+            return "No skills are installed."
+        return self.s.skills.read_file(name, file)
 
     # ------------------------------------------------------------ tools
     def t_escalate(self, reason: str):

@@ -119,6 +119,7 @@ class MonkeyApp:
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin, history=self.history,
+            skills=self._skills(),
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
@@ -270,6 +271,14 @@ class MonkeyApp:
 
         threading.Thread(target=init_listener, name="listener-init", daemon=True).start()
         self._register_hotkey()
+
+    def _skills(self):
+        from .skills.loader import SkillLibrary
+
+        bundled = Path(__file__).resolve().parent / "skills"
+        if not bundled.exists():
+            bundled = resource_path("monkey", "skills")
+        return SkillLibrary(bundled, self.cfg.data_dir / "skills")
 
     # ------------------------------------------------------------------ morning brief sources
     def _calendars(self) -> list:
