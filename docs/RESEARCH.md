@@ -47,6 +47,33 @@ Prompt caching keeps repeat context cheap.
 - **Gmail and Google Calendar:** official APIs with your own OAuth client. Set the consent screen to *In production* (unverified is fine for personal use). In *Testing* mode, Google expires the login every 7 days.
 - **Canvas:** since Nov 14, 2025, UW–Madison students can't create API tokens themselves (it's a request form now). The **Calendar Feed (ICS) link** gives all due dates with no token.
 
+## Canvas grades and points
+- The calendar feed only has titles and due dates. Points, current grade and missing status come from the Canvas REST API:
+  - Courses, with `include[]=total_scores`, give your current grade.
+  - Assignment groups, with `include[]=assignments&include[]=submission`, give each assignment's points, the group weights, and the `missing`, `late` and graded status.
+- The checkbox uses Canvas **Planner overrides** (`marked_complete`), so a check in Tyrone also shows as done in Canvas's planner.
+- At UW–Madison, students must request an API token through a form (since Nov 2025).
+
+### Priority formula (`tyrone/brain/assignments.py`)
+
+Priority is scored 0–100 from four pieces:
+
+| Piece | How it's scored |
+|---|---|
+| Grade impact (45%) | The assignment's share of your final grade. Uses the course's group weights if it has them, otherwise its share of total points. Anything worth 10% or more gets full marks. |
+| Urgency (35%) | Highest for missing or overdue work, then due in 24h, 48h, 3 days, a week, two weeks. |
+| Grade need (20%) | Full boost at 70% or lower in that course, none at 95% or higher. |
+| Missing | +10 |
+
+Tiers by score: critical ≥ 70, high ≥ 50, normal ≥ 30, low below 30.
+
+## Garmin
+- Garmin's official Health API is only for approved businesses.
+- The community `garminconnect` library switched to Garmin's mobile sign-in in v0.3 (the old garth login broke in March 2026). It supports two-step verification codes.
+- Tyrone uses your password once and never saves it. The tokens go in `%APPDATA%\Tyrone\garmin`.
+- It reads `get_sleep_data`, `get_heart_rates`, `get_user_summary` and `get_hrv_data`.
+- Unofficial means Garmin can break it again. When that happens, update the library version.
+
 ## Where your data lives (memory)
 - **Memory** is markdown files in `%APPDATA%\Tyrone\memory\memories\`, managed by Claude's memory tool. Claude reads only what it needs, and you can open and edit them.
 - **The SQLite database** holds the cost ledger.

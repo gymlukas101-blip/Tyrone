@@ -45,6 +45,7 @@ class Settings:
     use_gmail: bool = True
     use_outlook: bool = True
     canvas_ics_url: str = ""
+    canvas_base_url: str = "https://canvas.wisc.edu"
     home_location: str = "Madison, WI"
     latitude: float = 43.0766          # UW-Madison campus
     longitude: float = -89.4125

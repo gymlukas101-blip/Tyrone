@@ -19,6 +19,13 @@ A Jarvis-style desktop voice assistant for Windows. Say **"Yo Tyrone"**, ask any
 - ✉️ **Emails that sound like you:**
   - He learns your style from your Sent folder and drafts replies, which appear on screen in an editable approval card.
   - **Nothing is sent until you click Send, or say "send it" and confirm.** The AI can't send on its own; the app enforces this.
+- ✅ **Canvas checklist:**
+  - Assignments are ranked by how much of your grade they're worth (from points and the course's group weights), your current grade in that course, whether they're missing, and how soon they're due.
+  - Animated checkboxes sync to Canvas's own planner. Checking something off never submits work.
+  - "Yo Tyrone, what should I work on?"
+- ❤️ **Garmin:**
+  - Sleep score and sleep stages, heart rate over the day (hover the chart for exact values), resting HR, HRV, body battery, stress and steps.
+  - "How did I sleep?"
 - 🗂 **Memory:** remembers your classes, people, preferences and writing style in plain markdown files you can read and edit.
 
 ## Install (Windows 10/11)
@@ -37,6 +44,8 @@ The first time you talk to him, Tyrone downloads the local speech-recognition mo
 | Google (Gmail + Calendar) | See [Google setup](#google-setup) | Optional |
 | wisc.edu Outlook | Install and sign in to **classic Outlook**, then Settings → *Test connection* | Optional |
 | Canvas due dates | Canvas → Calendar → *Calendar Feed* → copy link → Settings | Optional |
+| Canvas API token (grades + points) | Request one with the Learn@UW form "Student Request for Canvas Access Token" (kb.wisc.edu/156712). After it arrives, activate it in Canvas, then go to Settings → API keys | Optional; without it, ranking uses due dates only |
+| Garmin | Settings → Garmin: sign in with your email and password, plus the verification code if Garmin asks | Optional |
 | Learn my writing style | Settings → *Learn my writing style* (after connecting email) | Recommended |
 | YouTube key | Google Cloud → enable *YouTube Data API v3* → API key | Optional (for videos) |
 | "Yo Tyrone" wake word | [wakeword/README.md](wakeword/README.md) | Optional; "Hey Jarvis" works meanwhile |

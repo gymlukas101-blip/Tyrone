@@ -75,6 +75,12 @@ _RANK = re.compile(
     r"anything urgent|important emails?|due (?:this|next) week)\b",
     re.I,
 )
+_LOOKUP = re.compile(
+    r"\b(assignments?|homework|hw|what'?s due|due (?:today|tomorrow|this week)|missing (?:work|assignments?)|"
+    r"check (?:off|it off)|canvas|how (?:did|'?d) i sleep|sleep score|heart ?rate|resting hr|hrv|body battery|"
+    r"stress level|steps today|garmin)\b",
+    re.I,
+)
 _COMMAND = re.compile(
     r"^\s*(open|launch|go to|pull up|show me|play|pause|stop|set (?:a )?timer|remind me|"
     r"what time|what'?s the time|what'?s the date|volume|mute|remember that|forget)\b",
@@ -106,8 +112,6 @@ def rule_level(text: str) -> tuple[int | None, str]:
         return 3, "email drafting"
     if _RESEARCH.search(text):
         return 3, "research"
-    if _RANK.search(text):
-        return 3, "ranking / briefing"
     if _COMMAND.search(text) and len(text) < 120:
         # Commands that need the web still want a web-capable model.
         if _NEEDS_WEB.search(text):
@@ -115,6 +119,11 @@ def rule_level(text: str) -> tuple[int | None, str]:
         return 0, "simple command"
     if _SMALLTALK.search(text):
         return 0, "small talk"
+    if _LOOKUP.search(text) and len(text) < 200:
+        # Assignment ranking and health numbers are computed in code, so a light model is enough.
+        return 1, "assignments / health lookup"
+    if _RANK.search(text):
+        return 3, "ranking / briefing"
     if _NEEDS_WEB.search(text) and len(text) < 160:
         return 1, "quick web lookup"
     return None, ""

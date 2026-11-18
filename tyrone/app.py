@@ -24,7 +24,9 @@ from .brain.costs import HAIKU, Ledger, Usage
 from .brain.router import Router, classify_with_haiku
 from .brain.tools import Services, ToolRunner
 from .config import Config, resource_path
+from .integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
 from .integrations.canvas_ics import CanvasCalendar
+from .integrations.garmin import GarminHealth
 from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvider
 from .integrations.outlook_com import OutlookProvider
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
@@ -83,6 +85,9 @@ class TyroneApp:
         self.gcal = GoogleCalendarProvider(self.google)
         self.outlook = OutlookProvider()
         self.canvas = CanvasCalendar(lambda: self.cfg.settings.canvas_ics_url)
+        self.canvas_api = CanvasAPI(lambda: self.cfg.settings.canvas_base_url, lambda: keys.get("canvas_token"))
+        self.board = AssignmentBoard(self.canvas_api, self.canvas, LocalChecks(self.cfg.db_path))
+        self.garmin = GarminHealth(self.cfg.data_dir / "garmin")
         self.approval = ApprovalGate({
             "gmail": lambda d: self.gmail.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body),
             "outlook": lambda d: self.outlook.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body),
@@ -95,6 +100,7 @@ class TyroneApp:
             image_search=self._images, video_search=self._videos if keys.get("youtube") else None,
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
+            assignments=self.board, health=self.garmin,
         )
         self.router = Router(
             classify=self._classify,
@@ -308,6 +314,8 @@ class Api:
                 "google_calendar": ks.get("google_token", False),
                 "outlook": a.outlook.available(),
                 "canvas": bool(a.cfg.settings.canvas_ics_url),
+                "canvas_api": ks.get("canvas_token", False),
+                "garmin": a.garmin.connected(),
             },
             "month_usd": a.ledger.month_to_date(),
             "budget_usd": a.cfg.settings.monthly_budget_usd,
@@ -409,6 +417,41 @@ class Api:
             return {"ok": True, "preview": guide[:600]}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
+
+    # canvas checklist
+    def get_assignments(self, refresh: bool = False):
+        try:
+            return {"ok": True, **self._app.board.load(refresh=bool(refresh))}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def toggle_assignment(self, item_id: str, done: bool):
+        try:
+            return {"ok": True, **self._app.board.toggle(str(item_id), bool(done))}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    # garmin
+    def get_health(self, day: str = "today"):
+        try:
+            return {"ok": True, "health": self._app.garmin.health(day or "today")}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def garmin_login(self, email: str, password: str):
+        try:
+            return {"ok": True, "status": self._app.garmin.login(email.strip(), password)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def garmin_mfa(self, code: str):
+        try:
+            return {"ok": True, "status": self._app.garmin.submit_mfa(code)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def garmin_logout(self):
+        self._app.garmin.logout()
 
     # voice
     def voice_design(self, instruction: str):
@@ -556,7 +599,7 @@ def selftest() -> int:
         if "profile.md" not in app.memory.files():
             problems.append("memory not seeded")
         for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray",
-                    "googleapiclient", "google_auth_oauthlib"):
+                    "googleapiclient", "google_auth_oauthlib", "garminconnect"):
             try:
                 __import__(mod)
             except Exception as exc:  # noqa: BLE001

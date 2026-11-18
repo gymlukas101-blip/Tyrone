@@ -3,24 +3,11 @@ import { marked } from "marked";
 
 import { Avatar, type AvatarState } from "./avatar";
 import { type Api, type AppState, type Importance, waitForApi } from "./bridge";
+import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
+import { renderAssignments, markChecked } from "./assignments";
+import { renderHealth } from "./health";
 import "./style.css";
 
-// ------------------------------------------------------------------ helpers
-type Child = Node | string | null | undefined | false;
-function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K, attrs: Record<string, any> = {}, ...children: Child[]
-): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else if (k === "class") el.className = v;
-    else if (k in el && typeof v !== "string") (el as any)[k] = v;
-    else el.setAttribute(k, String(v));
-  }
-  for (const c of children) if (c !== null && c !== undefined && c !== false) el.append(c);
-  return el;
-}
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const md = (text: string) => {
   const div = h("div", { class: "md" });
@@ -28,17 +15,7 @@ const md = (text: string) => {
   div.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); api.open_url(a.href); }));
   return div;
 };
-const fmtTime = (iso?: string) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-};
-function toast(text: string, ms = 3500) {
-  const t = h("div", { class: "toast" }, text);
-  document.body.append(t);
-  setTimeout(() => t.remove(), ms);
-}
-const safeHttp = (u: string) => /^https:\/\//i.test(u) ? u : "";
+
 
 // ------------------------------------------------------------------ state
 let api: Api;
@@ -157,6 +134,23 @@ function weatherCard(p: any) {
       h("div", { class: "meta" }, x.wind))))));
 }
 
+function assignmentsCard(board: any) {
+  document.querySelectorAll(".card.assign").forEach((c) => c.remove());
+  const c = card("✅ Assignments");
+  c.querySelector("h3")!.append(h("button", {
+    class: "ghost mini", type: "button", title: "Refresh from Canvas",
+    onclick: async () => { const r = await api.get_assignments(true); if (r.ok) assignmentsCard(r); else toast(`⚠ ${r.error}`); },
+  }, "↻"));
+  renderAssignments(c, board, (id, done) => api.toggle_assignment(id, done), (u) => api.open_url(u));
+}
+
+function healthCard(hd: any) {
+  document.querySelectorAll(".card.health").forEach((c) => c.remove());
+  const label = hd.date === new Date().toISOString().slice(0, 10) ? "today" : hd.date;
+  const c = card(`❤️ Health · ${label}`);
+  renderHealth(c, hd);
+}
+
 // ------------------------------------------------------------------ events from Python
 function onEvent(name: string, p: any) {
   switch (name) {
@@ -184,6 +178,9 @@ function onEvent(name: string, p: any) {
     case "images": imagesCard(p); break;
     case "videos": videosCard(p); break;
     case "weather": weatherCard(p); break;
+    case "assignments": assignmentsCard(p); break;
+    case "assignment_checked": markChecked(p.id, p.done); break;
+    case "health": healthCard(p); break;
     case "sources":
       card("🔎 Sources", h("div", { class: "sources" }, ...p.sources.map((s: any) =>
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
@@ -218,6 +215,17 @@ $("#composer").addEventListener("submit", (e) => {
 $("#mic").addEventListener("click", () => api.push_to_talk());
 $("#newChat").addEventListener("click", () => { api.new_conversation(); log.replaceChildren(); addMsg("sys", "New conversation"); });
 $("#settingsBtn").addEventListener("click", () => openSettings());
+$("#asgBtn").addEventListener("click", async () => {
+  const r = await api.get_assignments(false);
+  if (!r.ok) return toast(`⚠ ${r.error}`);
+  if (r.source === "none") return toast("Connect Canvas in Settings (token or calendar feed)");
+  assignmentsCard(r);
+});
+$("#healthBtn").addEventListener("click", async () => {
+  const r = await api.get_health("today");
+  if (!r.ok) return toast(`⚠ ${r.error}`);
+  healthCard(r.health);
+});
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") api.stop_speaking(); });
 
 // ------------------------------------------------------------------ settings
@@ -227,6 +235,7 @@ const KEY_INFO: [string, string, string][] = [
   ["deepgram", "Deepgram (optional)", "Faster speech recognition. Leave empty to use free local Whisper."],
   ["youtube", "YouTube Data API (optional)", "For showing videos. Google Cloud → APIs → YouTube Data API v3 → API key."],
   ["brave", "Brave Search (optional)", "Better image search. Without it, images come from Wikimedia Commons."],
+  ["canvas_token", "Canvas API token (optional)", "Unlocks points, grades & missing status for ranking. UW–Madison: request one via the Learn@UW 'Student Request for Canvas Access Token' form (kb.wisc.edu/156712), then activate it in Canvas."],
 ];
 
 async function openSettings() {
@@ -315,11 +324,33 @@ async function openSettings() {
             const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
           } }, "Test connection")),
         field("Canvas calendar feed URL", "canvas_ics_url", "url", { placeholder: "https://canvas.wisc.edu/feeds/calendars/user_….ics" }),
+        field("Canvas site", "canvas_base_url", "url"),
         h("div", { class: "field" }, h("span", {}, "Email writing style"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             toast("Reading your sent emails… (about a minute)", 6000);
             const r = await api.learn_style(); resultToast(r, "Learned your writing style");
           } }, "Learn my writing style"))),
+      h("section", {}, h("h4", {}, "Garmin"),
+        h("p", { class: "help" }, "Sleep score, heart rate, HRV, body battery. Your password is used once to sign in and is never saved."),
+        (() => {
+          const email = h("input", { type: "email", placeholder: "Garmin email" });
+          const pw = h("input", { type: "password", placeholder: "Garmin password" });
+          const code = h("input", { placeholder: "6-digit code", inputMode: "numeric", hidden: true });
+          const go = h("button", { class: "primary", type: "button" }, appState.connections.garmin ? "Reconnect" : "Sign in");
+          go.addEventListener("click", async () => {
+            go.disabled = true;
+            const r = code.hidden ? await api.garmin_login(email.value, pw.value) : await api.garmin_mfa(code.value);
+            go.disabled = false;
+            if (!r.ok) return toast(`⚠ ${r.error}`);
+            if (r.status === "needs_mfa") { code.hidden = false; go.textContent = "Verify code"; toast("Enter the code Garmin sent you"); return; }
+            pw.value = ""; toast("Garmin connected"); openSettings();
+          });
+          return h("div", {},
+            h("div", { class: "field" }, status(!!appState.connections.garmin), h("span", {}, "Garmin Connect"), email),
+            h("div", { class: "field" }, h("span", {}, ""), pw),
+            h("div", { class: "field" }, h("span", {}, ""), code, go,
+              appState.connections.garmin && h("button", { class: "ghost", type: "button", onclick: async () => { await api.garmin_logout(); openSettings(); } }, "Sign out")));
+        })()),
       h("section", {}, h("h4", {}, "Brain & budget"),
         h("p", { class: "help" }, `This month: $${appState.month_usd.toFixed(2)} of $${appState.budget_usd.toFixed(2)}. ` +
           appState.breakdown.map((b) => `${b.model.replace("claude-", "")}: ${b.calls} calls $${b.usd.toFixed(2)}`).join(" · ")),

@@ -15,6 +15,7 @@ KNOWN_KEYS = {
     "deepgram": "DEEPGRAM_API_KEY",
     "youtube": "YOUTUBE_API_KEY",
     "brave": "BRAVE_API_KEY",
+    "canvas_token": "CANVAS_TOKEN",
     "google_token": "TYRONE_GOOGLE_TOKEN",     # OAuth token JSON (refresh token)
     "google_client": "TYRONE_GOOGLE_CLIENT",   # OAuth client JSON (Desktop app)
     "export_password": "TYRONE_EXPORT_PASSWORD",

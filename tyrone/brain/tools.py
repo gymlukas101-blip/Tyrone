@@ -61,6 +61,15 @@ LOCAL_TOOLS: list[dict] = [
           "reply_to_id: id of the email being replied to, or empty string.",
           {"account": {"type": "string", "enum": ["gmail", "outlook"]}, "to": SA, "cc": SA, "subject": S,
            "body": S, "reply_to_id": S}),
+    _tool("get_assignments", "Canvas assignments ranked by priority (grade impact from points/weights, current course "
+          "grade, missing status, time until due) and show the animated checklist on screen. Use for 'what should I "
+          "work on', 'what's due', 'what am I missing'.", {"include_done": B}),
+    _tool("check_off_assignment", "Check off (or un-check) an assignment on the user's checklist. Use the id from "
+          "get_assignments. This marks it complete in the Canvas planner; it does NOT submit anything.",
+          {"item_id": S, "done": B}),
+    _tool("get_health", "Garmin data: sleep score and stages, heart rate over the day, resting HR, HRV, body battery, "
+          "stress, steps. `day` is 'today' (includes last night's sleep), 'yesterday', or YYYY-MM-DD. Shows a "
+          "health card on screen.", {"day": S}),
     _tool("get_weather", "Current weather and forecast for the user's location (Madison by default).", {}),
     _tool("escalate", "Hand this request to a stronger model. Use when the request needs web search, careful "
           "reasoning or careful writing that you can't do well.", {"reason": S}),
@@ -85,6 +94,8 @@ class Services:
     image_search: Callable[[str, int], list[dict]] | None = None
     video_search: Callable[[str, int], list[dict]] | None = None
     weather: Callable[[], dict] | None = None
+    assignments: Any = None                                # AssignmentBoard
+    health: Any = None                                     # GarminHealth
     anthropic_client: Any = None
     record_usage: Callable[[str, str, str, Any], None] | None = None
     open_url: Callable[[str], None] = webbrowser.open
@@ -227,6 +238,41 @@ class ToolRunner:
         self.s.emit("draft", {**pending.public(), "web_link": res.web_link})
         return ("Draft saved in the user's " + account + " Drafts folder and shown on screen for approval. "
                 "It has NOT been sent. Tell the user briefly and that they can click Send or say 'send it'.")
+
+    def t_get_assignments(self, include_done: bool = False):
+        if self.s.assignments is None:
+            return "Canvas isn't connected."
+        board = self.s.assignments.load()
+        if board["source"] == "none":
+            return "Canvas isn't connected. Tell the user to add the Canvas token or calendar feed link in Settings."
+        self.s.emit("assignments", board)
+        keep = ("id", "title", "course", "due", "tier", "priority", "reason", "missing", "points", "impact_pct")
+        out = {
+            "source": board["source"], "stats": board["stats"],
+            "todo": [{k: a[k] for k in keep} for a in board["todo"][:12]],
+        }
+        if include_done:
+            out["done"] = [{k: a[k] for k in ("id", "title", "course", "due")} for a in board["done"][:10]]
+        if board["source"] == "feed":
+            out["note"] = "Only due dates are available (no Canvas token), so ranking is by due date."
+        return out
+
+    def t_check_off_assignment(self, item_id: str, done: bool = True):
+        if self.s.assignments is None:
+            return "Canvas isn't connected."
+        res = self.s.assignments.toggle(item_id, done)
+        self.s.emit("assignment_checked", {"id": item_id, "done": done, **res})
+        return ("Checked off" if done else "Un-checked") + (" (synced to Canvas planner)." if res["synced"] else " on this PC.")
+
+    def t_get_health(self, day: str = "today"):
+        if self.s.health is None or not self.s.health.connected():
+            return "Garmin isn't connected. Tell the user to sign in to Garmin in Settings."
+        from ..integrations.garmin import summarize
+
+        h = self.s.health.health(day)
+        self.s.emit("health", h)
+        return {"date": h["date"], "summary": summarize(h), "sleep": h["sleep"],
+                "heart": {k: v for k, v in h["heart"].items() if k != "series"}, "hrv": h["hrv"], "day": h["day"]}
 
     def t_get_weather(self):
         if not self.s.weather:

@@ -37,6 +37,12 @@ export interface Api {
   import_memory(password: string): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   open_memory_folder(): Promise<void>;
   new_conversation(): Promise<void>;
+  get_assignments(refresh: boolean): Promise<any>;
+  toggle_assignment(id: string, done: boolean): Promise<{ ok: boolean; synced?: boolean; error?: string }>;
+  get_health(day: string): Promise<{ ok: boolean; error?: string; health?: any }>;
+  garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
+  garmin_mfa(code: string): Promise<{ ok: boolean; status?: string; error?: string }>;
+  garmin_logout(): Promise<void>;
 }
 
 declare global {
@@ -91,6 +97,22 @@ function mockApi(): Api {
     async send_text(text) {
       emit([["user", { text }], ["route", { label: "Opus 5.5 · medium", reason: "email drafting", importance: "normal" }],
             ["state", { state: "thinking" }]]);
+      if (/assign|due|work on|homework/i.test(text)) {
+        later(800, () => {
+          emit([["route", { label: "Sonnet 5.5 · low", reason: "assignments / health lookup", importance: "normal" }],
+                ["assignments", demoBoard()]]);
+          talk("Your Math 222 midterm tomorrow is twenty percent of your grade, and that CS 400 homework is missing. Hit those first.");
+        });
+        return;
+      }
+      if (/sleep|heart|garmin|hrv/i.test(text)) {
+        later(800, () => {
+          emit([["route", { label: "Sonnet 5.5 · low", reason: "assignments / health lookup", importance: "normal" }],
+                ["health", demoHealth()]]);
+          talk("Sleep score eighty one, seven hours fifteen. Resting heart rate fifty one. You're good, my guy.");
+        });
+        return;
+      }
       if (/draft|email/i.test(text)) {
         later(900, () => {
           emit([["draft", { draft_id: "demo1", account: "outlook", to: ["prof.smith@wisc.edu"], cc: [],
@@ -130,5 +152,46 @@ function mockApi(): Api {
     async import_memory() { return { ok: false, error: "Demo mode" }; },
     async open_memory_folder() {},
     async new_conversation() {},
+    async get_assignments() { return { ok: true, ...demoBoard() }; },
+    async toggle_assignment() { return { ok: true, synced: true }; },
+    async get_health() { return { ok: true, health: demoHealth() }; },
+    async garmin_login() { return { ok: false, error: "Demo mode" }; },
+    async garmin_mfa() { return { ok: false, error: "Demo mode" }; },
+    async garmin_logout() {},
+  };
+}
+
+// ------------------------------------------------------------------ demo data
+const inH = (hours: number) => new Date(Date.now() + hours * 3.6e6).toISOString();
+function demoBoard() {
+  const it = (o: any) => ({ points: null, impact_pct: null, course_grade: null, missing: false, url: "", done: false,
+                            source: "canvas", ...o });
+  return {
+    source: "canvas",
+    stats: { week_total: 8, week_done: 3, missing: 1, critical: 2 },
+    todo: [
+      it({ id: "a1", title: "HW 6: Red-black trees", course: "COMP SCI 400", due: inH(-50), points: 30, impact_pct: 4.2, course_grade: 84, missing: true, priority: 74, tier: "critical", reason: "~4.2% of your grade · MISSING · you're at 84% in COMP SCI 400" }),
+      it({ id: "a2", title: "Midterm 2", course: "MATH 222", due: inH(20), points: 100, impact_pct: 20, course_grade: 79, priority: 92, tier: "critical", reason: "~20.0% of your grade · due in 20h · you're at 79% in MATH 222" }),
+      it({ id: "a3", title: "Lab report 4", course: "CHEM 104", due: inH(70), points: 50, impact_pct: 3.1, course_grade: 88, priority: 50, tier: "high", reason: "~3.1% of your grade · due in 3d · you're at 88% in CHEM 104" }),
+      it({ id: "a4", title: "Discussion post week 11", course: "PSYCH 202", due: inH(110), points: 5, impact_pct: 0.4, course_grade: 96, priority: 16, tier: "low", reason: "~0.4% of your grade · due in 5d · you're at 96% in PSYCH 202" }),
+    ].sort((a, b) => b.priority - a.priority),
+    done: [
+      it({ id: "d1", title: "Reading quiz 10", course: "PSYCH 202", due: inH(-20), priority: 0, tier: "done", reason: "submitted", done: true }),
+    ],
+  };
+}
+function demoHealth() {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const series: [number, number][] = [];
+  for (let m = 0; m < 17 * 60; m += 5) {
+    const hr = m < 7 * 60 ? 52 + Math.sin(m / 40) * 3 : m > 15 * 60 && m < 16 * 60 ? 120 + Math.sin(m / 7) * 20 : 72 + Math.sin(m / 23) * 9;
+    series.push([start.getTime() + m * 60e3, Math.round(hr)]);
+  }
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    sleep: { score: 81, quality: "Good", total_min: 435, stages_min: { deep: 90, light: 240, rem: 95, awake: 10 } },
+    heart: { resting: 51, min: 47, max: 148, seven_day_resting: 53, series },
+    hrv: { last_night: 61, weekly_avg: 58, status: "Balanced" },
+    day: { steps: 8421, body_battery: 64, stress_avg: 28 },
   };
 }

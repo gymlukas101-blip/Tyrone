@@ -25,6 +25,7 @@ hiddenimports = (
     collect_submodules("webview")
     + collect_submodules("keyring.backends")
     + collect_submodules("googleapiclient")
+    + collect_submodules("garminconnect")
     + [
         "pyttsx3.drivers", "pyttsx3.drivers.sapi5", "comtypes.client",
         "win32com", "win32com.client", "pythoncom", "pywintypes",
