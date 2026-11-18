@@ -29,6 +29,7 @@ let api: Api;
 let appState: AppState;
 let importance: Importance = "normal";
 let botBubble: HTMLElement | null = null;
+let sentenceBuf = "";
 // 3D monkey when WebGL works and the model loads; otherwise the SVG monkey.
 let avatar: AvatarLike;
 const avatarHost = $("#avatar");
@@ -328,9 +329,15 @@ function onEvent(name: string, p: any) {
     case "level": avatar.setLevel(p.v); break;
     case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
-    case "delta":
+    case "delta": {
       if (!botBubble) botBubble = addMsg("bot", "");
-      botBubble.textContent += p.text; log.scrollTop = log.scrollHeight; break;
+      botBubble.textContent += p.text; log.scrollTop = log.scrollHeight;
+      // talk gestures: one per finished sentence at most (the avatar rate-limits)
+      sentenceBuf += p.text;
+      const m = sentenceBuf.match(/^(.*?[.!?])(\s|$)/s);
+      if (m) { (avatar as any).gestureFor?.(m[1]); sentenceBuf = sentenceBuf.slice(m[0].length); }
+      break;
+    }
     case "done": botBubble = null; break;
     case "route":
       $("#routeChip").textContent = p.label;

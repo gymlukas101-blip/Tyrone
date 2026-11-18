@@ -73,6 +73,11 @@ def merge(*ps: Pose) -> Pose:
     return out
 
 
+def override(base: Pose, top: Pose) -> Pose:
+    """base, with every bone that top mentions replaced (not added) by top's value."""
+    return {k: {**base[k], **top[k]} for k in ("rot", "loc", "scale")}
+
+
 def scaled(p: Pose, k: float) -> Pose:
     """The same pose at k strength (for anticipation/overshoot beats)."""
     return {"rot": {b: [(a, d * k) for a, d in r] for b, r in p["rot"].items()},

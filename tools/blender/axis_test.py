@@ -15,6 +15,9 @@ tests = {
     "t_turn_left": pose({"chest": [("z", 25)], "head": [("z", 30)]}),
     "t_tilt_left": pose({"head": [("y", 20)]}),
     "t_sym_arms": sym(pose({"upper_arm.R": [("y", 70)], "forearm.R": [("x", -40)]})),
+    "t_fore_in": pose({"upper_arm.R": [("x", -25)], "forearm.R": [("x", -80), ("z", 40)]}),
+    "t_fore_out": pose({"upper_arm.R": [("x", -25)], "forearm.R": [("x", -80), ("z", -40)]}),
+    "t_belly_sym": sym(pose({"upper_arm.R": [("x", -20), ("y", -10)], "forearm.R": [("x", -85), ("z", 45)]})),
     "t_squat": pose({"thigh.R": [("x", -40)], "shin.R": [("x", 60)]}, loc={"hips": (0, 0, -0.06)}),
 }
 for name, p in tests.items():

@@ -28,8 +28,9 @@ const size = Number(arg("size", "260"));
     page.on("pageerror", (e) => errs.push(String(e)));
     await page.goto(`http://localhost:${port}/index.html?demo&model=${m}`);
     await page.waitForFunction(() => window.__monkeyAvatar?.ready, null, { timeout: 60000 });
-    const durations = await page.evaluate(() => Object.fromEntries(
-      [...window.__monkeyAvatarObj.actions].map(([k, a]) => [k, a.getClip().duration])));
+    const durations = await page.evaluate(() => Object.fromEntries([
+      ...[...window.__monkeyAvatarObj.actions].map(([k, a]) => [k, a.getClip().duration]),
+      ...[...window.__monkeyAvatarObj.gestures].map(([k, a]) => ["talk_gest_" + k, a.getClip().duration])]));
     for (const c of clips) {
       const d = durations[c];
       for (let i = 0; i < frames; i++) {

@@ -11,14 +11,31 @@ import { type AvatarLike, type AvatarState, type Emote, bananaRain } from "./ava
 import { IdleBrain, Life } from "./avatar/life";
 import { type Juice, Sfx } from "./avatar/sfx";
 import { Vfx } from "./avatar/vfx";
+import { type Beat, crossed } from "./avatar/events";
 
 const STATE_CLIP: Record<AvatarState, string> = {
   idle: "idle", listening: "listen", transcribing: "listen", thinking: "think", speaking: "talk",
 };
+const SLEEP_CHAIN = ["yawn", "sit_down", "sit_doze_loop", "lie_down", "sleep_loop"];
 const VISEMES = ["viseme_sil", "viseme_PP", "viseme_FF", "viseme_TH", "viseme_DD", "viseme_kk", "viseme_CH",
   "viseme_SS", "viseme_nn", "viseme_RR", "viseme_aa", "viseme_E", "viseme_I", "viseme_O", "viseme_U"];
 // Expression shape keys layered on top of clips for emotes ("happyEyes" deliberately unused).
-const EXPRESSIONS: Partial<Record<Emote, Record<string, number>>> = {
+const EXPRESSIONS: Partial<Record<string, Record<string, number>>> = {
+  // Blender Tier-1 clips (faces are code-driven so clips stay body-only)
+  idle_cross_eyes: { tongueOut: 0.7, squint: 0.2 },
+  idle_flex_check: { bigGrin: 0.7, cheeksUp: 0.5, squint: 0.3 },
+  idle_mini_chestbeat: { bigGrin: 0.6, browsAngry: 0.4 },
+  idle_scratch_head: { smirk_L: 0.4, squint: 0.4, browUp_L: 0.6 },
+  idle_scratch_belly: { smile: 0.6, squint: 0.6 },
+  idle_knuckle_crack: { smirk_R: 0.6, browsAngry: 0.3 },
+  idle_stretch_shoulders: { mouthO: 0.3, squint: 0.6 },
+  idle_impatient_tap: { frown: 0.35, browsAngry: 0.25 },
+  idle_shake_off: { grimace: 0.4, squint: 0.8 },
+  idle_lookaround: { browUp_L: 0.3 },
+  think_eureka: { browsUp: 1, bigGrin: 0.7, wideEyes: 0.6 },
+  attn_perk: { browsUp: 0.7, wideEyes: 0.4 },
+  wake_startle: { wideEyes: 1, mouthO: 0.7, browsUp: 1 },
+  wake_groggy: { squint: 0.8, frown: 0.2 },
   happy: { smile: 0.9, squint: 0.5, cheeksUp: 0.6 },
   celebrate: { bigGrin: 0.8, squint: 0.4, cheeksUp: 0.7 },
   flex: { bigGrin: 0.8, squint: 0.4, cheeksUp: 0.7 },
@@ -66,6 +83,9 @@ export class Avatar3D implements AvatarLike {
   private vfx: Vfx;
   readonly sfx = new Sfx();
   private sleeping = false;
+  private chain: string[] = [];
+  private chainAct: THREE.AnimationAction | null = null;
+  private chainStage = "";
   private sleepAmt = 0;          // eased 0..1
   private yawnT = -1;            // seconds into a yawn, -1 = none
   private nextZ = 0;
@@ -165,14 +185,25 @@ export class Avatar3D implements AvatarLike {
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of gltf.animations) {
       const a = this.mixer.clipAction(clip);
-      if (!Object.values(STATE_CLIP).includes(clip.name)) {
+      if (clip.name.startsWith("talk_gest_")) continue;         // upper-body copies are made below
+      if (!Object.values(STATE_CLIP).includes(clip.name) && !clip.name.endsWith("_loop")) {
         a.setLoop(THREE.LoopOnce, 1);
         a.clampWhenFinished = true;
       }
       this.actions.set(clip.name, a);
     }
     this.clips = [...this.actions.keys()];
+    // Talk gestures: upper body only, layered over the talk clip while he speaks.
+    const UPPER = /^(spine|chest|neck|head|shoulder|upper_arm|forearm|hand|f[123]|thumb)/;
+    for (const clip of gltf.animations.filter((c) => c.name.startsWith("talk_gest_"))) {
+      const upper = clip.clone();
+      upper.tracks = upper.tracks.filter((t) => UPPER.test(t.name.split(".")[0]));
+      const a = this.mixer.clipAction(upper);
+      a.setLoop(THREE.LoopOnce, 1);
+      this.gestures.set(clip.name.slice("talk_gest_".length), a);
+    }
     this.mixer.addEventListener("finished", (e) => {
+      if (e.action === this.chainAct) { this.nextChain(); return; }
       if (e.action === this.emoting) {
         this.emoting = null;
         this.emoteName = null;
@@ -219,7 +250,8 @@ export class Avatar3D implements AvatarLike {
     if (s !== "idle") this.poke();
     if (s === "listening" && prev === "idle") this.sfx.play("pop");   // earcon on transitions only
     this.sfx.duck(s === "speaking" || s === "listening" || s === "transcribing", s === "speaking");
-    if (!this.emoting) this.play(STATE_CLIP[s]);
+    if (s !== "speaking") this.endGesture();
+    if (!this.emoting && !this.chainAct) this.play(STATE_CLIP[s]);
   }
 
   /** Settings → Look & feel. */
@@ -252,7 +284,7 @@ export class Avatar3D implements AvatarLike {
   /** User activity: reset idle time; if he was asleep, wake up with a startle. */
   poke() {
     if (!this.brain) return;
-    if (this.brain.poke()) this.wake();
+    if (this.brain.poke()) this.wake(this.state === "listening" ? "startle" : "groggy");
   }
 
   sleepNow() { if (this.brain) { this.brain.asleep = true; this.fallAsleep(); } }
@@ -262,13 +294,52 @@ export class Avatar3D implements AvatarLike {
     this.expr = {};
     this.nextZ = performance.now() + 900;
     this.nextSnore = performance.now() + 2500;
+    // DK-style sleep chain when the clips exist: yawn -> plop down -> doze -> lie down -> snore.
+    if (SLEEP_CHAIN.every((n) => this.actions.has(n))) {
+      this.chain = [...SLEEP_CHAIN];
+      if (this.life) this.life.droopWeight = 0;
+      this.nextChain();
+    }
   }
 
-  wake() {
+  private nextChain() {
+    const name = this.chain.shift();
+    if (!name) return;
+    const a = this.actions.get(name)!;
+    if (name === "sit_doze_loop") a.setLoop(THREE.LoopRepeat, 1 + Math.floor(Math.random() * 3));
+    else if (name === "sleep_loop") a.setLoop(THREE.LoopRepeat, Infinity);
+    else { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+    if (name === "yawn") { this.yawnT = 0; this.sfx.play(this.sfx.has("vocal/yawn") ? "vocal/yawn" : "yawn"); }
+    a.reset().setEffectiveWeight(1).fadeIn(name === "yawn" ? 0.4 : 0.3).play();
+    this.current?.fadeOut(0.3);
+    this.current = a;
+    this.chainAct = a;
+    this.chainStage = name;
+  }
+
+  wake(kind: "startle" | "groggy" = "startle") {
     if (!this.sleeping && this.sleepAmt < 0.05) return;
     this.sleeping = false;
     this.yawnT = -1;
     this.vfx.clear("z");
+    if (this.life) this.life.droopWeight = 1;
+    const lyingDown = this.chainAct && this.chainStage !== "yawn";
+    this.chain = [];
+    this.chainAct = null;
+    this.chainStage = "";
+    const clip = kind === "startle" ? "wake_startle" : "wake_groggy";
+    const a = this.actions.get(clip);
+    if (lyingDown && a) {
+      // the clip carries its own sound + VFX beats (events.ts)
+      this.expr = EXPRESSIONS[clip] ?? {};
+      a.reset().setEffectiveWeight(1).fadeIn(0.2).play();
+      this.current?.fadeOut(0.2);
+      this.current = a;
+      this.emoting = a;
+      this.emoteName = null;
+      this.sleepAmt = kind === "startle" ? 0.15 : 0.5;
+      return;
+    }
     if (this.life) {
       const pos = this.head(0.2);
       this.vfx.spawn({ kind: "bang", at: pos, size: 0.26, life: 1.0, pop: true });
@@ -295,8 +366,9 @@ export class Avatar3D implements AvatarLike {
     if (name === "shrug") clip = "surprised";
     const a = this.actions.get(clip);
     if (name === "celebrate" || name === "dance" || name === "flex") bananaRain(this.host);
-    this.expr = EXPRESSIONS[name] ?? {};
+    this.expr = EXPRESSIONS[name] ?? EXPRESSIONS[clip] ?? {};
     if (!a) return;
+    this.endGesture();
     a.reset().setEffectiveWeight(1).fadeIn(0.25).play();
     this.current?.fadeOut(0.25);
     this.current = a;
@@ -363,7 +435,10 @@ export class Avatar3D implements AvatarLike {
         vel: new THREE.Vector3(0.11, 0.22, 0.02), grow: [0.6, 1.35], spin: 0.25,
         onSpawn: () => this.sfx.play("zPop", 0.7) });
     }
-    if (now > this.nextSnore) { this.nextSnore = now + 6500 + Math.random() * 1500; this.sfx.play("snore"); }
+    if (now > this.nextSnore && (!this.chainAct || this.chainStage === "sleep_loop")) {
+      this.nextSnore = now + 6500 + Math.random() * 1500;
+      this.sfx.play("snore");
+    }
   }
 
   // ------------------------------------------------------------ frame
@@ -371,9 +446,76 @@ export class Avatar3D implements AvatarLike {
     for (const r of this.morphMap.get(name) ?? []) r.influences[r.index] = v;
   }
 
+  // ------------------------------------------------------------ clip beats + talk gestures
+  private evAct: THREE.AnimationAction | null = null;
+  private evT = 0;
+  private fireBeats() {
+    const a = this.current;
+    if (!a || !this.life) return;
+    const name = a.getClip().name;
+    const t = a.time;
+    const prev = a === this.evAct ? this.evT : -0.001;
+    this.evAct = a;
+    this.evT = t;
+    for (const b of crossed(name, prev, t, a.getClip().duration)) this.beat(b);
+  }
+
+  private where(w: Beat["at"]): THREE.Vector3 {
+    const L = this.life!;
+    switch (w) {
+      case "mouth": return this.mouth();
+      case "chest": return L.worldPos("chest", new THREE.Vector3(), new THREE.Vector3(0, 0.1, 0.18));
+      case "feet": return L.worldPos("root", new THREE.Vector3(), new THREE.Vector3(0, 0.03, 0.12));
+      case "handR": return L.worldPos("handR", new THREE.Vector3());
+      case "handL": return L.worldPos("handL", new THREE.Vector3());
+      default: return this.head(0.2);
+    }
+  }
+
+  private beat(b: Beat) {
+    if (b.sfx) this.sfx.play(b.sfx, b.vol ?? 1);
+    if (b.vfx) {
+      const at = this.where(b.at);
+      if (b.vfx === "sparkle" || b.vfx === "star") this.vfx.burst(b.vfx, at, 4, 0.4, b.size ?? 0.08, 0.8);
+      else this.vfx.spawn({ kind: b.vfx, at, size: b.size ?? 0.18, life: b.vfx === "puff" ? 0.8 : 1.1, pop: true,
+        vel: b.vfx === "puff" ? new THREE.Vector3(0, 0.12, 0) : undefined });
+    }
+  }
+
+  private gestures = new Map<string, THREE.AnimationAction>();
+  private gesture: THREE.AnimationAction | null = null;
+  private nextGesture = 0;
+  /** While he talks: a hand gesture that fits the sentence ("?" shrug/palms, "!" big/thumbs up...). */
+  gestureFor(sentence: string) {
+    if (this.state !== "speaking" || this.emoting || this.sleeping || !this.gestures.size) return;
+    const now = performance.now();
+    if (now < this.nextGesture) return;
+    const pick = (names: string[]) => {
+      const ok = names.filter((n) => this.gestures.has(n));
+      return ok.length ? ok[Math.floor(Math.random() * ok.length)] : null;
+    };
+    let name: string | null = null;
+    if (/\?\s*$/.test(sentence)) name = pick(["shrug", "open_palms"]);
+    else if (/!\s*$/.test(sentence)) name = pick(["big", "thumbs_up"]);
+    else if (/\b(first|second|third|then|also|plus)\b|\d/i.test(sentence)) name = pick(["fist_palm", "point"]);
+    else if (Math.random() < 0.45) name = pick(["open_palms", "point", "fist_palm"]);
+    if (!name) return;
+    const a = this.gestures.get(name)!;
+    this.gesture?.fadeOut(0.2);
+    a.reset().setEffectiveWeight(1.5).fadeIn(0.18).play();
+    const dur = a.getClip().duration;
+    window.setTimeout(() => { if (this.gesture === a) { a.fadeOut(0.3); this.gesture = null; } }, Math.max(200, (dur - 0.35) * 1000));
+    this.gesture = a;
+    this.nextGesture = now + 2500 + Math.random() * 1500;
+  }
+
+  private endGesture() {
+    if (this.gesture) { this.gesture.fadeOut(0.25); this.gesture = null; }
+  }
+
   /** Contact sheets / model diffs: hold one clip at time t (seconds) with no idle life, springs or effects. */
   poseAt(clip: string, t: number) {
-    const a = this.actions.get(clip);
+    const a = this.actions.get(clip) ?? this.gestures.get(clip.replace(/^talk_gest_/, ""));
     if (!a || !this.mixer) return false;
     this.frozen = true;
     this.mixer.stopAllAction();
@@ -394,14 +536,16 @@ export class Avatar3D implements AvatarLike {
 
     // Idle life: weighted fidgets with cooldowns, then drowsy -> asleep (docs/ANIMATION-UI-DIRECTION.md §4).
     this.doIdle(t);
-    const sleepTarget = this.sleeping ? 1 : 0;
+    const standingUp = this.chainStage === "yawn" || this.chainStage === "sit_down";
+    const sleepTarget = this.sleeping ? (standingUp ? 0.3 : 1) : 0;
+    this.fireBeats();
     this.sleepAmt += (sleepTarget - this.sleepAmt) * (1 - Math.exp(-(this.sleeping ? 0.8 : 4) * dt));
     if (this.life) {
       this.life.sleepiness = this.sleepAmt;
       this.life.lookWeight = this.emoting && /dance|flex/.test(this.emoteName ?? "") ? 0.3 : 1;
       this.life.update(dt, this.model!);
     }
-    if (this.sleeping) this.sleepFrame(t);
+    if (this.sleeping && (!this.chainAct || this.chainStage === "sit_doze_loop" || this.chainStage === "sleep_loop")) this.sleepFrame(t);
     // Thinking for a while: little sweat drops at the temple.
     if (this.state === "thinking" && t - this.stateSince > 3000 && t > this.nextSweat && this.life) {
       this.nextSweat = t + 1700;

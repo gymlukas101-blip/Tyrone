@@ -56,6 +56,7 @@ export class Life {
   private springs = new Map<string, Spring>();
   private t = 0;
   sleepiness = 0;     // 0 awake .. 1 asleep (drives head droop, slow breath, eyes)
+  droopWeight = 1;    // 0 when a sleep clip (sit/lie down) poses the head instead
   lookWeight = 1;     // fade look-at during big full-body clips
   enabled = true;
   private glanceT = -1;   // procedural look-around (seconds since start, -1 = off)
@@ -116,13 +117,13 @@ export class Life {
     const w = this.lookWeight;
     const neck = this.bones.get("neck"), head = this.bones.get("head");
     // head droop while dozing (pitch down, slight tilt)
-    const droop = asleep * (0.35 + 0.05 * Math.sin(this.t * 0.6));
+    const droop = asleep * this.droopWeight * (0.35 + 0.05 * Math.sin(this.t * 0.6));
     if (neck) {
-      _q.setFromEuler(_e.set(-(this.look.y * 0.4) * w + droop * 0.4, this.look.x * 0.4 * w, asleep * 0.08, "YXZ"));
+      _q.setFromEuler(_e.set(-(this.look.y * 0.4) * w + droop * 0.4, this.look.x * 0.4 * w, asleep * this.droopWeight * 0.08, "YXZ"));
       rotateWorld(neck, _q);
     }
     if (head) {
-      _q.setFromEuler(_e.set(-(this.look.y * 0.6) * w + droop * 0.6, this.look.x * 0.6 * w, asleep * 0.12, "YXZ"));
+      _q.setFromEuler(_e.set(-(this.look.y * 0.6) * w + droop * 0.6, this.look.x * 0.6 * w, asleep * this.droopWeight * 0.12, "YXZ"));
       rotateWorld(head, _q);
     }
     for (const n of ["eyeL", "eyeR"]) {

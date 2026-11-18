@@ -15,8 +15,9 @@ from pathlib import Path
 
 import bpy
 
-from anim import Clip, Rig, merge, pose, scaled, squash, sym
+from anim import Clip, Rig, merge, override, pose, scaled, squash, sym
 from common import args, export_glb, import_glb
+from reach import body_front, solve
 
 def P(rot=None, loc=None, scale=None):
     return pose(rot, loc, scale)
@@ -36,8 +37,43 @@ FIST = {f"{f}.0{i}.R": [("x", -70)] for f in ("f1", "f2", "f3") for i in (1, 2)}
 FIST_L = sym(P(FIST))["rot"]
 
 
-def clips() -> list[Clip]:
+def head_top(x: float, band: float = 0.03) -> float:
+    head = bpy.data.objects["Head"]
+    zs = [(head.matrix_world @ v.co).z for v in head.data.vertices if abs((head.matrix_world @ v.co).x - x) < band]
+    return max(zs) if zs else 0.9
+
+
+def touches(rig) -> dict:
+    """Solved arm poses that put a hand exactly on a spot of his body (see reach.py)."""
+    a = rig.arm
+    bf = lambda x, z: body_front(a, x, z)   # noqa: E731 - skin surface (min Y) at x, z
+    seed_head = {"upper_arm.R": [("y", 95), ("x", -35)], "forearm.R": [("x", -115)]}
+    seed_front = {"upper_arm.R": [("x", -30)], "forearm.R": [("x", -60), ("z", 50)]}
+    seed_front_l = {"upper_arm.L": [("x", -30)], "forearm.L": [("x", -60), ("z", -50)]}
+    t = {
+        "head_R": solve(rig, "R", (-0.07, -0.02, head_top(-0.07) + 0.015), "finger", seed_head),
+        "belly_L": solve(rig, "L", (0.05, bf(0.05, 0.33) - 0.03, 0.33), "finger", seed_front_l),
+        "pec_R": solve(rig, "R", (-0.07, bf(-0.07, 0.47) - 0.035, 0.47), "hand", seed_front),
+        "pec_L": solve(rig, "L", (0.07, bf(0.07, 0.47) - 0.035, 0.47), "hand", seed_front_l),
+        "meet_R": solve(rig, "R", (-0.025, bf(0.0, 0.43) - 0.15, 0.43), "hand", seed_front),
+        "meet_L": solve(rig, "L", (0.025, bf(0.0, 0.43) - 0.15, 0.43), "hand", seed_front_l),
+        "cross_R": solve(rig, "R", (0.15, bf(0.15, 0.45) - 0.06, 0.45), "hand", seed_front),
+        "cross_L": solve(rig, "L", (-0.15, bf(-0.15, 0.41) - 0.03, 0.41), "hand", seed_front_l),
+        "eye_R": solve(rig, "R", (-0.07, -0.25, 0.745), "finger", seed_head),
+        "cock_R": solve(rig, "R", (-0.21, bf(-0.2, 0.5) - 0.09, 0.57), "hand", seed_front),
+        "cock_L": solve(rig, "L", (0.21, bf(0.2, 0.5) - 0.09, 0.57), "hand", seed_front_l),
+        "fist_R": solve(rig, "R", (-0.01, bf(0.0, 0.40) - 0.2, 0.41), "hand", seed_front),
+        "palm_L": solve(rig, "L", (0.02, bf(0.0, 0.40) - 0.2, 0.37), "hand", seed_front_l),
+    }
+    return {k: P(v) for k, v in t.items()}
+
+
+def clips(rig) -> list[Clip]:
+    global HAND_AT_HEAD_R, HAND_ON_BELLY_L
     out: list[Clip] = []
+    T = touches(rig)
+    HAND_AT_HEAD_R = merge(T["head_R"], P({"head": [("y", -8)], "hand.R": [("y", 10)]}))
+    HAND_ON_BELLY_L = T["belly_L"]
 
     # ---- idle fidgets ----------------------------------------------------------------------------------
     c = Clip("idle_lookaround", 90)
@@ -67,8 +103,7 @@ def clips() -> list[Clip]:
     out.append(c)
 
     c = Clip("idle_knuckle_crack", 60)
-    hands_meet = merge(sym(P({"upper_arm.R": [("x", -40), ("y", -10)], "forearm.R": [("x", -75), ("z", -35)],
-                              "hand.R": [("x", 10)]})), P(FIST), P(FIST_L), P({"head": [("x", 8)]}))
+    hands_meet = merge(T["meet_R"], T["meet_L"], P(FIST), P(FIST_L), P({"head": [("x", 8)]}))
     crack = merge(hands_meet, sym(P({"hand.R": [("x", -25)], "shoulder.R": [("y", 6)]})), P({"head": [("y", 6)]}))
     c.at(0).at(14, hands_meet, "out").at(26, hands_meet).at(28, crack, "snap").at(34, hands_meet, "out")
     c.at(38, hands_meet).at(40, merge(crack, P({"head": [("y", -12)]})), "snap").at(48, hands_meet, "out").at(60)
@@ -83,17 +118,12 @@ def clips() -> list[Clip]:
     out.append(c)
 
     c = Clip("idle_mini_chestbeat", 54)
-    fist_up_r = P({"upper_arm.R": [("x", -50), ("y", -15)], "forearm.R": [("x", -95)], **FIST})
-    fist_up_l = sym(P({"upper_arm.R": [("x", -50), ("y", -15)], "forearm.R": [("x", -95)]}))
-    hit_r = merge(P({"upper_arm.R": [("x", -38), ("y", -25)], "forearm.R": [("x", -115)], **FIST}), CHEST_PUFF)
-    hit_l = merge(sym(P({"upper_arm.R": [("x", -38), ("y", -25)], "forearm.R": [("x", -115)]})), CHEST_PUFF)
-    both_up = merge(fist_up_r, P({b: v for b, v in fist_up_l["rot"].items() if b.endswith(".L")}), P(FIST_L),
-                    scaled(CHEST_PUFF, 1.3))
-    c.at(0).at(10, both_up, "out")
+    # wind-up: fists cocked back by the shoulders, chest puffed; then alternating hits on each pec
+    wind = merge(T["cock_R"], T["cock_L"], P(FIST), P(FIST_L), scaled(CHEST_PUFF, 1.3))
+    hit_r, hit_l = T["pec_R"], T["pec_L"]
+    c.at(0).at(10, wind, "out")
     for i, f in enumerate((12, 18, 24, 30)):
-        hit = hit_r if i % 2 == 0 else hit_l
-        c.at(f, merge(both_up, P({b: v for b, v in hit["rot"].items() if b.endswith(".R" if i % 2 == 0 else ".L")})),
-             "out")
+        c.at(f, override(wind, hit_r if i % 2 == 0 else hit_l), "snap" if f == 12 else "out")
     c.at(38, merge(scaled(CHEST_PUFF, 1.2), P({"head": [("y", 8), ("x", -5)]})), "back")  # cocky head tilt
     c.at(54)
     out.append(c)
@@ -121,8 +151,7 @@ def clips() -> list[Clip]:
     out.append(c)
 
     c = Clip("idle_impatient_tap", 120)
-    arms_crossed = merge(sym(P({"upper_arm.R": [("x", -30), ("y", -25)], "forearm.R": [("x", -100), ("z", -55)]})),
-                         P({"head": [("y", 5), ("x", -3)]}))
+    arms_crossed = merge(T["cross_R"], T["cross_L"], P({"head": [("y", 5), ("x", -3)]}))
     tap_up = merge(arms_crossed, P({"foot.R": [("x", 22)], "toe.R": [("x", -10)]}))
     c.at(0).at(14, arms_crossed, "out")
     for i, f in enumerate(range(20, 84, 10)):
@@ -155,11 +184,13 @@ def clips() -> list[Clip]:
     c.at(88, merge(SIT, P({"head": [("x", -6)]})), "back").at(120, scaled_into(SIT, DOZE, 0.3)).at(150, SIT)
     out.append(c)
 
-    LIE = merge(P({"root": [("y", 82)]}, loc={"root": (-0.32, 0, 0.17)}),
-                sym(P({"thigh.R": [("x", -35)], "shin.R": [("x", 40)]})),
-                P({"upper_arm.L": [("y", -150), ("x", -20)], "forearm.L": [("x", -110)],     # pillow arm under head
-                   "upper_arm.R": [("y", 30), ("x", -35)], "forearm.R": [("x", -60)],       # arm over belly
-                   "head": [("y", -30), ("x", 6)], "neck": [("y", -10)], "tail.01": [("x", 20)]}))
+    # On his left side facing you (reads clearly from the front camera), knees tucked a little,
+    # lower arm folded up under his head as a pillow, top arm draped over his belly.
+    LIE = merge(P({"root": [("y", 86)]}, loc={"root": (-0.33, 0, 0.16)}),
+                sym(P({"thigh.R": [("x", -40)], "shin.R": [("x", 55)]})),
+                P({"upper_arm.L": [("y", -155), ("x", -15)], "forearm.L": [("x", -120)],    # pillow arm
+                   "upper_arm.R": [("y", -35), ("x", -30)], "forearm.R": [("x", -45), ("z", 35)],   # over belly
+                   "head": [("y", 10), ("x", 8)], "neck": [("y", 4)], "tail.01": [("x", 20)]}))
     c = Clip("lie_down", 60)
     c.at(0, SIT).at(14, merge(SIT, P({"chest": [("y", 12)], "head": [("y", 10)]})), "in")
     c.at(38, merge(scaled(LIE, 1.06)), "out").at(46, merge(LIE, squash("spine", 0.05)), "out").at(60, LIE, "elastic")
@@ -183,8 +214,7 @@ def clips() -> list[Clip]:
     out.append(c)
 
     c = Clip("wake_groggy", 96)
-    rub = merge(SIT, P({"upper_arm.R": [("x", -60), ("y", 20)], "forearm.R": [("x", -120)],
-                        "head": [("x", 12)], "neck": [("x", 6)]}))
+    rub = merge(SIT, T["eye_R"], P({"head": [("x", 12)], "neck": [("x", 6)]}))
     c.at(0, LIE).at(24, merge(SIT, P({"head": [("x", 14)]})), "smooth").at(36, rub)
     c.at(42, merge(rub, P({"hand.R": [("z", 15)]}))).at(48, rub).at(54, merge(rub, P({"hand.R": [("z", -15)]})))
     c.at(64, CROUCH, "smooth").at(76, scaled(yawn_up, 0.5)).at(96)
@@ -205,7 +235,7 @@ def clips() -> list[Clip]:
     out.append(c)
 
     # ---- talk gestures (upper body; layered over talk at runtime) ---------------------------------------------
-    open_palms = sym(P({"upper_arm.R": [("y", 30), ("x", -25)], "forearm.R": [("x", -60), ("z", 20)],
+    open_palms = sym(P({"upper_arm.R": [("y", 8), ("x", -40)], "forearm.R": [("x", -65), ("z", -15)],
                         "hand.R": [("y", -25)]}))
     gest = {
         "talk_gest_open_palms": (open_palms, 30),
@@ -218,8 +248,7 @@ def clips() -> list[Clip]:
                                       P({"head": [("y", 6)]}), scaled(CHEST_PUFF, 0.5)), 34),
         "talk_gest_big": (merge(sym(P({"upper_arm.R": [("y", 85), ("x", -20)], "forearm.R": [("x", -40)]})),
                                 CHEST_PUFF), 36),
-        "talk_gest_fist_palm": (merge(P({"upper_arm.R": [("x", -45), ("y", -10)], "forearm.R": [("x", -90), ("z", -30)], **FIST}),
-                                      P({"upper_arm.L": [("x", -40)], "forearm.L": [("x", -85), ("z", 40)]})), 28),
+        "talk_gest_fist_palm": (merge(T["fist_R"], P(FIST), T["palm_L"]), 28),
     }
     for name, (g, n) in gest.items():
         c = Clip(name, n)
@@ -240,7 +269,7 @@ def main():
     arm = import_glb(path)
     rig = Rig(arm)
     rig.capture_base()
-    for c in clips():
+    for c in clips(rig):
         if only and c.name not in only:
             continue
         if c.name in bpy.data.actions:
