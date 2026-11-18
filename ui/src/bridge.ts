@@ -60,6 +60,8 @@ export interface Api {
   cleanup_dismiss(): Promise<void>;
   report_ui_error(info: string): Promise<void>;
   make_voice_kit(takes: number): Promise<{ ok: boolean; error?: string }>;
+  end_conversation(): Promise<void>;
+  open_log(): Promise<{ ok: boolean; path: string; error?: string }>;
   offline_voice_state(): Promise<{ installed: boolean; own_voice: boolean; mode: string; downloading: boolean }>;
   download_offline_voice(): Promise<{ ok: boolean; error?: string }>;
   test_offline_voice(): Promise<{ ok: boolean; error?: string; own_voice?: boolean }>;
@@ -209,7 +211,7 @@ function mockApi(): Api {
         later(700, () => talk("Yo, I'm in demo mode right now. Run me as the desktop app and I'm fully plugged in."));
       }
     },
-    async push_to_talk() { emit([["state", { state: "listening" }]]); later(1500, () => emit([["state", { state: "idle" }]])); },
+    async push_to_talk() { emit([["state", { state: "listening", conversation: true }]]); later(4000, () => emit([["state", { state: "idle", conversation: false }]])); },
     async stop_speaking() {},
     async approve() { return { ok: true }; },
     async cancel_draft() {},
@@ -249,6 +251,8 @@ function mockApi(): Api {
       return { ok: true };
     },
     async get_user_sounds() { return {}; },
+    async end_conversation() { emit([["state", { state: "idle", conversation: false }]]); },
+    async open_log() { return { ok: false, path: "%APPDATA%\\Monkey\\monkey.log" }; },
     async offline_voice_state() { return { installed: false, own_voice: false, mode: "fallback", downloading: false }; },
     async download_offline_voice() {
       let mb = 0;

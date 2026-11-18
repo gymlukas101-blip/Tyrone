@@ -320,7 +320,11 @@ function healthCard(hd: any) {
 // ------------------------------------------------------------------ events from Python
 function onEvent(name: string, p: any) {
   switch (name) {
-    case "state": setState(p.state); if (p.state === "idle") botBubble = null; break;
+    case "state":
+      setState(p.state);
+      if (p.state === "idle") botBubble = null;
+      $("#convChip").hidden = !(p.conversation && p.state === "listening");
+      break;
     case "level": avatar.setLevel(p.v); break;
     case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
@@ -351,7 +355,10 @@ function onEvent(name: string, p: any) {
     case "weather": weatherCard(p); break;
     case "assignments": assignmentsCard(p); break;
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
-    case "emote": avatar.emote(p.name); break;
+    case "emote":
+      if (p.name === "sleep") (avatar as any).sleepNow?.();
+      else avatar.emote(p.name);
+      break;
     case "health": healthCard(p); break;
     case "cleanup": cleanupCard(p); break;
     case "update": {
@@ -392,6 +399,7 @@ $("#composer").addEventListener("submit", (e) => {
   api.send_text(text, importance === "normal" ? null : importance);
 });
 $("#mic").addEventListener("click", () => api.push_to_talk());
+$("#convEnd").addEventListener("click", () => { $("#convChip").hidden = true; void api.end_conversation(); });
 $("#newChat").addEventListener("click", () => { api.new_conversation(); log.replaceChildren(); addMsg("sys", "New conversation"); });
 $("#settingsBtn").addEventListener("click", () => openSettings());
 $("#labBtn").addEventListener("click", () => {
@@ -589,6 +597,27 @@ async function openSettings() {
         h("p", { class: "help" }, `Active wake word: ${appState.wakeword}. Push-to-talk hotkey works anytime.`),
         field("Sensitivity (0.3–0.9)", "wakeword_threshold", "number", { step: "0.05", min: "0.3", max: "0.9" }),
         field("Push-to-talk hotkey", "push_to_talk_hotkey"),
+        h("label", { class: "field toggle" }, (() => {
+          const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
+          cb.checked = s.conversation_mode !== false;
+          cb.addEventListener("change", async () => { appState = await api.save_settings({ conversation_mode: cb.checked }); toast("Saved"); });
+          return cb;
+        })(), h("span", {}, "Keep listening until the conversation is over (say “Hey Monkey” once, then just talk; say “thanks” or “that's all” to end)")),
+        field("End a conversation after this many seconds of quiet", "conversation_idle_s", "number", { min: "15", max: "600", step: "5", placeholder: "90" }),
+        h("div", { class: "field" }, h("span", {}, "Wait for me to finish"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "quick" }, "Quick (0.9 s pause ends my turn)"),
+            h("option", { value: "normal" }, "Normal (1.4 s)"),
+            h("option", { value: "patient" }, "Patient (2 s, for long thoughts)"));
+          sel.value = s.end_silence ?? "normal";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ end_silence: sel.value }); toast("Saved"); });
+          return sel;
+        })()),
+        h("div", { class: "field" }, h("span", {}, "Something not working?"),
+          h("button", { class: "ghost", type: "button", onclick: async () => {
+            const r = await api.open_log();
+            if (!r.ok) toast(`Log file: ${r.path}`);
+          } }, "Open log")),
         h("div", { class: "field" }, h("span", {}, "Speech recognition"), (() => {
           const sel = h("select", {}, h("option", { value: "whisper" }, "Local Whisper (free, private)"),
             h("option", { value: "deepgram" }, "Deepgram Nova-3 (faster, needs key)"));

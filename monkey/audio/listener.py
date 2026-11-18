@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -75,6 +76,17 @@ def load_wakeword(model_name: str, bundled_dir: Path, user_dir: Path | None = No
 
 
 class Listener:
+    """Modes:
+      wake          waiting for "Hey Monkey" (also while Monkey thinks/talks, so you can interrupt him)
+      record        recording after the wake word / push-to-talk (gives up after 5 s of nothing)
+      conversation  between turns of a conversation: no wake word needed, waits until you talk
+                    (or until the app's quiet deadline passes, then on_conversation_idle fires)
+    The loop never dies on an error, and a dead/disconnected microphone is reopened automatically.
+    """
+
+    STALL_S = 3.0
+    REOPEN_BACKOFF = (1, 2, 5, 10)
+
     def __init__(
         self,
         on_wake: Callable[[], None],
@@ -84,50 +96,104 @@ class Listener:
         wakeword_model=None,
         threshold: Callable[[], float] = lambda: 0.5,
         is_speaking: Callable[[], bool] = lambda: False,
+        vad=None,
+        end_silence_ms: Callable[[], int] = lambda: 1400,
+        on_conversation_idle: Callable[[], None] | None = None,
+        on_reconnect: Callable[[str], None] | None = None,
+        stream_factory: Callable | None = None,
     ):
         self.on_wake = on_wake
         self.on_utterance = on_utterance
         self.on_level = on_level
         self.on_timeout = on_timeout
+        self.on_conversation_idle = on_conversation_idle
+        self.on_reconnect = on_reconnect
         self.ww = wakeword_model
         self.threshold = threshold
         self.is_speaking = is_speaking
+        self.vad = vad
+        self.end_silence_ms = end_silence_ms
+        self._stream_factory = stream_factory
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=200)
-        self._mode = "wake"  # "wake" | "record"
-        self._ep = Endpointer()
+        self._mode = "wake"  # "wake" | "record" | "conversation"
+        self.last_source = "wake"          # where the latest utterance came from ("wake" | "conversation")
+        self._conv_deadline = 0.0
+        self._ep = self._endpointer()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._stream = None
+        self._last_frame = 0.0
+        self._reopens = 0
         self.muted = False
 
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def _endpointer(self, conversation: bool = False) -> Endpointer:
+        if self.vad is not None:
+            try:
+                self.vad.reset()
+            except Exception:  # noqa: BLE001
+                pass
+        return Endpointer(silence_ms=int(self.end_silence_ms()), no_speech_ms=None if conversation else 5000,
+                          min_speech_ms=480 if conversation else 300, vad=self.vad)
+
     # ---- control -------------------------------------------------------
-    def start(self) -> None:
+    def _open_stream(self):
+        if self._stream_factory is not None:
+            return self._stream_factory(self._callback)
         import sounddevice as sd
 
-        self._stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16",
-                                      blocksize=FRAME_SAMPLES, callback=self._callback)
+        return sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16",
+                              blocksize=FRAME_SAMPLES, callback=self._callback)
+
+    def start(self) -> None:
+        self._stream = self._open_stream()
         self._stream.start()
+        self._last_frame = time.monotonic()
         self._thread = threading.Thread(target=self._loop, name="listener", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
+        self._close_stream()
+
+    def _close_stream(self) -> None:
+        st, self._stream = self._stream, None
+        if st is not None:
+            try:
+                st.stop()
+                st.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def push_to_talk(self) -> None:
         """Start recording immediately (hotkey or mic button)."""
         self._begin_recording()
 
+    def enter_conversation(self, idle_s: float) -> None:
+        """Listen for your next turn without the wake word, until idle_s of quiet."""
+        self._ep = self._endpointer(conversation=True)
+        self._conv_deadline = time.monotonic() + max(5.0, float(idle_s))
+        self._mode = "conversation"
+
+    def end_conversation(self) -> None:
+        if self._mode == "conversation":
+            self._mode = "wake"
+
     def _begin_recording(self) -> None:
-        self._ep.reset()
+        self._ep = self._endpointer()
         self._mode = "record"
         if self.ww is not None:
-            self.ww.reset()
+            try:
+                self.ww.reset()
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- audio thread ------------------------------------------------
     def _callback(self, indata, frames, time_info, status) -> None:  # noqa: ARG002
+        self._last_frame = time.monotonic()
         if self.muted:
             return
         try:
@@ -135,33 +201,85 @@ class Listener:
         except queue.Full:
             pass
 
+    def _watchdog(self) -> None:
+        """No audio for a few seconds (PC slept, headset unplugged, driver hiccup): reopen the microphone."""
+        if self.muted or time.monotonic() - self._last_frame < self.STALL_S:
+            return
+        delay = self.REOPEN_BACKOFF[min(self._reopens, len(self.REOPEN_BACKOFF) - 1)]
+        log.warning("microphone silent for %.0f s; reopening (attempt %d)",
+                    time.monotonic() - self._last_frame, self._reopens + 1)
+        self._close_stream()
+        try:
+            if self._stream_factory is None:
+                import sounddevice as sd
+
+                sd._terminate()          # refresh the device list (new default after plugging in a headset)
+                sd._initialize()
+            self._stream = self._open_stream()
+            self._stream.start()
+            self._last_frame = time.monotonic()
+            self._reopens = 0
+            if self.on_reconnect is not None:
+                self.on_reconnect("Microphone reconnected.")
+        except Exception as exc:  # noqa: BLE001
+            self._reopens += 1
+            log.warning("microphone reopen failed: %s", exc)
+            self._last_frame = time.monotonic() + delay - self.STALL_S    # try again after the backoff
+
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
                 frame = self._q.get(timeout=0.5)
             except queue.Empty:
+                self._tick_idle()
+                try:
+                    self._watchdog()
+                except Exception:  # noqa: BLE001
+                    log.exception("mic watchdog")
                 continue
-            if self.on_level is not None:
+            try:
+                self._step(frame)
+            except Exception:  # noqa: BLE001 - one bad frame must never kill listening
+                log.exception("listener frame failed")
+                if self._mode == "record":
+                    self._ep = self._endpointer()
+
+    def _tick_idle(self) -> None:
+        if self._mode == "conversation" and not self._ep.started and time.monotonic() > self._conv_deadline:
+            self._mode = "wake"
+            if self.on_conversation_idle is not None:
+                self.on_conversation_idle()
+
+    def _step(self, frame: np.ndarray) -> None:
+        if self.on_level is not None:
+            try:
                 self.on_level(float(np.abs(frame).mean()) / 3000.0)
-            if self._mode == "wake":
-                if self.ww is None:
-                    continue
-                scores = self.ww.predict(frame)
-                score = max(scores.values()) if scores else 0.0
-                # Be stricter while Monkey is talking so his own voice doesn't wake him.
-                # (+0.1, not more: "Hey Monkey" must still interrupt him; echo of his own voice rarely scores high)
-                thr = self.threshold() + (0.1 if self.is_speaking() else 0.0)
-                if score >= min(thr, 0.95):
-                    log.info("wake word %.2f", score)
-                    self._begin_recording()
-                    self.on_wake()
-            else:
-                state = self._ep.feed(frame)
-                if state == "done":
-                    audio = self._ep.audio()
-                    self._mode = "wake"
-                    threading.Thread(target=self.on_utterance, args=(audio,), daemon=True).start()
-                elif state == "timeout":
-                    self._mode = "wake"
-                    if self.on_timeout:
-                        self.on_timeout()
+            except Exception:  # noqa: BLE001
+                pass
+        if self._mode == "wake":
+            if self.ww is None:
+                return
+            scores = self.ww.predict(frame)
+            score = max(scores.values()) if scores else 0.0
+            # Be stricter while Monkey is talking so his own voice doesn't wake him.
+            # (+0.1, not more: "Hey Monkey" must still interrupt him; echo of his own voice rarely scores high)
+            thr = self.threshold() + (0.1 if self.is_speaking() else 0.0)
+            if score >= min(thr, 0.95):
+                log.info("wake word %.2f", score)
+                self._begin_recording()
+                self.on_wake()
+            return
+        if self._mode == "conversation":
+            self._tick_idle()
+            if self._mode != "conversation":
+                return
+        state = self._ep.feed(frame)
+        if state == "done":
+            audio = self._ep.audio()
+            self.last_source = self._mode
+            self._mode = "wake"
+            threading.Thread(target=self.on_utterance, args=(audio,), daemon=True).start()
+        elif state == "timeout":
+            self._mode = "wake"
+            if self.on_timeout:
+                self.on_timeout()

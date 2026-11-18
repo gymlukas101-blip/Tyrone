@@ -50,6 +50,9 @@ class Settings:
     wakeword_model: str = "hey_monkey"    # optional trained openWakeWord model (falls back to hey_jarvis)
     wakeword_threshold: float = 0.5
     push_to_talk_hotkey: str = "ctrl+alt+space"
+    conversation_mode: bool = True    # after "Hey Monkey" once, keep listening (no wake word) until the chat is over
+    conversation_idle_s: int = 90     # ...which is when you say "thanks"/"bye", or after this many seconds of quiet
+    end_silence: str = "normal"       # how long a pause ends your turn: "quick" 0.9 s | "normal" 1.4 s | "patient" 2 s
     # Brain
     monthly_budget_usd: float = 25.0
     force_model: str = ""             # "" = automatic routing

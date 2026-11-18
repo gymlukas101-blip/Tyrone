@@ -9,6 +9,7 @@ thinking-block replay valid.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from datetime import datetime
@@ -23,6 +24,8 @@ from .costs import HAIKU, SONNET, Ledger, Usage
 from .router import Route, Router
 from .speech_text import SentenceChunker
 from .tools import LOCAL_TOOLS, Escalate, ToolRunner
+
+log = logging.getLogger(__name__)
 
 SESSION_IDLE_RESET_S = 20 * 60
 MAX_TOOL_ROUNDS = 12
@@ -52,6 +55,43 @@ def _jsonable(block: Any) -> Any:
     if hasattr(block, "model_dump"):
         return block.model_dump(mode="json", exclude_none=True)
     return block
+
+
+def _get(block: Any, key: str, default: Any = None) -> Any:
+    return block.get(key, default) if isinstance(block, dict) else getattr(block, key, default)
+
+
+def repair_history(history: list[dict]) -> tuple[list[dict], bool]:
+    """Make a conversation valid for the API again, whatever went wrong mid-turn:
+    every assistant tool_use needs a tool_result in the very next user turn (and every tool_result needs its
+    tool_use); no empty turns. Returns (history, changed)."""
+    msgs = [m for m in history if m.get("role") == "system" or m.get("content") not in (None, "", [])]
+    changed = len(msgs) != len(history)
+    out: list[dict] = []
+    for i, m in enumerate(msgs):
+        content = m.get("content")
+        if m.get("role") == "assistant" and isinstance(content, list):
+            nxt = next((x for x in msgs[i + 1:] if x.get("role") != "system"), None)
+            answered = {_get(b, "tool_use_id") for b in (nxt.get("content") if nxt and nxt.get("role") == "user"
+                                                          and isinstance(nxt.get("content"), list) else [])
+                        if _get(b, "type") == "tool_result"}
+            kept = [b for b in content if _get(b, "type") != "tool_use" or _get(b, "id") in answered]
+            if len(kept) != len(content):
+                changed = True
+                m = {**m, "content": kept or [{"type": "text", "text": "(stopped)"}]}
+        elif m.get("role") == "user" and isinstance(content, list):
+            prev = next((x for x in reversed(out) if x.get("role") != "system"), None)
+            asked = {_get(b, "id") for b in (prev.get("content") if prev and prev.get("role") == "assistant"
+                                             and isinstance(prev.get("content"), list) else [])
+                     if _get(b, "type") == "tool_use"}
+            kept = [b for b in content if _get(b, "type") != "tool_result" or _get(b, "tool_use_id") in asked]
+            if len(kept) != len(content):
+                changed = True
+                if not kept:
+                    continue
+                m = {**m, "content": kept}
+        out.append(m)
+    return out, changed
 
 
 def _out_of_credits(exc: Exception) -> bool:
@@ -182,8 +222,17 @@ class Agent:
             holding = self._holding_line(route)
             if holding:
                 ctx += f"(You already said \"{holding}\" out loud; continue without repeating it.)\n"
+            snapshot = len(self.history)
             self.history.append({"role": "user", "content": [{"type": "text", "text": ctx + text}]})
-            return self._run(route, holding)
+            try:
+                return self._run(route, holding)
+            except Exception:  # noqa: BLE001 - never leave the conversation broken
+                log.exception("turn failed; rolling the conversation back")
+                self.history = self.history[:snapshot]
+                self._persist()
+                msg = "Sorry, something went wrong on my end. Try that again?"
+                self._say_full(msg)
+                return msg
 
     def _emit_route(self, route: Route) -> None:
         self.emit("route", {"model": route.model, "effort": route.effort, "label": route.label, "task": route.task,
@@ -269,7 +318,11 @@ class Agent:
 
     def _run(self, route: Route, holding: str = "") -> str:
         spoken_all: list[str] = [holding] if holding else []
+        retried_server = repaired = False
         for _round in range(MAX_TOOL_ROUNDS):
+            self.history, fixed = repair_history(self.history)
+            if fixed:
+                log.warning("repaired conversation history before sending")
             self._apply_effort(route)
             chunker = SentenceChunker()
             self.emit("state", {"state": "thinking"})
@@ -309,17 +362,40 @@ class Agent:
                         and "allowed_callers" in msg:
                     self._haiku_web_direct = True
                     continue
-                if self._restored and exc.status_code == 400:
-                    # The conversation restored after a restart wasn't accepted: start fresh with this message.
-                    last_user = next((m for m in reversed(self.history) if m.get("role") == "user"), None)
+                if exc.status_code == 400 and not repaired:
+                    # The conversation itself wasn't accepted (e.g. left half-finished by an earlier error):
+                    # keep going with just this message instead of failing every turn from now on.
+                    repaired = True
+                    last_user = next((m for m in reversed(self.history) if m.get("role") == "user"
+                                      and any(_get(b, "type") == "text" for b in (m.get("content") or []))), None)
                     if last_user is not None:
+                        log.warning("API rejected the conversation (%s); continuing with the last message only",
+                                    exc.message)
                         self._restored = False
                         self.history = [last_user]
                         self._conv_effort = self._effort_now = None
                         continue
+                if (exc.status_code >= 500 or exc.status_code == 429) and not retried_server:
+                    retried_server = True       # overloaded / hiccup: one quiet retry
+                    time.sleep(1.5)
+                    continue
+                if exc.status_code in (529, 503) or exc.status_code >= 500:
+                    return self._fail("Claude's servers are swamped right now. Give it a few seconds and ask again.")
+                if exc.status_code == 429:
+                    return self._fail("I'm being rate limited for a moment. Ask me again in a few seconds.")
                 return self._fail(f"API error {exc.status_code}: {exc.message}")
             except anthropic.APIConnectionError:
+                if not retried_server:
+                    retried_server = True
+                    time.sleep(1.0)
+                    continue
                 return self._fail("I can't reach the internet right now.")
+            except anthropic.APIError as exc:        # stream broke mid-reply in some other way
+                if not retried_server:
+                    retried_server = True
+                    log.warning("stream error, retrying once: %s", exc)
+                    continue
+                return self._fail("The connection dropped mid-answer. Ask me again?")
 
             self._restored = False
             for s in chunker.flush():

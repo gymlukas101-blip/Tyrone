@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from . import __version__, keys, secretstore
+from .audio import conversation
 from .brain import workspace
 from .brain.agent import Agent
 from .brain.approval import ApprovalGate
@@ -137,6 +138,9 @@ class MonkeyApp:
         self.wakeword_label = "starting…"
         self._agent_state = "idle"
         self._listening = False
+        self._in_conversation = False    # "Hey Monkey" once, then talk freely until it's over
+        self._reply_done = False         # the agent finished its reply (audio may still be playing)
+        self._conv_timer: threading.Timer | None = None
         self._waved = False
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
@@ -217,7 +221,7 @@ class MonkeyApp:
         self.offline_voice = self._make_offline_voice()
         self.speaker = Speaker(
             [fish, self.offline_voice, SystemTTS()],
-            on_level=self.ui.level, on_state=lambda _: self._publish_state(), on_visemes=self.ui.visemes,
+            on_level=self.ui.level, on_state=self._on_speaker_state, on_visemes=self.ui.visemes,
             on_fallback=self._voice_fallback,
         )
         try:
@@ -235,10 +239,17 @@ class MonkeyApp:
                                          phrase=s.wakeword_phrase, sensitivity=s.wakeword_threshold,
                                          work_dir=self.cfg.data_dir / "wakeword")
             self.wakeword_label = label
+            from .audio.endpoint import END_SILENCE_PRESETS
+            from .audio.vad import load_vad
+
+            vad = load_vad(self.cfg.data_dir / "wakeword", resource_path("wakeword"))
             self.listener = Listener(
                 on_wake=self._on_wake, on_utterance=self._on_utterance, on_timeout=self._on_timeout,
                 wakeword_model=model, threshold=lambda: self.cfg.settings.wakeword_threshold,
-                is_speaking=lambda: bool(self.speaker and self.speaker.speaking),
+                is_speaking=lambda: bool(self.speaker and self.speaker.speaking), vad=vad,
+                end_silence_ms=lambda: END_SILENCE_PRESETS.get(self.cfg.settings.end_silence, 1400),
+                on_conversation_idle=lambda: self.end_conversation("quiet"),
+                on_reconnect=lambda msg: self._emit("hint", {"text": f"🎙 {msg}"}),
             )
             try:
                 self.listener.start()
@@ -265,6 +276,9 @@ class MonkeyApp:
             return
         if name in ("user", "delta", "done"):
             self._remember_chat(name, payload or {})
+        if name == "done":
+            self._reply_done = True
+            self._maybe_continue_conversation()
         self.ui.emit(name, payload)
 
     def _warm_offline_voice(self) -> None:
@@ -321,19 +335,68 @@ class MonkeyApp:
             state = "speaking"
         elif self._listening:
             state = "listening"
+        elif self._agent_state == "idle" and self.listener is not None and self.listener.mode == "conversation":
+            state = "listening"
         else:
             state = self._agent_state
-        self.ui.emit("state", {"state": state})
+        self.ui.emit("state", {"state": state, "conversation": self._in_conversation})
 
     def _say(self, sentence: str) -> None:
         if self.speaker is not None:
             self.speaker.say(sentence)
 
     # ------------------------------------------------------------------ voice flow
+    # ---- conversation mode ------------------------------------------------
+    def _start_conversation(self) -> None:
+        if self.cfg.settings.conversation_mode:
+            self._in_conversation = True
+
+    def _on_speaker_state(self, speaking: bool) -> None:
+        if not speaking:
+            self._maybe_continue_conversation()
+        self._publish_state()
+
+    def _maybe_continue_conversation(self) -> None:
+        """After his reply has been said in full, listen for your next turn (no wake word)."""
+        if not (self._in_conversation and self._reply_done) or self.listener is None:
+            return
+        if self.speaker is not None and self.speaker.speaking:
+            return                                    # still talking; called again when he stops
+        if self._conv_timer is not None:
+            self._conv_timer.cancel()
+
+        def open_mic():
+            self._conv_timer = None
+            busy = self.speaker is not None and self.speaker.speaking
+            if not self._in_conversation or busy or self._listening or self.listener is None \
+                    or self.listener.mode != "wake" or self.listener.muted:
+                return
+            self._reply_done = False
+            self.listener.enter_conversation(self.cfg.settings.conversation_idle_s)
+            self._publish_state()
+
+        self._conv_timer = threading.Timer(0.3, open_mic)    # let his last word die out of the room first
+        self._conv_timer.daemon = True
+        self._conv_timer.start()
+
+    def end_conversation(self, reason: str = "") -> None:
+        was = self._in_conversation
+        self._in_conversation = False
+        self._reply_done = False
+        if self._conv_timer is not None:
+            self._conv_timer.cancel()
+            self._conv_timer = None
+        if self.listener is not None:
+            self.listener.end_conversation()
+        if was:
+            log.info("conversation over (%s)", reason or "ended")
+        self._publish_state()
+
     def _on_wake(self) -> None:
         if self.speaker:
             self.speaker.stop()
         self.agent.cancel()
+        self._start_conversation()
         self._listening = True
         self.ui.emit("wake", {})
         if not self._waved:  # say hi with a wave the first time each run
@@ -350,41 +413,86 @@ class MonkeyApp:
 
     def _on_timeout(self) -> None:
         self._listening = False
-        self._publish_state()
+        self.end_conversation("nothing said after the wake word")
 
     def _on_utterance(self, audio: np.ndarray) -> None:
+        source = getattr(self.listener, "last_source", "wake")
         self._listening = False
         self._agent_state = "transcribing"
         self._publish_state()
         try:
             text = self.stt().transcribe(audio) if self.stt else ""
         except Exception as exc:  # noqa: BLE001
-            self._emit("error", {"message": f"Speech recognition failed: {exc}"})
+            log.exception("speech recognition failed")
+            self._emit("warning", {"message": f"Speech recognition failed ({type(exc).__name__}). Try again."})
             text = ""
+        text = conversation.strip_wake(text or "")
         self.ui.emit("heard", {"text": text})
+        if source == "conversation" and not conversation.worth_answering(text):
+            # Background noise, someone else talking, an "uh": keep waiting, same quiet deadline.
+            log.info("ignored in conversation: %r", text)
+            self._agent_state = "idle"
+            if self._in_conversation and self.listener is not None:
+                self.listener.enter_conversation(self.cfg.settings.conversation_idle_s)
+            self._publish_state()
+            return
+        if self._in_conversation and conversation.is_goodbye(text):
+            self._say_goodbye(text)
+            return
         if text and len(text.strip(" .")) > 1:
             self.ask(text)
         else:
             self._agent_state = "idle"
+            if source == "conversation":
+                self._reply_done = True
+                self._maybe_continue_conversation()
+            else:
+                self.end_conversation("nothing understood after the wake word")   # likely a false wake
             self._publish_state()
 
-    def ask(self, text: str, importance: str | None = None) -> None:
+    def _say_goodbye(self, text: str) -> None:
+        """'Thanks' / 'that's all' / 'bye': short sign-off, no model call, back to needing "Hey Monkey"."""
+        import random
+
+        self.end_conversation("goodbye")
+        line = random.choice(conversation.SIGN_OFFS)
+        self.ui.emit("user", {"text": text})
+        self.ui.emit("delta", {"text": line})
+        self.ui.emit("done", {"text": line})
+        self._agent_state = "idle"
+        self._publish_state()
+        self._say(line)
+        if "sleep" in text.lower():
+            self.ui.emit("emote", {"name": "sleep"})
+
+    def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
         if self._ensure_client() is None:
             self._emit("error", {"message": "Add your Anthropic API key in Settings first."})
             return
         self.agent.cancel()
         if self.speaker:
             self.speaker.stop()
+        self._reply_done = False
+        if typed:
+            self._start_conversation()
+        if self.listener is not None and self.listener.mode == "conversation":
+            self.listener.end_conversation()          # only listen again once he has answered
 
         self.agent.on_workspace_error = self._fix_workspace   # re-armed each request; used at most once
 
         def run():
             try:
                 self.agent.handle(text, importance)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - the agent rolls itself back; just make sure we're usable
                 log.exception("agent failed")
-                self._emit("error", {"message": f"Something broke: {exc}"})
+                self._listening = False
+                if self.speaker is not None and self.speaker.speaking:
+                    self.speaker.stop()
+                self._emit("warning", {"message": f"Something broke ({type(exc).__name__}: {exc}). "
+                                                  "Just ask again; no need to start over."})
                 self._emit("state", {"state": "idle"})
+                self._reply_done = True
+                self._maybe_continue_conversation()
 
         self._worker.submit(run)
 
@@ -635,7 +743,7 @@ class Api:
 
     # conversation
     def send_text(self, text: str, importance=None):
-        self._app.ask(str(text)[:8000], importance if importance in ("low", "normal", "high") else None)
+        self._app.ask(str(text)[:8000], importance if importance in ("low", "normal", "high") else None, typed=True)
 
     def push_to_talk(self):
         self._app.push_to_talk()
@@ -715,7 +823,21 @@ class Api:
     def update_state(self):
         return self._app.updater.state()
 
+    def end_conversation(self):
+        """The ✕ on the "Listening…" chip: stop listening without the wake word."""
+        self._app.end_conversation("closed")
+
+    def open_log(self):
+        p = self._app.cfg.data_dir / "monkey.log"
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(p))  # type: ignore[attr-defined]
+            return {"ok": True, "path": str(p)}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "path": str(p)}
+
     def new_conversation(self):
+        self._app.end_conversation("new conversation")
         self._app.agent.new_session()
         self._app.ledger.add_transcript("reset", "")
 
@@ -1011,6 +1133,8 @@ def _tray(app: MonkeyApp, window) -> None:
     def toggle_mute(icon, item):
         if app.listener:
             app.listener.muted = not app.listener.muted
+            if app.listener.muted:
+                app.end_conversation("muted")
 
     def quit_app(icon, item):
         icon.stop()
@@ -1195,6 +1319,13 @@ def selftest() -> int:
             problems.append("UI must be a single self-contained index.html (external JS/CSS found)")
         if not resource_path("ui", "dist", "models", "monkey.glb").exists():
             problems.append("3D monkey model not bundled")
+        from .audio.vad import load_vad
+
+        vad = load_vad(None, resource_path("wakeword"))
+        if vad is None:
+            problems.append("voice activity model (Silero VAD) not bundled or not loadable")
+        elif vad.is_speech(np.zeros(1280, dtype=np.int16)):
+            problems.append("voice activity model reports speech in silence")
         sfx_index = resource_path("ui", "dist", "sfx", "index.json")
         if not sfx_index.exists():
             problems.append("sound kit manifest not bundled")
