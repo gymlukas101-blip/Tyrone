@@ -89,7 +89,10 @@ def test_simple_reply_spoken_and_cached(tmp_path):
     assert p["model"] == HAIKU and "betas" not in p
     assert p["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     names = [t.get("name") for t in p["tools"]]
-    assert "web_search" not in names and "escalate" in names
+    assert "web_search" in names and "web_fetch" not in names and "escalate" in names
+    # Memory basics are handed over up front (no separate /memories round trip needed).
+    first = p["messages"][0]["content"][0]["text"]
+    assert "profile.md" in first and "Memory files" in first
 
 
 def test_tool_loop_memory_and_open_site(tmp_path):
@@ -162,3 +165,75 @@ def test_generate_image_tool(tmp_path):
     out, err = ToolRunner(Services(emit=lambda *a: None, memory=None, approval=ApprovalGate({}))).run(
         "generate_image", {"prompt": "x", "count": 1})
     assert "isn't set up" in out
+
+
+# ------------------------------------------------------------------ model policy behaviour
+import anthropic  # noqa: E402
+import httpx  # noqa: E402
+
+
+def _bad_request(message):
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.BadRequestError(message, response=httpx.Response(400, request=req), body=None)
+
+
+class FailingOnceClient(FakeClient):
+    def __init__(self, script, error):
+        super().__init__(script)
+        self.error = error
+
+    def _stream(self, **params):
+        if self.error is not None:
+            self.calls.append(params)
+            err, self.error = self.error, None
+            raise err
+        return super()._stream(**params)
+
+
+def test_effort_change_uses_per_message_effort_and_keeps_top_level(tmp_path):
+    agent, client, *_ = build(tmp_path, [([text_block("Sup.")], "end_turn"), ([text_block("Here's why.")], "end_turn")])
+    agent.handle("yo")                                   # chat: Haiku low
+    agent.handle("quick fact: how many ounces are in a cup, roughly?")
+    first, second = client.calls
+    assert first["output_config"]["effort"] == second["output_config"]["effort"] == "low"  # cache-safe
+    sys_msgs = [m for m in second["messages"] if m.get("role") == "system"]
+    assert sys_msgs and sys_msgs[-1]["output_config"]["effort"] != "low"
+    assert "mid-conversation-output-config-2026-07-01" in second["betas"]
+
+
+def test_per_message_effort_rejected_falls_back(tmp_path):
+    agent, client, *_ = build(tmp_path, [([text_block("Sup.")], "end_turn")])
+    agent.handle("yo")
+    agent.client = FailingOnceClient([([text_block("Okay.")], "end_turn")],
+                                     _bad_request("messages: role 'system' with output_config is not supported"))
+    agent.handle("quick fact: how many ounces are in a cup, roughly?")
+    retry = agent.client.calls[-1]
+    assert agent.per_message_effort is False
+    assert not any(m.get("role") == "system" for m in retry["messages"])
+
+
+def test_haiku_web_search_direct_fallback(tmp_path):
+    agent, _, *_ = build(tmp_path, [])
+    agent.client = FailingOnceClient([([text_block("They won.")], "end_turn")],
+                                     _bad_request("web_search: set allowed_callers to ['direct'] for this model"))
+    agent.handle("who won the badgers game")
+    retry = agent.client.calls[-1]
+    search = next(t for t in retry["tools"] if t.get("name") == "web_search")
+    assert search["allowed_callers"] == ["direct"] and retry["model"] == HAIKU
+
+
+def test_slow_task_says_holding_line_first(tmp_path):
+    agent, client, events, spoken, *_ = build(tmp_path, [([text_block("Here's your day.")], "end_turn")])
+    agent.handle("how's my day look")
+    assert spoken[0] == "Pulling up your day."
+    assert "already said" in client.calls[0]["messages"][0]["content"][0]["text"]
+
+
+def test_route_event_and_ledger_carry_task(tmp_path):
+    agent, client, events, *_ = build(tmp_path, [([text_block("Sup.")], "end_turn")])
+    agent.handle("yo")
+    route_ev = next(p for e, p in events if e == "route")
+    assert route_ev["task"] == "chat"
+    import sqlite3
+    rows = sqlite3.connect(tmp_path / "t.db").execute("SELECT purpose FROM spend").fetchall()
+    assert ("chat:chat",) in rows

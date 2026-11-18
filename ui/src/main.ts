@@ -10,6 +10,7 @@ import { renderAssignments, markChecked } from "./assignments";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
+import { brainEvent, openBrain } from "./brain";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
@@ -195,7 +196,8 @@ function onEvent(name: string, p: any) {
     case "done": botBubble = null; break;
     case "route":
       $("#routeChip").textContent = p.label;
-      $("#routeChip").title = p.reason; break;
+      $("#routeChip").title = `${p.task ? p.task.replace(/_/g, " ") + ": " : ""}${p.reason}`; break;
+    case "calibration": brainEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
     case "draft": draftCard(p); break;
     case "approval":
@@ -483,10 +485,12 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ force_model: sel.value }); toast("Saved"); });
           return sel;
         })()),
+        h("div", { class: "field" }, h("span", {}, "Models per task"),
+          h("button", { class: "primary", type: "button", onclick: () => openBrain(api) }, "🧠 Open model table & calibrate")),
         h("div", { class: "field" }, h("span", {}, "Brain profile"), (() => {
           const sel = h("select", {},
-            h("option", { value: "best" }, "Best: Opus for research & email drafts (~$40–50/mo heavy use)"),
-            h("option", { value: "saver" }, "Saver: Sonnet for heavy work, Opus only when important (~$20–25/mo)"));
+            h("option", { value: "best" }, "Auto: each task's recommended model (~$29/mo heavy use)"),
+            h("option", { value: "saver" }, "Saver: each task's cheapest model that works (~$17/mo)"));
           sel.value = s.brain_profile ?? "best";
           sel.addEventListener("change", async () => { appState = await api.save_settings({ brain_profile: sel.value }); toast("Saved"); });
           return sel;

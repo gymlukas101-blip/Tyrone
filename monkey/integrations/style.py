@@ -23,7 +23,8 @@ After the guide, output a line '=====EXAMPLES=====' and then 6-10 of the most re
 """
 
 
-def learn_style(client, providers: list, memory, max_per_account: int = 60, record_usage=None) -> str:
+def learn_style(client, providers: list, memory, max_per_account: int = 60, record_usage=None,
+                model: str = OPUS, effort: str = "medium") -> str:
     samples = []
     for p in providers:
         try:
@@ -37,14 +38,14 @@ def learn_style(client, providers: list, memory, max_per_account: int = 60, reco
     if not samples:
         raise RuntimeError("No sent emails found. Connect Gmail or Outlook first.")
     resp = client.messages.create(
-        model=OPUS,
+        model=model,
         max_tokens=16000,
-        output_config={"effort": "medium"},
+        output_config={"effort": effort},
         system=STYLE_PROMPT,
         messages=[{"role": "user", "content": "<sent_emails>\n" + "\n\n".join(samples)[:300000] + "\n</sent_emails>"}],
     )
     if record_usage:
-        record_usage(OPUS, "medium", "style", resp.usage)
+        record_usage(model, effort, "style", resp.usage)
     text = "".join(b.text for b in resp.content if b.type == "text")
     guide, _, examples = text.partition("=====EXAMPLES=====")
     memory.write("writing_style.md", "# How the user writes emails\n\n" + guide.strip() + "\n")

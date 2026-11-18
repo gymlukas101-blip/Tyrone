@@ -7,6 +7,7 @@ datas = [
     ("wakeword", "wakeword"),
     ("assets", "assets"),
     ("monkey/brain/persona.md", "monkey/brain"),
+    ("monkey/brain/model_policy.json", "monkey/brain"),
 ]
 for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi", "_sounddevice_data"):
     try:

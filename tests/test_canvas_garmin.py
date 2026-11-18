@@ -214,6 +214,6 @@ def test_downsample_and_dates():
 
 # ------------------------------------------------------------------ routing
 @pytest.mark.parametrize("q", ["what's due this week", "how did I sleep", "check off HW 7", "what's my heart rate"])
-def test_lookups_route_to_sonnet_low(q):
+def test_lookups_route_to_haiku(q):
     r = Router().route(q)
-    assert r.model == "claude-sonnet-5-5" and r.effort == "low", r
+    assert r.model == "claude-haiku-5-5" and r.effort in ("low", "medium"), r

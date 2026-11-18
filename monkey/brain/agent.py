@@ -18,7 +18,7 @@ from typing import Any, Callable
 import anthropic
 from anthropic.lib.tools import ToolError
 
-from .costs import HAIKU, Ledger, Usage
+from .costs import HAIKU, SONNET, Ledger, Usage
 from .router import Route, Router
 from .speech_text import SentenceChunker
 from .tools import LOCAL_TOOLS, Escalate, ToolRunner
@@ -26,6 +26,13 @@ from .tools import LOCAL_TOOLS, Escalate, ToolRunner
 SESSION_IDLE_RESET_S = 20 * 60
 MAX_TOOL_ROUNDS = 12
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+EFFORT_BETA = "mid-conversation-output-config-2026-07-01"   # per-message effort that keeps the prompt cache
+STICKY_S = 120          # a follow-up within 2 minutes may stay on the model that just answered
+HAIKU_SEARCH_NUDGE = (
+    "Your training data ends well before today's date. Records, office holders, prices, versions, rules, and "
+    "anything \"latest\" may have changed since then, so search for those before you answer, even when you feel "
+    "sure. Facts that can't change need no search."
+)
 
 WEB_TOOLS = [
     {"type": "web_search_20260209", "name": "web_search", "max_uses": 5,
@@ -66,6 +73,7 @@ class Agent:
         emit: Callable[[str, dict], None],
         speak: Callable[[str], None],
         user_name: Callable[[], str] = lambda: "",
+        persist: bool = True,
     ):
         self.client = client
         self.router = router
@@ -81,6 +89,15 @@ class Agent:
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._restored = False
+        self._last_route: Route | None = None
+        # Effort handling: the top-level effort is fixed for a conversation (changing it would break the
+        # prompt cache); later turns change effort with a per-message system message instead.
+        self._conv_effort: str | None = None
+        self._effort_now: str | None = None
+        self.per_message_effort = True
+        self.purpose = ""                # ledger label override (calibration runs)
+        self.persist = persist           # False for throwaway agents (calibration) - never touch the saved chat
+        self._haiku_web_direct = False   # set if the API wants Haiku's web search called directly
         self._restore()
 
     # ------------------------------------------------------------ public
@@ -91,7 +108,9 @@ class Agent:
     def new_session(self) -> None:
         self.history = []
         self._restored = False
-        if self.ledger is not None:
+        self._last_route = None
+        self._conv_effort = self._effort_now = None
+        if self.ledger is not None and self.persist:
             try:
                 self.ledger.clear_state(STATE_KEY)
             except Exception:  # noqa: BLE001
@@ -100,7 +119,7 @@ class Agent:
     # ------------------------------------------------------------ survive restarts
     def _restore(self) -> None:
         """Reopened Monkey within the session window? Pick the conversation back up where it was."""
-        if self.ledger is None:
+        if self.ledger is None or not self.persist:
             return
         try:
             saved = self.ledger.get_state(STATE_KEY)
@@ -108,19 +127,25 @@ class Agent:
             return
         if not saved:
             return
-        history, ts = saved
+        state, ts = saved
+        if isinstance(state, list):  # saved by 0.3.12
+            state = {"history": state}
+        history = state.get("history") if isinstance(state, dict) else None
         if isinstance(history, list) and history and time.time() - ts < SESSION_IDLE_RESET_S:
             self.history = history
             self.last_activity = ts
             self._restored = True
+            self._conv_effort = state.get("conv_effort")
+            self._effort_now = state.get("effort_now")
 
     def _persist(self) -> None:
-        if self.ledger is None:
+        if self.ledger is None or not self.persist:
             return
         try:
             self.history = [{"role": m["role"], "content": [_jsonable(b) for b in m["content"]]
                              if isinstance(m["content"], list) else m["content"]} for m in self.history]
-            self.ledger.put_state(STATE_KEY, self.history, time.time())
+            self.ledger.put_state(STATE_KEY, {"history": self.history, "conv_effort": self._conv_effort,
+                                              "effort_now": self._effort_now}, time.time())
         except Exception:  # noqa: BLE001 - never break a reply over saving
             pass
 
@@ -145,26 +170,78 @@ class Agent:
                 self.new_session()
             self.last_activity = time.time()
 
-            route = self.router.route(text, importance)  # type: ignore[arg-type]
-            self.emit("route", {"model": route.model, "effort": route.effort, "label": route.label,
-                                "reason": route.reason, "importance": route.importance})
+            sticky = self._last_route if time.time() - self.last_activity < STICKY_S else None
+            self.last_activity = time.time()
 
-            now = datetime.now().astimezone()
-            first = not self.history
-            ctx = f"<context>Now: {now:%A, %B %d, %Y %I:%M %p %Z}."
-            if first:
-                ctx += " New conversation: check /memories before answering."
-            ctx += "</context>\n"
+            route = self.router.route(text, importance, sticky=sticky)  # type: ignore[arg-type]
+            self._emit_route(route)
+
+            ctx = self._context(route, first=not self.history)
+            holding = self._holding_line(route)
+            if holding:
+                ctx += f"(You already said \"{holding}\" out loud; continue without repeating it.)\n"
             self.history.append({"role": "user", "content": [{"type": "text", "text": ctx + text}]})
-            return self._run(route)
+            return self._run(route, holding)
+
+    def _emit_route(self, route: Route) -> None:
+        self.emit("route", {"model": route.model, "effort": route.effort, "label": route.label, "task": route.task,
+                            "reason": route.reason, "importance": route.importance})
+
+    def _context(self, route: Route, first: bool) -> str:
+        now = datetime.now().astimezone()
+        ctx = f"<context>Now: {now:%A, %B %d, %Y %I:%M %p %Z}."
+        if first:
+            # Hand over the basics up front instead of spending a round trip on viewing /memories.
+            ctx += " New conversation."
+            if self.memory is not None:
+                try:
+                    files = ", ".join(self.memory.files())
+                    profile = self.memory.read("profile.md").strip()[:3000]
+                    ctx += f"\nMemory files in /memories: {files}.\n<profile.md>\n{profile}\n</profile.md>"
+                except Exception:  # noqa: BLE001
+                    ctx += " Check /memories before answering."
+        if route.model == HAIKU and route.task in ("web_lookup", "general", "quick_fact"):
+            ctx += "\n" + HAIKU_SEARCH_NUDGE
+        return ctx + "</context>\n"
+
+    def _holding_line(self, route: Route) -> str:
+        """Slow tasks (briefings, drafts, research): say something right away instead of going quiet."""
+        policy = getattr(self.router, "policy", None)
+        if policy is None:
+            return ""
+        t = policy.task(route.task)
+        line = t.get("holding", "") if t.get("slow") else ""
+        if line:
+            self.emit("delta", {"text": line + " "})
+            self.speak(line)
+        return line
 
     # ------------------------------------------------------------ loop
     def _tools_for(self, model: str) -> list[dict]:
         tools = [MEMORY_TOOL, *LOCAL_TOOLS]
-        if model != HAIKU:
-            tools = [*WEB_TOOLS, *tools]
-            tools = [t for t in tools if t.get("name") != "escalate"]
+        if model == HAIKU:
+            # Haiku 5.5 supports web search (not verified for web fetch, so that stays on Sonnet/Opus).
+            search = dict(WEB_TOOLS[0])
+            if self._haiku_web_direct:
+                search["allowed_callers"] = ["direct"]
+            return [search, *tools]
+        tools = [*WEB_TOOLS, *tools]
+        if model not in (SONNET,):
+            tools = [t for t in tools if t.get("name") != "escalate"]  # nothing stronger to hand off to
         return tools
+
+    def _apply_effort(self, route: Route) -> None:
+        """First request fixes the conversation's top-level effort; later changes go in as a per-message
+        effort system message, which keeps the prompt cache (top-level changes would invalidate it)."""
+        if self._conv_effort is None:
+            self._conv_effort = self._effort_now = route.effort
+            return
+        if self.per_message_effort and route.effort != self._effort_now:
+            self.history.append({"role": "system", "content": [], "output_config": {"effort": route.effort}})
+            self._effort_now = route.effort
+
+    def _drop_effort_messages(self) -> None:
+        self.history = [m for m in self.history if not (m.get("role") == "system" and "output_config" in m)]
 
     def _params(self, route: Route) -> dict[str, Any]:
         params: dict[str, Any] = {
@@ -174,17 +251,24 @@ class Agent:
             "system": [{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             "tools": self._tools_for(route.model),
             "messages": list(self.history),
-            "output_config": {"effort": route.effort},
+            "output_config": {"effort": (self._conv_effort if self.per_message_effort and self._conv_effort
+                                         else route.effort)},
             "cache_control": {"type": "ephemeral"},
         }
+        betas: list[str] = []
         if route.model != HAIKU:
-            params["betas"] = [FALLBACK_BETA]
+            betas.append(FALLBACK_BETA)
             params["fallbacks"] = "default"
+        if any(m.get("role") == "system" for m in self.history):
+            betas.append(EFFORT_BETA)
+        if betas:
+            params["betas"] = betas
         return params
 
-    def _run(self, route: Route) -> str:
-        spoken_all: list[str] = []
+    def _run(self, route: Route, holding: str = "") -> str:
+        spoken_all: list[str] = [holding] if holding else []
         for _round in range(MAX_TOOL_ROUNDS):
+            self._apply_effort(route)
             chunker = SentenceChunker()
             self.emit("state", {"state": "thinking"})
             try:
@@ -206,11 +290,26 @@ class Agent:
             except anthropic.APIStatusError as exc:
                 if _out_of_credits(exc):
                     return self._fail(CREDITS_GONE)
-                if self._restored and exc.status_code == 400 and self.history and self.history[-1]["role"] == "user":
-                    # The conversation restored after a restart wasn't accepted: start fresh with this message.
-                    self._restored = False
-                    self.history = [self.history[-1]]
+                msg = f"{getattr(exc, 'message', '')}".lower()
+                effort_rejected = "output_config" in msg or ("role" in msg and "system" in msg)
+                if exc.status_code == 400 and self.per_message_effort and effort_rejected \
+                        and any(m.get("role") == "system" for m in self.history):
+                    # Per-message effort not accepted here: go back to plain top-level effort.
+                    self.per_message_effort = False
+                    self._drop_effort_messages()
                     continue
+                if exc.status_code == 400 and route.model == HAIKU and not self._haiku_web_direct \
+                        and "allowed_callers" in msg:
+                    self._haiku_web_direct = True
+                    continue
+                if self._restored and exc.status_code == 400:
+                    # The conversation restored after a restart wasn't accepted: start fresh with this message.
+                    last_user = next((m for m in reversed(self.history) if m.get("role") == "user"), None)
+                    if last_user is not None:
+                        self._restored = False
+                        self.history = [last_user]
+                        self._conv_effort = self._effort_now = None
+                        continue
                 return self._fail(f"API error {exc.status_code}: {exc.message}")
             except anthropic.APIConnectionError:
                 return self._fail("I can't reach the internet right now.")
@@ -238,11 +337,11 @@ class Agent:
             self.history.append({"role": "user", "content": results})
             if escalate_reason is not None:
                 route = self.router.escalate(route)
-                self.emit("route", {"model": route.model, "effort": route.effort, "label": route.label,
-                                    "reason": route.reason, "importance": route.importance})
+                self._emit_route(route)
         self.emit("done", {"text": " ".join(spoken_all)})
         self.emit("state", {"state": "idle"})
         self.last_activity = time.time()
+        self._last_route = route
         self._persist()
         return " ".join(spoken_all)
 
@@ -280,7 +379,8 @@ class Agent:
     def _record(self, route: Route, final) -> None:
         if not self.ledger:
             return
-        usd = self.ledger.record(getattr(final, "model", route.model) or route.model, route.effort, "chat",
+        usd = self.ledger.record(getattr(final, "model", route.model) or route.model, route.effort,
+                                 self.purpose or f"chat:{route.task}",
                                  Usage.from_response(getattr(final, "usage", None)))
         self.emit("cost", {"usd": round(usd, 5), "month": round(self.ledger.month_to_date(), 2)})
 

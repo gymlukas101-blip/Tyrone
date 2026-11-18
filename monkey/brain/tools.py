@@ -78,8 +78,8 @@ LOCAL_TOOLS: list[dict] = [
           "Use when the user asks you to make, draw, design or imagine a picture. count is 1-4.",
           {"prompt": S, "count": I}),
     _tool("get_weather", "Current weather and forecast for the user's location (Madison by default).", {}),
-    _tool("escalate", "Hand this request to a stronger model. Use when the request needs web search, careful "
-          "reasoning or careful writing that you can't do well.", {"reason": S}),
+    _tool("escalate", "Hand this request to a stronger model. Use when the request needs multi-source research, "
+          "careful reasoning or careful writing that you can't do well.", {"reason": S}),
 ]
 
 
@@ -105,6 +105,7 @@ class Services:
     assignments: Any = None                                # AssignmentBoard
     health: Any = None                                     # GarminHealth
     anthropic_client: Any = None
+    policy: Any = None                                     # ModelPolicy (which model/effort per task)
     record_usage: Callable[[str, str, str, Any], None] | None = None
     open_url: Callable[[str], None] = webbrowser.open
     email_cache: dict[str, Email] = field(default_factory=dict)
@@ -217,9 +218,13 @@ class ToolRunner:
         notes = ""
         if self.s.memory:
             notes = "\n\n".join(self.s.memory.read(f) for f in ("profile.md", "classes.md", "people.md", "preferences.md"))
-        ranking, usage = rank_items(self.s.anthropic_client, items, notes)
+        model, effort = ("claude-sonnet-5-5", "medium")
+        if self.s.policy is not None:
+            c = self.s.policy.choice("triage")
+            model, effort = c.model, c.effort
+        ranking, usage = rank_items(self.s.anthropic_client, items, notes, effort=effort, model=model)
         if usage is not None and self.s.record_usage:
-            self.s.record_usage("claude-opus-5-5", "low", "ranking", usage)
+            self.s.record_usage(model, effort, "ranking", usage)
         by_id = {i.id: i for i in items}
         rows = []
         for r in sorted(ranking.items, key=lambda r: TIER_ORDER[r.tier]):

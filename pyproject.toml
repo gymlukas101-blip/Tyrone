@@ -51,4 +51,4 @@ build-backend = "setuptools.build_meta"
 include = ["monkey*"]
 
 [tool.setuptools.package-data]
-monkey = ["brain/*.md"]
+monkey = ["brain/*.md", "brain/*.json"]

@@ -234,3 +234,31 @@ dialog {
 .msg.earlier { opacity: .72; }
 #log .divider { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; color: var(--banana); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 #log .divider::before, #log .divider::after { content: ""; flex: 1; height: 2px; background: rgba(255, 214, 10, .35); border-radius: 2px; }
+
+/* Settings → Brain (models per task) */
+dialog#brain { width: min(1100px, 96vw); }
+.brain .totals { margin: 4px 0 10px; color: #fff3c4; }
+.brain .totals b { color: var(--banana); }
+.brain .tablewrap { overflow-x: auto; border: 2px solid rgba(0,0,0,.35); border-radius: 12px; }
+.brain table.policy { width: 100%; border-collapse: collapse; font-size: 13px; }
+.brain table.policy th { text-align: left; padding: 8px; background: rgba(0,0,0,.25); color: var(--banana); font-weight: 700; position: sticky; top: 0; }
+.brain table.policy td { padding: 6px 8px; border-top: 1px solid rgba(255,255,255,.08); vertical-align: top; }
+.brain table.policy tr.internal { opacity: .7; }
+.brain td.task { min-width: 210px; }
+.brain td.task b, .brain td.num b { display: block; }
+.brain td small { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
+.brain td small.measured { color: var(--ok); font-weight: 700; }
+.brain td select { min-width: 130px; width: 100%; padding: 4px 6px; }
+.brain td.num { white-space: nowrap; }
+.brain .calprogress { margin-top: 8px; font-size: 12px; color: #fff3c4; }
+.brain .calbar { height: 10px; background: rgba(0,0,0,.35); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
+.brain .calbar i { display: block; height: 100%; background: var(--banana); transition: width .3s; }
+.brain .calresult .runs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.brain .run { display: block; background: rgba(0,0,0,.22); border: 2px solid rgba(255,255,255,.1); border-radius: 12px; padding: 8px; cursor: pointer; }
+.brain .run:has(input:checked) { border-color: var(--banana); }
+.brain .run.failed { opacity: .6; }
+.brain .runhead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.brain .runhead span { color: var(--muted); }
+.brain .runhead input, .brain .allfine input { flex: none; min-width: 0; width: 16px; height: 16px; accent-color: var(--banana); }
+.brain .answer { margin-top: 6px; font-size: 13px; max-height: 160px; overflow: auto; white-space: pre-wrap; }
+.brain .allfine { display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 12px; color: #fff3c4; }

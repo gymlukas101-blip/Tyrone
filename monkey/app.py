@@ -21,6 +21,7 @@ from . import __version__, keys, secretstore
 from .brain.agent import Agent
 from .brain.approval import ApprovalGate
 from .brain.costs import HAIKU, Ledger, Usage
+from .brain.policy import ModelPolicy
 from .brain.router import Router, classify_with_haiku
 from .brain.tools import Services, ToolRunner
 from .config import Config, resource_path
@@ -87,6 +88,7 @@ class MonkeyApp:
         self.memory = MonkeyMemory(self.cfg.memory_dir)
         self.ledger = Ledger(self.cfg.db_path)
         self._bot_text: list[str] = []
+        self._calibration = None
 
         # Integrations
         self.google = GoogleAuth()
@@ -112,12 +114,16 @@ class MonkeyApp:
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin,
         )
+        self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
+        self.services.policy = self.policy
+        self.policy.write_memory_note(self.memory)
         self.router = Router(
             classify=self._classify,
             budget_usd=lambda: self.cfg.settings.monthly_budget_usd,
             spent_usd=self.ledger.month_to_date,
             forced_model=lambda: self.cfg.settings.force_model,
             profile=lambda: self.cfg.settings.brain_profile,
+            policy=self.policy,
         )
         self.agent = Agent(None, self.router, ToolRunner(self.services), self.memory, self.ledger,
                            emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name)
@@ -304,9 +310,9 @@ class MonkeyApp:
     def _classify(self, text: str):
         if self._ensure_client() is None:
             raise RuntimeError("no client")
-        diff, needs_web, why, usage = classify_with_haiku(self.client, text)
+        task, diff, needs_web, why, usage = classify_with_haiku(self.client, text)
         self._record_usage(HAIKU, "low", "router", usage)
-        return diff, needs_web, why
+        return task, diff, needs_web, why
 
     def _record_usage(self, model: str, effort: str, purpose: str, usage) -> None:
         self.ledger.record(model, effort, purpose, Usage.from_response(usage))
@@ -438,6 +444,77 @@ class Api:
         if name in keys.KNOWN_KEYS:
             keys.delete(name)
         return {"ok": True}
+
+    # model policy (Settings → Brain)
+    def get_policy(self):
+        a = self._app
+        from .brain.calibrate import estimate_cost
+        from .brain.policy import EFFORTS, MODEL_NAMES, MODELS
+
+        cal = a.cfg.data_dir / "calibration.json"
+        return {"rows": a.policy.table(), "totals": {t: a.policy.monthly_total(t) for t in ("min", "default", "max")},
+                "models": [{"id": m, "name": MODEL_NAMES[m]} for m in MODELS], "efforts": EFFORTS,
+                "calibration_estimate": estimate_cost(a.policy), "calibrating": a._calibration is not None,
+                "has_results": cal.exists()}
+
+    def set_policy_entry(self, task: str, tier: str, model: str, effort: str):
+        try:
+            self._app.policy.set_entry(task, tier, model, effort)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._app.policy.write_memory_note(self._app.memory)
+        return {"ok": True, **self.get_policy()}
+
+    def reset_policy(self, task: str = ""):
+        self._app.policy.reset(task or None)
+        self._app.policy.write_memory_note(self._app.memory)
+        return self.get_policy()
+
+    def calibrate_start(self):
+        a = self._app
+        if a._ensure_client() is None:
+            return {"ok": False, "error": "Add your Anthropic API key first."}
+        if a._calibration is not None:
+            return {"ok": False, "error": "Calibration is already running."}
+        from .brain.calibrate import Calibration
+
+        cal = Calibration(a.client, a.policy, a.ledger, a.cfg.data_dir / "calibration.json",
+                          progress=lambda p: a.ui.emit("calibration", p))
+        a._calibration = cal
+
+        def run():
+            try:
+                cal.run()
+            except Exception as exc:  # noqa: BLE001
+                log.exception("calibration failed")
+                a.ui.emit("calibration", {"finished": True, "error": str(exc)})
+            finally:
+                a._calibration = None
+
+        threading.Thread(target=run, name="calibration", daemon=True).start()
+        return {"ok": True}
+
+    def calibrate_cancel(self):
+        if self._app._calibration is not None:
+            self._app._calibration.cancel.set()
+        return {"ok": True}
+
+    def calibration_results(self):
+        p = self._app.cfg.data_dir / "calibration.json"
+        try:
+            return {"ok": True, **json.loads(p.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            return {"ok": False, "error": "No calibration results yet."}
+
+    def calibration_apply(self, picks: dict):
+        from .brain.calibrate import apply_picks
+
+        res = self.calibration_results()
+        if not res.get("ok"):
+            return res
+        changed = apply_picks(self._app.policy, res, picks or {})
+        self._app.policy.write_memory_note(self._app.memory)
+        return {"ok": True, "changed": changed, **self.get_policy()}
 
     def get_transcript(self, limit: int = 40):
         try:
@@ -598,7 +675,9 @@ class Api:
         if a._ensure_client() is None:
             return {"ok": False, "error": "Add your Anthropic key first"}
         try:
-            guide = learn_style(a.client, [a.gmail, a.outlook], a.memory, record_usage=a._record_usage)
+            c = a.policy.choice("style_learning")
+            guide = learn_style(a.client, [a.gmail, a.outlook], a.memory, record_usage=a._record_usage,
+                                model=c.model, effort=c.effort)
             return {"ok": True, "preview": guide[:600]}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
@@ -867,6 +946,14 @@ def selftest() -> int:
             problems.append("3D monkey model not bundled")
         if "Monkey" not in app.agent.system:
             problems.append("persona missing")
+        from .brain.calibrate import SAMPLES
+
+        for task, sample in SAMPLES.items():
+            got = app.router.pick_task(sample)[0]
+            if got != task and task not in ("general", "quick_fact", "hard_problem"):  # these need the classifier
+                problems.append(f"policy routing: '{sample}' -> {got}, expected {task}")
+        if "model_policy.md" not in app.memory.files():
+            problems.append("model policy memory note missing")
         r = app.router.route("draft an email to my professor")
         if r.model != "claude-opus-5-5":
             problems.append(f"router wrong: {r}")

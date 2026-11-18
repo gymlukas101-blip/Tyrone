@@ -1,68 +1,47 @@
-"""Pick the model + effort for each request.
+"""Pick the task, then the model + effort for it from the stored model policy (policy.py).
 
 Order of precedence:
   1. A forced model in Settings (for debugging).
-  2. Rules: what you *say* about importance ("this is important", "take your time",
-     "quick question") and obvious task types (email drafting, research, commands).
-  3. A cheap classifier (Claude Haiku 5.5, low effort) that rates difficulty 1-5.
-  4. Budget guard: near the monthly cap, Opus is downgraded unless you said it's important.
+  2. Rules: obvious task types from what you say ("draft an email…", "how did I sleep", "open canvas").
+  3. A cheap classifier (Claude Haiku 5.5, low effort) that names the task and rates difficulty 1-5.
+  4. Importance: ⚡ Quick → the task's `min`, Auto → `default`, ★ Important → `max`.
+  5. Budget guard: near or over the monthly cap, step down inside the task's own range.
+  6. Sticky model: a quick follow-up stays on the model that just answered, if that model is in range
+     (switching models re-pays the whole conversation, because prompt caches are per model).
 """
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
 from .costs import HAIKU, OPUS, SONNET
+from .policy import Choice, ModelPolicy, rank
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 Importance = Literal["low", "normal", "high"]
 
-# Ladder from cheapest to strongest. Index = "level".
-LADDER: list[tuple[str, Effort]] = [
-    (HAIKU, "low"),      # 0 small talk, commands
-    (SONNET, "low"),     # 1 simple Q&A
-    (SONNET, "medium"),  # 2 normal Q&A, summaries
-    (OPUS, "medium"),    # 3 research, drafting, ranking
-    (OPUS, "high"),      # 4 hard / important
-    (OPUS, "xhigh"),     # 5 very hard and important
-]
+MODEL_NAMES = {HAIKU: "Haiku 5.5", SONNET: "Sonnet 5.5", OPUS: "Opus 5.5"}
 
 
 @dataclass(frozen=True)
 class Route:
     model: str
-    effort: Effort
+    effort: str
     importance: Importance
-    level: int
+    task: str
     reason: str
+    tier: str = "default"
 
     @property
     def label(self) -> str:
-        name = {HAIKU: "Haiku 5.5", SONNET: "Sonnet 5.5", OPUS: "Opus 5.5"}.get(self.model, self.model)
-        return f"{name} · {self.effort}"
+        return f"{MODEL_NAMES.get(self.model, self.model)} · {self.effort}"
 
-
-# "Saver" profile: same decisions, cheaper models. Heavy work runs on Sonnet; Opus only for
-# the top two levels (you said it's important / very hard). Roughly halves a heavy month's bill.
-SAVER_LADDER: list[tuple[str, Effort]] = [
-    (HAIKU, "low"),
-    (SONNET, "low"),
-    (SONNET, "low"),
-    (SONNET, "medium"),
-    (OPUS, "medium"),
-    (OPUS, "high"),
-]
-PROFILES = {"best": LADDER, "saver": SAVER_LADDER}
-
-
-def _route(level: int, importance: Importance, reason: str, profile: str = "best") -> Route:
-    ladder = PROFILES.get(profile, LADDER)
-    level = max(0, min(level, len(ladder) - 1))
-    model, effort = ladder[level]
-    return Route(model=model, effort=effort, importance=importance, level=level, reason=reason)
+    @property
+    def choice(self) -> Choice:
+        return Choice(self.model, self.effort)
 
 
 # ---------------------------------------------------------------- rules
@@ -74,40 +53,56 @@ _HIGH = re.compile(
 )
 _LOW = re.compile(r"\b(quick(?:ly)?|real quick|fast|briefly|short answer|tl;?dr|no big deal|whatever)\b", re.I)
 
-_EMAIL_DRAFT = re.compile(
-    r"\b(draft|write|compose|reply|respond|answer|send)\b.{0,40}\b(e-?mail|message|note|reply|professor|prof|ta|advisor)\b"
-    r"|\b(e-?mail)\b.{0,30}\b(back|to)\b",
-    re.I,
-)
-_RESEARCH = re.compile(
-    r"\b(research|look into|investigate|compare|pros and cons|deep dive|find out (?:everything|all)|"
-    r"write (?:me )?(?:a|an) (?:essay|report|summary)|study guide|explain .{0,40} in detail)\b",
-    re.I,
-)
-_RANK = re.compile(
-    r"\b(my day|my week|what'?s (?:on|important)|priorit\w*|rank|briefing|what should i (?:do|focus)|"
-    r"anything urgent|important emails?|due (?:this|next) week)\b",
-    re.I,
-)
-_LOOKUP = re.compile(
-    r"\b(assignments?|homework|hw|what'?s due|due (?:today|tomorrow|this week)|missing (?:work|assignments?)|"
-    r"check (?:off|it off)|canvas|how (?:did|'?d) i sleep|sleep score|heart ?rate|resting hr|hrv|body battery|"
-    r"stress level|steps today|garmin)\b",
-    re.I,
-)
+RULES: list[tuple[str, re.Pattern]] = [
+    ("draft_email", re.compile(
+        r"\b(draft|write|compose|reply|respond|answer|send)\b.{0,40}\b(e-?mail|message|note|reply|professor|prof|ta|advisor)\b"
+        r"|\b(e-?mail)\b.{0,30}\b(back|to)\b", re.I)),
+    ("research", re.compile(
+        r"\b(research|look into|investigate|compare|pros and cons|deep dive|find out (?:everything|all)|"
+        r"write (?:me )?(?:a|an) (?:essay|report)|study guide)\b", re.I)),
+    ("briefing", re.compile(r"\b(my day|my week|briefing|what'?s on my plate|morning (?:update|rundown)|catch me up)\b", re.I)),
+    ("triage", re.compile(
+        r"\b(important emails?|anything urgent|urgent emails?|priorit\w*|rank (?:my|the)|which emails|"
+        r"what (?:emails|messages) (?:matter|should i))\b", re.I)),
+    ("read_email", re.compile(
+        r"\b(read|summari[sz]e|open|what does|what did)\b.{0,30}\b(e-?mails?|message|inbox)\b"
+        r"|\b(any|new|latest|check (?:my)?) (?:new )?e-?mails?\b|\binbox\b", re.I)),
+    ("memory_note", re.compile(r"^\s*(remember (?:that|this|my)|don'?t forget (?:that|my)|forget (?:that|about)|note that)\b", re.I)),
+    ("image_request", re.compile(r"\b(draw|paint|sketch|generate|create|make)\b.{0,25}\b(picture|image|drawing|art|logo|wallpaper)\b", re.I)),
+    ("weather", re.compile(r"\b(weather|forecast|temperature outside|is it (?:going to )?(?:rain|snow)|how cold|how hot|"
+                           r"need an? (?:jacket|coat|umbrella))\b", re.I)),
+    ("check_off", re.compile(r"\b(check (?:it )?off|mark .{0,30}\b(?:done|complete)|i (?:just )?(?:finished|submitted|turned in))\b", re.I)),
+    ("assignments", re.compile(
+        r"\b(assignments?|homework|hw|what'?s due|due (?:today|tomorrow|this week|next week)|missing (?:work|assignments?)|"
+        r"what should i (?:work on|do next|focus on)|canvas (?:due|to-?do))\b", re.I)),
+    ("health", re.compile(
+        r"\b(how (?:did|'?d) i sleep|sleep score|my sleep|heart ?rate|resting hr|hrv|body battery|stress level|"
+        r"steps today|garmin)\b", re.I)),
+    ("calendar", re.compile(
+        r"\b(calendar|my schedule|on my schedule|what'?s (?:on )?today|next class|when is my|what time is my|"
+        r"am i free|meetings? today)\b", re.I)),
+    ("hard_problem", re.compile(
+        r"\b(prove|derive|derivation|make me an? .{0,25}plan|plan out|game plan|optimi[sz]e my|"
+        r"step[- ]by[- ]step solution)\b", re.I)),
+]
 _COMMAND = re.compile(
     r"^\s*(open|launch|go to|pull up|show me|play|pause|stop|set (?:a )?timer|remind me|"
-    r"what time|what'?s the time|what'?s the date|volume|mute|remember that|forget)\b",
+    r"what time|what'?s the time|what'?s the date|volume|mute|dance|flex|wave)\b",
     re.I,
 )
 _NEEDS_WEB = re.compile(
     r"\b(search|look up|google|news|latest|today'?s|current(?:ly)?|right now|score|who won|price|"
-    r"weather|forecast|stock|when does|is .{0,30} open|hours)\b",
+    r"stock|when does|is .{0,30} open|hours)\b",
     re.I,
 )
 _SMALLTALK = re.compile(
     r"^\s*(yo|hey|hi|hello|what'?s up|sup|how are you|how'?s it going|thanks|thank you|good (?:morning|night)|"
     r"lol|haha|bet|cool|nice|ok(?:ay)?)\b[\s\w,!?.']{0,40}$",
+    re.I,
+)
+_STUDY = re.compile(
+    r"\b(explain|teach me|help me understand|walk me through|quiz me|practice problems?|how does .{0,40} work|"
+    r"what'?s the difference between|study)\b",
     re.I,
 )
 
@@ -120,125 +115,152 @@ def detect_importance(text: str) -> Importance:
     return "normal"
 
 
-def rule_level(text: str) -> tuple[int | None, str]:
-    """Return (level, reason) from rules, or (None, "") if the classifier should decide."""
-    if _EMAIL_DRAFT.search(text):
-        return 3, "email drafting"
-    if _RESEARCH.search(text):
-        return 3, "research"
+def rule_task(text: str) -> tuple[str | None, str]:
+    """Return (task id, reason) from rules, or (None, "") if the classifier should decide."""
+    for task, pattern in RULES:
+        if pattern.search(text):
+            return task, f"rule: {task.replace('_', ' ')}"
     if _COMMAND.search(text) and len(text) < 120:
-        # Commands that need the web still want a web-capable model.
         if _NEEDS_WEB.search(text):
-            return 1, "command needing web"
-        return 0, "simple command"
+            return "web_lookup", "rule: command needing the web"
+        return "command", "rule: command"
     if _SMALLTALK.search(text):
-        return 0, "small talk"
-    if _LOOKUP.search(text) and len(text) < 200:
-        # Assignment ranking and health numbers are computed in code, so a light model is enough.
-        return 1, "assignments / health lookup"
-    if _RANK.search(text):
-        return 3, "ranking / briefing"
+        return "chat", "rule: small talk"
+    if _STUDY.search(text):
+        return "study_help", "rule: study help"
     if _NEEDS_WEB.search(text) and len(text) < 160:
-        return 1, "quick web lookup"
+        return "web_lookup", "rule: quick web lookup"
     return None, ""
 
 
 # ---------------------------------------------------------------- classifier
-class Difficulty(BaseModel):
+CLASSIFIER_TASKS = ["chat", "quick_fact", "command", "weather", "web_lookup", "assignments", "check_off", "health",
+                    "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
+                    "hard_problem", "draft_email", "research", "image_request"]
+
+
+class TaskGuess(BaseModel):
+    task: Literal[tuple(CLASSIFIER_TASKS)]  # type: ignore[valid-type]
     difficulty: int = Field(description="1 trivial, 2 easy, 3 moderate, 4 hard, 5 very hard")
     needs_web: bool
     reason: str = Field(description="under 12 words")
 
 
 CLASSIFIER_PROMPT = (
-    "Rate how hard it is for an AI assistant to answer this request from a college student well. "
-    "1 = chit-chat or a one-line fact, 2 = easy question, 3 = multi-part question or summary, "
-    "4 = careful reasoning, writing, planning or multi-source research, 5 = very hard analysis. "
-    "needs_web = true if the answer depends on current or online information."
+    "Classify a college student's request to their voice assistant. Pick the task: chat (small talk), quick_fact "
+    "(one-line stable fact), command (open a site, show pictures/videos, timers), weather, web_lookup (a current "
+    "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, health (Garmin sleep/heart "
+    "rate), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "
+    "read_email, triage (rank emails/events), briefing (overview of the day), study_help (explain or teach a "
+    "concept), hard_problem (careful multi-step reasoning, proofs, planning), draft_email, research (multi-source "
+    "research or a report), image_request (make a new picture). Difficulty 1-5. needs_web = true if the answer "
+    "depends on current or online information."
 )
 
-# difficulty 1..5 -> ladder level
-_DIFF_TO_LEVEL = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4}
 
-
-def classify_with_haiku(client, text: str) -> tuple[int, bool, str, object]:
-    """Returns (difficulty, needs_web, reason, usage)."""
+def classify_with_haiku(client, text: str) -> tuple[str, int, bool, str, object]:
+    """Returns (task, difficulty, needs_web, reason, usage)."""
     resp = client.messages.parse(
         model=HAIKU,
         max_tokens=1024,
         output_config={"effort": "low"},
         system=CLASSIFIER_PROMPT,
         messages=[{"role": "user", "content": f"<request>{text[:2000]}</request>"}],
-        output_format=Difficulty,
+        output_format=TaskGuess,
     )
-    d: Difficulty = resp.parsed_output
-    return max(1, min(5, int(d.difficulty))), bool(d.needs_web), d.reason, resp.usage
+    g: TaskGuess = resp.parsed_output
+    return g.task, max(1, min(5, int(g.difficulty))), bool(g.needs_web), g.reason, resp.usage
+
+
+def refine_task(task: str, difficulty: int, needs_web: bool) -> str:
+    """Let difficulty and web needs move generic guesses to the right bucket."""
+    if task in ("general", "quick_fact", "chat"):
+        if needs_web:
+            return "web_lookup" if difficulty <= 3 else "research"
+        if difficulty >= 4:
+            return "hard_problem"
+        if task == "general" and difficulty <= 1:
+            return "quick_fact"
+        if task == "quick_fact" and difficulty >= 3:
+            return "general"
+    return task
 
 
 # ---------------------------------------------------------------- router
 class Router:
     def __init__(
         self,
-        classify: Callable[[str], tuple[int, bool, str]] | None = None,
+        classify: Callable[[str], tuple] | None = None,
         budget_usd: Callable[[], float] | None = None,
         spent_usd: Callable[[], float] | None = None,
         forced_model: Callable[[], str] | None = None,
         profile: Callable[[], str] | None = None,
+        policy: ModelPolicy | None = None,
     ):
         self._classify = classify
         self._budget = budget_usd or (lambda: float("inf"))
         self._spent = spent_usd or (lambda: 0.0)
         self._forced = forced_model or (lambda: "")
         self._profile = profile or (lambda: "best")
+        self.policy = policy or ModelPolicy()
 
-    def route(self, text: str, explicit_importance: Importance | None = None) -> Route:
+    def pick_task(self, text: str) -> tuple[str, str]:
+        task, reason = rule_task(text)
+        if task is not None:
+            return task, reason
+        if self._classify is None:
+            return "general", "default"
+        try:
+            got = self._classify(text)
+            task, diff, needs_web, why = got[0], int(got[1]), bool(got[2]), str(got[3])
+            if not self.policy.has(task):
+                task = "general"
+            return refine_task(task, diff, needs_web), f"classifier: {task} {diff}/5 ({why})"
+        except Exception as exc:  # classifier is best-effort
+            return "general", f"classifier failed ({type(exc).__name__}); default"
+
+    def route(self, text: str, explicit_importance: Importance | None = None, sticky: Route | None = None) -> Route:
         importance: Importance = explicit_importance or detect_importance(text)
+        task, reason = self.pick_task(text)
 
         forced = self._forced()
         if forced:
-            effort: Effort = "high" if importance == "high" else "medium"
-            if forced == HAIKU:
-                effort = "low"
-            return Route(forced, effort, importance, -1, "forced in settings")
+            effort = "high" if importance == "high" else ("low" if forced == HAIKU else "medium")
+            return Route(forced, effort, importance, task, reason + " | model forced in Settings", "forced")
 
-        level, reason = rule_level(text)
-        if level is None:
-            if self._classify is not None:
-                try:
-                    diff, needs_web, why = self._classify(text)
-                    level = _DIFF_TO_LEVEL[diff]
-                    if needs_web:
-                        level = max(level, 1)  # Haiku gets no web tools
-                    reason = f"classifier: {diff}/5 ({why})"
-                except Exception as exc:  # classifier is best-effort
-                    level, reason = 2, f"classifier failed ({type(exc).__name__}); default"
-            else:
-                level, reason = 2, "default"
-
-        # Importance adjustments.
+        tier = "max" if importance == "high" else "min" if importance == "low" else "default"
+        if tier == "default" and self._profile() == "saver":
+            tier = "min"
+        c = self.policy.choice(task, tier)
         if importance == "high":
-            level = max(level + 1, 4 if level >= 3 else 3)
             reason += " + you said it's important"
         elif importance == "low":
-            if level >= 3 and reason in ("email drafting",):
-                level = 3  # drafting in your voice still needs Opus
-            else:
-                level = min(level, 1)
             reason += " + you said quick"
 
         # Budget guard.
         budget, spent = self._budget(), self._spent()
-        if budget and spent >= budget:
-            if importance != "high":
-                level = min(level, 0)
-                reason += " | monthly budget reached"
-        elif budget and spent >= 0.9 * budget and importance != "high" and level >= 3:
-            level = 2
-            reason += " | near monthly budget"
+        if budget and spent >= budget and importance != "high":
+            c = self.policy.choice(task, "min")
+            reason += " | monthly budget reached"
+        elif budget and spent >= 0.9 * budget and importance != "high":
+            lower = self.policy.step_down(task, c)
+            if lower != c:
+                c = lower
+                reason += " | near monthly budget"
 
-        return _route(level, importance, reason, self._profile())
+        # Sticky model for follow-ups (keeps the prompt cache warm).
+        if (sticky is not None and importance == "normal" and sticky.model != c.model
+                and self.policy.in_range(task, Choice(sticky.model, c.effort))
+                and len(text) < 160):
+            c = Choice(sticky.model, c.effort)
+            reason += f" | follow-up, stayed on {MODEL_NAMES.get(c.model, c.model)}"
+
+        return Route(c.model, c.effort, importance, task, reason, tier)
 
     def escalate(self, route: Route) -> Route:
-        """One step up the ladder - used when a cheap model asks for help."""
-        nxt = max(route.level + 1, 1)
-        return _route(nxt, route.importance, route.reason + " → escalated", self._profile())
+        """Hand off to the next stronger model (used when a cheaper model asks for help)."""
+        nxt = {HAIKU: Choice(SONNET, "medium"), SONNET: Choice(OPUS, "medium")}.get(route.model, Choice(OPUS, "high"))
+        top = self.policy.choice(route.task, "max")
+        if rank(top) > rank(Choice(route.model, route.effort)) and rank(top) < rank(nxt):
+            nxt = top
+        return replace(route, model=nxt.model, effort=nxt.effort, reason=route.reason + " → escalated")

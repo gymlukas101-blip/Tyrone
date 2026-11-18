@@ -58,6 +58,30 @@ export interface Api {
   cleanup_run(): Promise<CleanupResult>;
   cleanup_dismiss(): Promise<void>;
   report_ui_error(info: string): Promise<void>;
+  get_policy(): Promise<Policy>;
+  set_policy_entry(task: string, tier: string, model: string, effort: string): Promise<{ ok: boolean; error?: string }>;
+  reset_policy(task: string): Promise<Policy>;
+  calibrate_start(): Promise<{ ok: boolean; error?: string }>;
+  calibrate_cancel(): Promise<{ ok: boolean }>;
+  calibration_results(): Promise<CalResults>;
+  calibration_apply(picks: Record<string, string>): Promise<{ ok: boolean; error?: string; changed?: string[] }>;
+}
+
+export interface PolicyChoice { model: string; effort: string; label: string; usd: number; first_words_s: number; per_month_usd: number }
+export interface PolicyRow {
+  id: string; label: string; why: string; internal: boolean;
+  measured?: { model: string; effort: string; usd: number; first_words_s: number; total_s: number; date: string } | null;
+  min: PolicyChoice; default: PolicyChoice; max: PolicyChoice;
+}
+export interface Policy {
+  rows: PolicyRow[]; totals: { min: number; default: number; max: number };
+  models: { id: string; name: string }[]; efforts: string[];
+  calibration_estimate: number; calibrating: boolean; has_results: boolean;
+}
+export interface CalRun { model: string; effort: string; label: string; usd: number; first_words_s: number; total_s: number; answer: string; error: string }
+export interface CalResults {
+  ok: boolean; error?: string; date: string; complete: boolean; spent_usd: number;
+  tasks: Record<string, { label: string; sample: string; runs: CalRun[] }>;
 }
 
 export interface CleanupItem { kind: string; label: string; path: string; status: string; detail: string }
@@ -209,6 +233,25 @@ function mockApi(): Api {
     async cleanup_run() { return { ok: true, count: 4, items: demoCleanup().map((i) => ({ ...i, status: "ok", detail: i.kind === "download" ? "moved to Recycle Bin" : "uninstalled" })) }; },
     async cleanup_dismiss() {},
     async report_ui_error() {},
+    async get_policy() { return demoPolicy(); },
+    async set_policy_entry(task, tier, model, effort) {
+      const row = POLICY_ROWS.find((r) => r[0] === task);
+      if (row) row[tier === "min" ? 2 : tier === "max" ? 4 : 3] = `${model}|${effort}`;
+      return { ok: true };
+    },
+    async reset_policy() { return demoPolicy(); },
+    async calibrate_start() {
+      let i = 0;
+      const iv = setInterval(() => {
+        i += 7;
+        emit([["calibration", i >= 49 ? { finished: true } : { done: i, total: 49, task: "Draft an email in your voice", config: "Opus 5.5 · medium" }]]);
+        if (i >= 49) clearInterval(iv);
+      }, 300);
+      return { ok: true };
+    },
+    async calibrate_cancel() { return { ok: true }; },
+    async calibration_results() { return demoCalibration(); },
+    async calibration_apply() { return { ok: true, changed: ["general"] }; },
     async update_state() { return { status: "up_to_date", detail: "", current: "0.3.40", available: "", enabled: true }; },
   };
 }
@@ -252,5 +295,55 @@ function demoHealth() {
     heart: { resting: 51, min: 47, max: 148, seven_day_resting: 53, series },
     hrv: { last_night: 61, weekly_avg: 58, status: "Balanced" },
     day: { steps: 8421, body_battery: 64, stress_avg: 28 },
+  };
+}
+
+// ------------------------------------------------------------------ demo data for Settings → Brain
+const H = "claude-haiku-5-5", S5 = "claude-sonnet-5-5", O = "claude-opus-5-5";
+const POLICY_ROWS: [string, string, string, string, string, number, number, number, string][] = [
+  ["chat", "Chit-chat / small talk", `${H}|low`, `${H}|low`, `${S5}|low`, 0.0001, 0.7, 0.08, "Short spoken replies; Haiku is fastest."],
+  ["web_lookup", "Quick web lookup (scores, hours, news)", `${H}|medium`, `${H}|medium`, `${S5}|medium`, 0.0162, 5.4, 2.43, "Haiku 5.5 supports web search."],
+  ["assignments", "Canvas assignments / what to work on", `${H}|low`, `${H}|medium`, `${S5}|medium`, 0.0008, 3.4, 0.1, "Ranking is computed in code."],
+  ["health", "Garmin sleep / heart rate", `${H}|low`, `${H}|medium`, `${S5}|medium`, 0.0006, 3.0, 0.04, "Numbers come from Garmin."],
+  ["general", "Everyday question (no rule matched)", `${H}|medium`, `${S5}|low`, `${O}|medium`, 0.0083, 3.2, 1.65, "Sonnet low answers well and starts fast."],
+  ["triage", "Email & calendar triage (ranking)", `${H}|high`, `${S5}|medium`, `${O}|medium`, 0.0748, 19.4, 3.37, "Structured ranking; think first."],
+  ["study_help", "Study help / explain a concept", `${S5}|medium`, `${S5}|medium`, `${O}|high`, 0.0217, 16, 1.95, "Opus high when it's exam prep."],
+  ["draft_email", "Draft an email in your voice", `${O}|low`, `${O}|medium`, `${O}|high`, 0.0914, 32.7, 4.11, "Tone and content matter most."],
+  ["research", "Deep research", `${S5}|medium`, `${O}|medium`, `${O}|high`, 0.3422, 82.5, 10.27, "Medium matches high for less."],
+];
+const NAMES: Record<string, string> = { [H]: "Haiku 5.5", [S5]: "Sonnet 5.5", [O]: "Opus 5.5", "claude-fable-5-2": "Fable 5.2" };
+function demoPolicy() {
+  const pc = (v: string, usd: number, fw: number, mo: number) => {
+    const [model, effort] = v.split("|");
+    return { model, effort, label: `${NAMES[model]} · ${effort}`, usd, first_words_s: fw, per_month_usd: mo };
+  };
+  return {
+    rows: POLICY_ROWS.map(([id, label, lo, def, hi, usd, fw, mo, why]) => ({
+      id, label, why, internal: false,
+      measured: id === "chat" ? { model: H, effort: "low", usd: 0.00009, first_words_s: 0.6, total_s: 0.9, date: "2026-11-18" } : null,
+      min: pc(lo, usd * 0.5, fw * 0.8, mo * 0.5), default: pc(def, usd, fw, mo), max: pc(hi, usd * 3, fw * 1.8, mo * 3) })),
+    totals: { min: 17.04, default: 29.02, max: 64.31 },
+    models: Object.entries(NAMES).map(([id, name]) => ({ id, name })),
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+    calibration_estimate: 3.0, calibrating: false, has_results: true,
+  };
+}
+function demoCalibration() {
+  return {
+    ok: true, date: "2026-11-18", complete: true, spent_usd: 2.71,
+    tasks: {
+      general: { label: "Everyday question (no rule matched)", sample: "why do cats purr?", runs: [
+        { model: H, effort: "medium", label: "Haiku 5.5 · medium", usd: 0.0021, first_words_s: 1.1, total_s: 2.4, error: "",
+          answer: "Cats purr by twitching the muscles in their voice box about 25 to 150 times a second. It usually means they're content, but they also purr to calm themselves when hurt or stressed." },
+        { model: S5, effort: "low", label: "Sonnet 5.5 · low", usd: 0.0074, first_words_s: 1.4, total_s: 3.0, error: "",
+          answer: "It's their laryngeal muscles vibrating, 25–150 times a second, as they breathe in and out. Mostly contentment, but also self-soothing; some studies even link those frequencies to bone healing." },
+        { model: O, effort: "medium", label: "Opus 5.5 · medium", usd: 0.0219, first_words_s: 2.6, total_s: 5.2, error: "",
+          answer: "A neural oscillator in the brainstem makes the laryngeal muscles twitch 25–150 times per second, on both the in-breath and out-breath. It signals contentment, but cats also purr when stressed, giving birth or injured, likely to self-soothe." }] },
+      draft_email: { label: "Draft an email in your voice", sample: "draft a reply to Professor Lee asking for a two-day extension on the lab report", runs: [
+        { model: O, effort: "low", label: "Opus 5.5 · low", usd: 0.051, first_words_s: 5.8, total_s: 9.9, error: "",
+          answer: "Draft's on your screen: short and polite, asks for two days and mentions you'll submit by Thursday." },
+        { model: O, effort: "medium", label: "Opus 5.5 · medium", usd: 0.083, first_words_s: 9.2, total_s: 15.1, error: "",
+          answer: "Done, the draft's up. I apologized for the late lab report, asked for a two-day extension and offered Thursday 5 PM. Read it over and say send it when you're good." }] },
+    },
   };
 }
