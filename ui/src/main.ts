@@ -4,7 +4,7 @@ import { marked } from "marked";
 import { Avatar } from "./avatar";
 import { Avatar3D, webglAvailable } from "./avatar3d";
 import type { AvatarLike, AvatarState } from "./avatar-types";
-import { type Api, type AppState, type Importance, waitForApi } from "./bridge";
+import { type Api, type AppState, type Brief, type Importance, waitForApi } from "./bridge";
 import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
 import { renderAssignments, markChecked } from "./assignments";
 import { renderHealth } from "./health";
@@ -767,6 +767,7 @@ async function openSettings() {
               } }, "Clean up old installs")),
             h("label", { class: "field" }, auto, h("span", {}, "Download updates automatically")));
         })()),
+      briefSettings(s),
       h("section", {}, h("h4", {}, "Memory"),
         h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Monkey to another PC (encrypted with your password).`),
         field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),
@@ -783,6 +784,84 @@ async function openSettings() {
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   if (!dlg.open) dlg.showModal();
+}
+
+// ------------------------------------------------------------------ morning brief
+async function showMorningBrief() {
+  const r = await api.brief_preview(true).catch(() => null);
+  if (!r?.ok || !r.brief) return;
+  briefCard(r.brief);
+}
+
+function briefCard(b: Brief) {
+  const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (late start)" : "☀️ Morning brief";
+  card(title,
+    b.kind === "draft" ? h("p", { class: "help" }, "Confirm your class schedule in Settings → Morning brief to get it timed 90 minutes before your first class.") : "",
+    h("p", {}, h("strong", {}, "Top priority: "), b.top),
+    h("p", { class: "help" }, "Next: " + b.next_step),
+    ...b.sections.map((s) => h("div", { class: `briefsec ${s.status}` },
+      h("strong", {}, s.title),
+      s.items.length ? h("ul", { class: "items" }, ...s.items.map((i) => h("li", {}, i))) : "",
+      s.note ? h("span", { class: "meta" }, s.note) : "")));
+}
+
+const DAY_LABEL: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri" };
+function briefSettings(s: Record<string, any>) {
+  const status = h("p", { class: "help" }, "…");
+  const grid = h("div", { class: "briefgrid" });
+  const inputs: Record<string, HTMLInputElement> = {};
+  for (const d of Object.keys(DAY_LABEL)) {
+    const inp = h("input", { type: "time", value: s.brief_schedule?.by_day?.[d] ?? "" }) as HTMLInputElement;
+    inputs[d] = inp;
+    grid.append(h("label", {}, h("span", {}, DAY_LABEL[d]), inp));
+  }
+  const xmlOut = h("pre", { class: "briefxml" });
+  const refresh = async () => {
+    const st = await api.brief_status();
+    status.textContent = (st.verified
+      ? `✓ Timed from your confirmed schedule: ${st.lead_min} min before your earliest class. Next: ${st.next_run ? new Date(st.next_run).toLocaleString() : "none this week"}.`
+      : "Not timed yet: confirm your earliest class each weekday (Monkey won't guess from old notes or Canvas due dates).")
+      + ` ${st.canvas.message}`;
+  };
+  void refresh();
+  const detect = h("button", { class: "ghost", type: "button", onclick: async () => {
+    const r = await api.brief_candidates();
+    if (!r.ok) return toast(`⚠ ${r.error}`);
+    const c = r.candidates ?? {};
+    for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
+    toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from your calendar. Check them, then Confirm.` : "No recurring classes found in the next 2 weeks.");
+  } }, "Detect from calendar");
+  const confirmBtn = h("button", { class: "primary", type: "button", onclick: async () => {
+    const byDay: Record<string, string> = {};
+    for (const [d, inp] of Object.entries(inputs)) if (inp.value) byDay[d] = inp.value;
+    const st = await api.brief_confirm(byDay, "confirmed in app");
+    appState = await api.get_state();
+    toast(st.verified ? "Schedule confirmed" : "Schedule cleared");
+    void refresh();
+  } }, "Confirm schedule");
+  const speak = h("input", { type: "checkbox", checked: !!s.brief_speak_on_open }) as HTMLInputElement;
+  speak.addEventListener("change", async () => { appState = await api.save_settings({ brief_speak_on_open: speak.checked }); toast("Saved"); });
+  const expires = h("input", { type: "date", value: s.canvas_token_expires ?? "" }) as HTMLInputElement;
+  expires.addEventListener("change", async () => { appState = await api.save_settings({ canvas_token_expires: expires.value }); void refresh(); });
+  return h("section", {}, h("h4", {}, "Morning brief"),
+    h("p", { class: "help" }, "On school days Monkey prepares a brief 90 minutes before your earliest confirmed class (Chicago time, weekends off): today's classes, what's due in 72 hours ranked by grade impact, unread email, weather and the one thing to do first. It shows in the app; nothing is sent anywhere."),
+    grid, h("div", { class: "field" }, detect, confirmBtn), status,
+    h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
+    h("div", { class: "field" }, h("span", {}, "Canvas token expires"), expires),
+    h("label", { class: "field toggle" }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "meta" }, "Phone notifications: off (needs your approval before it can be turned on)")),
+    h("details", {}, h("summary", {}, "Prepare it even when Monkey is closed (Windows Task Scheduler)"),
+      h("p", { class: "help" }, "Creates a scheduled task that wakes the PC to build the brief (no sound, no notifications). Review it first; nothing is registered until you click Enable."),
+      h("div", { class: "field" },
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          const r = await api.brief_task_preview();
+          xmlOut.textContent = r.ok ? r.xml ?? "" : `⚠ ${r.error}`;
+        } }, "Preview task"),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          const r = await api.brief_task_enable();
+          toast(r.ok ? "Scheduled task enabled" : `⚠ ${r.error}`);
+        } }, "Enable"),
+        h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); toast("Scheduled task removed"); } }, "Disable")),
+      xmlOut));
 }
 
 // ------------------------------------------------------------------ memory: inspector, import, history
@@ -894,6 +973,7 @@ async function restoreTranscript() {
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
   await restoreTranscript();
+  void showMorningBrief();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {
     addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");
     openSettings();

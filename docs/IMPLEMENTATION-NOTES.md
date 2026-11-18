@@ -101,3 +101,50 @@ There was no cross-session recall, no provenance, and no correct or forget tools
 - FTS is lexical: "how should you talk to me" doesn't match "communication". The core profile covers that case. Add local embeddings only if real queries keep missing.
 - The episode summary quality from Haiku hasn't been measured with a real key in this session.
 - The class times in the imported `classes.md` are labeled unverified, and the morning brief ignores them (P2).
+
+## P2: morning brief ✅ (built and tested; enabling the timed task is your click)
+
+**What existed:** nothing scheduled. "Briefing" was only a router task you could ask for.
+
+**What changed:**
+
+| File | Change |
+|---|---|
+| `monkey/routines/morning.py` (new) | `Schedule` is verified **only** when confirmed in-app. `candidate_schedule()` reads Google/Outlook events (never the Canvas feed), keeps recurring ones or titles that look like course codes, at most 4 h long, weekdays only. `brief_time()` = earliest verified class − 90 min in `America/Chicago`. `MorningRoutine.run()` is idempotent per day (`kv brief:YYYY-MM-DD`). A timer that fires early does nothing. A wake after the first class starts produces a `late` brief, not a "morning" one. An unconfirmed schedule gives a `draft` preview on app open only (not cached, never timed). Weekends do nothing. `build()` assembles today's calendar events, items due within 72 h ranked by **grade impact % → points → deadline** (the feed says "points unknown"), Canvas token expiry, unread email (unranked, labeled), weather, optional Garmin sleep, then one top priority and one next step. Every missing source is labeled `not_connected` / `unavailable` and nothing is invented. |
+| `monkey/routines/scheduler.py` (new) | Windows Task Scheduler XML: one weekly trigger per confirmed weekday, `WakeToRun`, `StartWhenAvailable`, `IgnoreNew`, a 10-minute limit, action `Monkey.exe --routine morning`. `register()` runs only from the Enable button. |
+| `monkey/routines/canvas_token.py` (new) | Token status: none / ok / expiring (≤ 5 days) / expired / unknown. Based on the expiry date you enter, or a 401 from Canvas. |
+| `monkey/integrations/canvas_api.py` | A 401 sets `token_rejected` and raises a clear "expired or revoked" error. |
+| `monkey/app.py`, `monkey/__main__.py` | Brief sources come from the existing integrations. APIs: `brief_status`, `brief_preview` (spoken only if opted in, once per day), `brief_candidates`, `brief_confirm` (sanitized), `brief_task_preview/enable/disable`. New entry point `--routine morning`: headless, builds and caches only, no audio or notifications. |
+| `monkey/config.py` | `brief_enabled`, `brief_lead_min` (90), `brief_schedule`, `brief_speak_on_open` (false), `canvas_token_expires`. |
+| UI | A brief card on first open of the day (top priority, next step, labeled sections). Settings → **Morning brief**: weekday time inputs, Detect from calendar, Confirm, status with next run, the speak-on-open toggle, Canvas token expiry date, a **disabled** phone-notifications row ("needs your approval"), and a Task Scheduler preview / Enable / Disable. |
+
+**Tests:**
+
+`tests/test_morning.py` (15):
+- 90-minute lead (Wed 8:50 → 7:20, Thu 9:30 → 8:00);
+- weekends and unverified schedules aren't timed;
+- DST on both 2026-11-01 and 2027-03-14 keeps 7:20 local, with the UTC offset changing;
+- next run skips the weekend;
+- duplicate scheduled and app-open triggers produce one brief;
+- an early timer does nothing, and a late wake is labeled "late";
+- drafts only on app open;
+- missing integrations are labeled, with no "bus" or "address" text;
+- ranking by impact → points → deadline;
+- feed-only Canvas says there are no points;
+- failing sources show as unavailable;
+- token expiry appears;
+- candidate detection excludes one-offs, Canvas and long events;
+- a moved class changes the time.
+
+`tests/test_brief_app.py` (5) runs the real `MonkeyApp` headless:
+- confirmation is sanitized (Saturday and invalid entries dropped);
+- the preview with nothing connected is labeled;
+- the task XML has `WakeToRun`/`StartWhenAvailable` and the right trigger times;
+- the headless routine does nothing without a schedule;
+- Canvas status.
+
+**Not verified here:**
+- a real Google or Outlook calendar, real Canvas, or a registered Windows task (Linux sandbox, no accounts);
+- how WakeToRun behaves on your laptop (Windows may not wake a sleeping mobile PC by design).
+
+**The class times in your imported notes are deliberately unused.** Confirm them in Settings → Morning brief first (Detect from calendar, check, then Confirm).

@@ -54,6 +54,7 @@ class CanvasAPI:
         self._overrides: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._cache: tuple[float, list[Assignment]] | None = None
+        self.token_rejected = False
 
     def available(self) -> bool:
         return bool(self._token())
@@ -71,7 +72,11 @@ class CanvasAPI:
         url, out, pages = self._url(path), [], 0
         while url and pages < 20:
             r = self._client().get(url, params=params if pages == 0 else None, headers=headers)
+            if r.status_code == 401:
+                self.token_rejected = True          # expired/revoked; Settings + the morning brief say so
+                raise RuntimeError("Canvas rejected the token (expired or revoked). Request a new one.")
             r.raise_for_status()
+            self.token_rejected = False
             data = r.json()
             out.extend(data if isinstance(data, list) else [data])
             m = _NEXT.search(r.headers.get("link", ""))

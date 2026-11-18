@@ -74,6 +74,12 @@ class Settings:
     use_outlook: bool = True
     canvas_ics_url: str = ""
     canvas_base_url: str = "https://canvas.wisc.edu"
+    canvas_token_expires: str = ""    # YYYY-MM-DD; UW tokens are short-lived, Monkey warns before expiry
+    # Morning brief (America/Chicago): timed only from a schedule you confirmed; never pushes notifications.
+    brief_enabled: bool = True        # build/preview the brief in the app
+    brief_lead_min: int = 90          # minutes before your earliest verified class
+    brief_schedule: dict = field(default_factory=dict)   # {"by_day": {"mon": "08:50"}, "source": .., "confirmed_at": ..}
+    brief_speak_on_open: bool = False # say a 2-sentence version when you open Monkey (opt-in)
     anthropic_workspace_id: str = ""  # only for Console keys not tied to a workspace (found automatically)
     home_location: str = "Madison, WI"
     latitude: float = 43.0766          # UW-Madison campus

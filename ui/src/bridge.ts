@@ -19,6 +19,14 @@ export interface AppState {
 export interface MemoryHit { kind: string; ref: string; text: string; date: string; source: string; status: string; score: number; sensitive: boolean }
 export interface ImportFile { name: string; action: string; add: string[]; conflicts: { existing: string; incoming: string }[] }
 
+export interface BriefSection { title: string; status: string; items: string[]; note: string }
+export interface Brief { day: string; kind: string; created: string; first_class: string | null; sections: BriefSection[]; top: string; next_step: string; spoken: string }
+export interface BriefStatus { verified: boolean; schedule: Record<string, string>; next_run: string | null; today: string | null; weekend: boolean;
+  lead_min: number; speak: boolean; canvas: { status: string; days: number | null; message: string }; calendar: boolean; task: boolean }
+
+const demoBriefState: BriefStatus = { verified: false, schedule: {}, next_run: null, today: null, weekend: false, lead_min: 90, speak: false,
+  canvas: { status: "none", days: null, message: "No Canvas token (using the calendar feed)." }, calendar: true, task: false };
+
 export interface Api {
   get_state(): Promise<AppState>;
   save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string; warning?: string; note?: string }>;
@@ -49,6 +57,13 @@ export interface Api {
   history_stats(): Promise<{ enabled: boolean; retention_days: number; sessions?: number; messages?: number; episodes?: number; facts?: number; fts?: boolean }>;
   history_delete(scope: string, days: number): Promise<{ ok: boolean; error?: string; deleted?: number }>;
   history_export(): Promise<{ ok: boolean; error?: string; path?: string }>;
+  brief_status(): Promise<BriefStatus>;
+  brief_preview(opened: boolean): Promise<{ ok: boolean; error?: string; brief?: Brief | null }>;
+  brief_candidates(): Promise<{ ok: boolean; error?: string; candidates?: Record<string, { time: string; title: string; seen: number }> }>;
+  brief_confirm(byDay: Record<string, string>, source: string): Promise<BriefStatus>;
+  brief_task_preview(): Promise<{ ok: boolean; error?: string; xml?: string }>;
+  brief_task_enable(): Promise<{ ok: boolean; error?: string }>;
+  brief_task_disable(): Promise<{ ok: boolean }>;
   import_preview(): Promise<{ ok: boolean; error?: string; label?: string; files?: ImportFile[] }>;
   import_apply(): Promise<{ ok: boolean; error?: string; backup?: string }>;
   import_undo(): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
@@ -249,6 +264,21 @@ function mockApi(): Api {
     async history_stats() { return { enabled: true, retention_days: 365, sessions: 12, messages: 140, episodes: 11, facts: 65, fts: true }; },
     async history_delete() { return { ok: true, deleted: 0 }; },
     async history_export() { return { ok: true, path: "Documents\\Monkey-conversations.json" }; },
+    async brief_status() { return { ...demoBriefState }; },
+    async brief_preview() {
+      return { ok: true, brief: { day: "2026-11-18", kind: demoBriefState.verified ? "morning" : "draft", created: "", first_class: demoBriefState.verified ? "2026-11-18T09:00" : null,
+        sections: [
+          { title: "Today", status: "ok", items: ["9:00 AM Demo class (Room 1)"], note: demoBriefState.verified ? "" : "Class schedule not confirmed yet, so the brief isn't timed." },
+          { title: "Due in 72 h", status: "ok", items: ["Demo proposal (DEMO 101) due Thu 11:59 PM, 10.0% of grade"], note: "" },
+          { title: "Unread email", status: "not_connected", items: [], note: "Email not connected." },
+          { title: "Weather", status: "ok", items: ["Cloudy, 38°F"], note: "" },
+        ], top: "Demo proposal (DEMO 101), due Thu 11:59 PM", next_step: "Open it on Canvas and do the first 25 minutes before class.", spoken: "" } };
+    },
+    async brief_candidates() { return { ok: true, candidates: { mon: { time: "09:00", title: "Demo class", seen: 2 }, tue: { time: "09:30", title: "DEMO 102", seen: 1 } } }; },
+    async brief_confirm(byDay: Record<string, string>) { demoBriefState.verified = Object.keys(byDay).length > 0; demoBriefState.schedule = byDay; demoBriefState.next_run = demoBriefState.verified ? "2026-11-19T07:30:00-06:00" : null; return { ...demoBriefState }; },
+    async brief_task_preview() { return demoBriefState.verified ? { ok: true, xml: "<Task>…demo…</Task>" } : { ok: false, error: "Confirm your class schedule first." }; },
+    async brief_task_enable() { return { ok: false, error: "Demo mode" }; },
+    async brief_task_disable() { return { ok: true }; },
     async import_preview() {
       return { ok: true, label: "Imported context (demo)", files: [
         { name: "profile.md", action: "merge", add: ["- Example imported line <!-- src=import -->"], conflicts: [] },

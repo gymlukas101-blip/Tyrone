@@ -11,7 +11,7 @@ import threading
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -135,6 +135,11 @@ class MonkeyApp:
                            emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name,
                            history=self.history, on_session_end=self._episode_async)
         threading.Thread(target=self._history_maintenance, name="history", daemon=True).start()
+        from .routines.morning import MorningRoutine, Schedule
+
+        self.morning = MorningRoutine(self.ledger.get_state, self.ledger.put_state,
+                                      lambda: Schedule.from_settings(self.cfg.settings.brief_schedule),
+                                      self._brief_sources, lambda: self.cfg.settings.brief_lead_min)
         self._ensure_client()
 
         # Audio (created in start_audio so tests/selftest don't need devices)
@@ -265,6 +270,60 @@ class MonkeyApp:
 
         threading.Thread(target=init_listener, name="listener-init", daemon=True).start()
         self._register_hotkey()
+
+    # ------------------------------------------------------------------ morning brief sources
+    def _calendars(self) -> list:
+        return [p for p in (self.gcal, self.outlook) if self._ok(p)]   # not the Canvas feed: due dates aren't classes
+
+    @staticmethod
+    def _ok(p) -> bool:
+        try:
+            return bool(p.available())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def canvas_token_status(self) -> dict:
+        from .routines.canvas_token import status
+
+        return status(self.canvas_api.available(), self.cfg.settings.canvas_token_expires,
+                      getattr(self.canvas_api, "token_rejected", False))
+
+    def _brief_sources(self):
+        from datetime import datetime as _dt, time as _time
+        from .routines.morning import TZ, Sources
+
+        cals = self._calendars()
+
+        def events_today(day):
+            start = _dt.combine(day, _time(0, 0), tzinfo=TZ)
+            out = []
+            for p in cals:
+                out += p.list_events(start, start + timedelta(days=1))
+            return out
+
+        mails = [p for p in (self.gmail, self.outlook) if self._ok(p)]
+
+        def emails():
+            out = []
+            for p in mails:
+                out += p.list_recent(max_results=10, unread_only=True, query="")
+            return sorted(out, key=lambda e: e.received, reverse=True)
+
+        board_ok = self.canvas_api.available() or self._ok(self.canvas)
+
+        def sleep():
+            from .integrations.garmin import summarize
+
+            return {"summary": summarize(self.garmin.health("today"))}
+
+        return Sources(
+            events_today=events_today if cals else None,
+            assignments=(lambda: self.board.load()) if board_ok else None,
+            emails=emails if mails else None,
+            weather=self.services.weather,
+            sleep=sleep if self.garmin.connected() else None,
+            canvas_token=self.canvas_token_status,
+        )
 
     # ------------------------------------------------------------------ conversation history (episodes)
     def _history_maintenance(self) -> None:
@@ -865,6 +924,100 @@ class Api:
     def update_state(self):
         return self._app.updater.state()
 
+    # morning brief (in-app preview; no external notifications)
+    def brief_status(self):
+        from datetime import datetime as _dt
+
+        a = self._app
+        st = a.morning.status(_dt.now().astimezone())
+        return {**st, "lead_min": a.cfg.settings.brief_lead_min, "speak": a.cfg.settings.brief_speak_on_open,
+                "canvas": a.canvas_token_status(), "calendar": bool(a._calendars()),
+                "task": getattr(a, "_brief_task_enabled", False)}
+
+    def brief_preview(self, opened: bool = True):
+        """The app was opened: today's brief (cached, or built now; a draft if the schedule isn't confirmed)."""
+        from datetime import datetime as _dt
+
+        a = self._app
+        if not a.cfg.settings.brief_enabled:
+            return {"ok": False, "error": "The morning brief is off."}
+        try:
+            b = a.morning.run(_dt.now().astimezone(), "app_open")
+        except Exception as exc:  # noqa: BLE001
+            log.exception("brief failed")
+            return {"ok": False, "error": f"Couldn't build the brief ({type(exc).__name__})."}
+        if b is None:
+            return {"ok": True, "brief": None}
+        key = f"brief-spoken:{b['day']}"
+        if opened and a.cfg.settings.brief_speak_on_open and b["kind"] != "draft" and not a.ledger.get_state(key):
+            a.ledger.put_state(key, True, time.time())
+            a._say(b["spoken"])                    # two short sentences at most; details stay on screen
+        return {"ok": True, "brief": b}
+
+    def brief_candidates(self):
+        """Recurring calendar events over the next two weeks, as a schedule for the user to confirm."""
+        from datetime import datetime as _dt
+
+        from .routines.morning import TZ, candidate_schedule
+
+        a = self._app
+        cals = a._calendars()
+        if not cals:
+            return {"ok": False, "error": "Connect Google Calendar or Outlook to detect your class times, "
+                                          "or enter them yourself."}
+        now = _dt.now(TZ)
+        events = []
+        for p in cals:
+            try:
+                events += p.list_events(now, now + timedelta(days=14))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("calendar read failed: %s", type(exc).__name__)
+        return {"ok": True, "candidates": candidate_schedule(events, now)}
+
+    def brief_confirm(self, by_day: dict, source: str = "confirmed in app"):
+        """The user confirmed (or edited) their earliest weekday class times. Only this enables timed briefs."""
+        from datetime import datetime as _dt
+
+        from .routines.morning import SCHOOL_DAYS, Schedule, _hhmm
+
+        clean = {k: v for k, v in (by_day or {}).items() if k in SCHOOL_DAYS and _hhmm(v) is not None}
+        sched = Schedule(clean, str(source)[:80], _dt.now().isoformat(timespec="minutes") if clean else None)
+        self._app.cfg.update(brief_schedule=sched.to_settings())
+        return self.brief_status()
+
+    def brief_task_preview(self):
+        from .routines.morning import Schedule
+        from .routines.scheduler import task_xml
+
+        a = self._app
+        exe = sys.executable if getattr(sys, "frozen", False) else "Monkey.exe"
+        try:
+            return {"ok": True, "xml": task_xml(exe, Schedule.from_settings(a.cfg.settings.brief_schedule),
+                                                a.cfg.settings.brief_lead_min)}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def brief_task_enable(self):
+        """Register the Windows scheduled task (explicit click only). It prepares the brief; it never notifies."""
+        from .routines.scheduler import register
+
+        prev = self.brief_task_preview()
+        if not prev.get("ok"):
+            return prev
+        try:
+            register(prev["xml"])
+            self._app._brief_task_enabled = True
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def brief_task_disable(self):
+        from .routines.scheduler import unregister
+
+        unregister()
+        self._app._brief_task_enabled = False
+        return {"ok": True}
+
     # memory inspector, history controls, context import
     def memory_search(self, query: str, scope: str = "all", include_history: bool = False):
         a = self._app
@@ -1436,6 +1589,26 @@ def _selftest_secrets(tmp: Path) -> list[str]:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"secret store: {exc}")
     return problems
+
+
+def run_routine(name: str) -> int:
+    """`Monkey.exe --routine morning` (Task Scheduler): build + cache today's brief, then exit.
+
+    No UI, no audio, no speech, no notifications. Safe to run twice (the routine is idempotent) and safe while the
+    app is open (both share monkey.db; the per-day key prevents duplicates)."""
+    if name != "morning":
+        print(f"unknown routine {name!r}")
+        return 2
+    app = MonkeyApp(headless=True)
+    if not app.cfg.settings.brief_enabled:
+        return 0
+    try:
+        b = app.morning.run(datetime.now().astimezone(), "scheduled")
+        log.info("routine morning: %s", b["kind"] if b else "nothing due")
+        return 0
+    except Exception:  # noqa: BLE001
+        log.exception("routine morning failed")
+        return 1
 
 
 def selftest() -> int:
