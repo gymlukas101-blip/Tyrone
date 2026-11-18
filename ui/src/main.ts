@@ -50,6 +50,15 @@ if (!forceSvg && webglAvailable()) {
   (window as any).__monkeyAvatar = { ready: true, kind: "svg", clips: [], morphs: [] };
 }
 decorateJungle($("#stage"));
+
+/** Apply Settings → Look & feel to the 3D avatar (juice level, SFX volume, sleep timer). */
+function applyLook(s: Record<string, any>) {
+  const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
+  if (!a3) return;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const juice = s.juice_level && s.juice_level !== "auto" ? s.juice_level : reduce ? "calm" : "full";
+  a3.ready.then(() => a3.configure({ juice, volume: (s.sfx_volume ?? 70) / 100, sleepAfterMin: s.sleep_after_min ?? 8 }));
+}
 const LABELS: Record<AvatarState, string> = {
   idle: "Chillin' in the jungle", listening: "Ears up…", transcribing: "Got it…", thinking: "Thinking… 🍌", speaking: "Talking",
 };
@@ -394,6 +403,7 @@ async function openSettings() {
     inp.addEventListener("change", async () => {
       const v = type === "number" ? Number(inp.value) : inp.value;
       appState = await api.save_settings({ [key]: v });
+      applyLook(appState.settings);
       toast("Saved");
     });
     return h("div", { class: "field" }, h("span", {}, label), inp);
@@ -529,6 +539,25 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ brain_profile: sel.value }); toast("Saved"); });
           return sel;
         })())),
+      h("section", {}, h("h4", {}, "Look & feel"),
+        h("p", { class: "help" }, "How much Monkey animates and makes noise. Auto follows Windows' “Animation effects” setting. " +
+          "Calm keeps the fun but quieter and with fewer effects; Minimal turns off idle antics and sound effects."),
+        h("div", { class: "field" }, h("span", {}, "Juice level"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "auto" }, "Auto (follow Windows)"),
+            h("option", { value: "full" }, "Full: all animations, effects & sounds"),
+            h("option", { value: "calm" }, "Calm: fewer effects, quieter"),
+            h("option", { value: "minimal" }, "Minimal: no idle antics or sound effects"));
+          sel.value = s.juice_level ?? "auto";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ juice_level: sel.value }); applyLook(appState.settings); toast("Saved"); });
+          return sel;
+        })()),
+        h("div", { class: "field" }, h("span", {}, "Sound effects volume"), (() => {
+          const r = h("input", { type: "range", min: "0", max: "100", step: "5", value: String(s.sfx_volume ?? 70) }) as HTMLInputElement;
+          r.addEventListener("change", async () => { appState = await api.save_settings({ sfx_volume: Number(r.value) }); applyLook(appState.settings); });
+          return r;
+        })()),
+        field("Doze off after (minutes idle)", "sleep_after_min", "number", { min: "1", max: "120", step: "1" })),
       h("section", {}, h("h4", {}, "Images & updates"),
         h("div", { class: "field" }, h("span", {}, "Image model"), (() => {
           const sel = h("select", {},
@@ -593,6 +622,7 @@ async function restoreTranscript() {
   api = await waitForApi();
   (window as any).__monkeyBooted = true;
   appState = await api.get_state();
+  applyLook(appState.settings);
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;

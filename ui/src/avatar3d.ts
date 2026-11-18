@@ -8,6 +8,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 import { type AvatarLike, type AvatarState, type Emote, bananaRain } from "./avatar-types";
+import { IdleBrain, Life } from "./avatar/life";
+import { type Juice, Sfx } from "./avatar/sfx";
+import { Vfx } from "./avatar/vfx";
 
 const STATE_CLIP: Record<AvatarState, string> = {
   idle: "idle", listening: "listen", transcribing: "listen", thinking: "think", speaking: "talk",
@@ -56,8 +59,20 @@ export class Avatar3D implements AvatarLike {
   private exprNow: Record<string, number> = {};
   private nextBlink = 0;
   private blinkUntil = 0;
-  private nextFidget = 0;
   private clock = new THREE.Clock();
+  private model: THREE.Object3D | null = null;
+  private life: Life | null = null;
+  private brain: IdleBrain | null = null;
+  private vfx: Vfx;
+  readonly sfx = new Sfx();
+  private sleeping = false;
+  private sleepAmt = 0;          // eased 0..1
+  private yawnT = -1;            // seconds into a yawn, -1 = none
+  private nextZ = 0;
+  private nextSnore = 0;
+  private nextSweat = 0;
+  private stateSince = performance.now();
+  juice: Juice = "full";
 
   constructor(host: HTMLElement, url = "models/monkey.glb") {
     this.host = host;
@@ -78,6 +93,25 @@ export class Avatar3D implements AvatarLike {
     rim.position.set(-2, 1.5, -2.5);
     this.scene.add(key, rim, new THREE.HemisphereLight(0xeaffd0, 0x1a4a20, 0.6));
 
+    this.vfx = new Vfx(this.scene);
+    // Soft contact shadow so he sits ON the ground instead of floating (cheap radial blob).
+    const sh = document.createElement("canvas");
+    sh.width = sh.height = 128;
+    const g = sh.getContext("2d")!;
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0, "rgba(10,40,15,0.55)"); grad.addColorStop(1, "rgba(10,40,15,0)");
+    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.55),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sh), transparent: true, depthWrite: false }));
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.002;
+    this.scene.add(shadow);
+
+    // Any sign of life from the user resets idle time (and wakes him up if he dozed off).
+    for (const ev of ["keydown", "pointerdown", "wheel"]) window.addEventListener(ev, () => this.poke(), { passive: true });
+    let lastMove = 0;
+    window.addEventListener("pointermove", () => { const n = performance.now(); if (n - lastMove > 1500) { lastMove = n; this.poke(); } });
+
     new ResizeObserver(() => this.resize()).observe(host);
     this.ready = this.load(url);
   }
@@ -85,6 +119,7 @@ export class Avatar3D implements AvatarLike {
   private async load(url: string) {
     const gltf = await new GLTFLoader().loadAsync(url);
     const model = gltf.scene;
+    this.model = model;
     this.scene.add(model);
 
     model.traverse((o) => {
@@ -98,6 +133,14 @@ export class Avatar3D implements AvatarLike {
             list.push({ influences: mesh.morphTargetInfluences, index });
             this.morphMap.set(name, list);
           }
+        }
+        // Fur reads as fuzzy, not rubbery: a soft warm sheen on the furry materials (Bananza-like rim).
+        if (!Array.isArray(mesh.material) && /Body|Fur|Tuft|Head/i.test(mesh.material.name)) {
+          const src = mesh.material as THREE.MeshStandardMaterial;
+          const fur = new THREE.MeshPhysicalMaterial();
+          THREE.MeshStandardMaterial.prototype.copy.call(fur, src);
+          fur.sheen = 0.6; fur.sheenRoughness = 0.55; fur.sheenColor = new THREE.Color(0xffe0b0);
+          mesh.material = fur;
         }
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of mats) {
@@ -133,16 +176,20 @@ export class Avatar3D implements AvatarLike {
       if (e.action === this.emoting) {
         this.emoting = null;
         this.emoteName = null;
-        this.expr = {};
+        this.expr = this.sleeping ? {} : {};
         this.play(STATE_CLIP[this.state], 0.4);
       }
     });
+
+    this.life = new Life(model);
+    this.brain = new IdleBrain(this.clips);
+    const q = new URLSearchParams(location.search);          // ?sleep=20 → doze off after 20 s (testing)
+    if (q.has("sleep")) { this.brain.sleepAfterMs = Number(q.get("sleep")) * 1000; this.brain.drowsyAfterMs = this.brain.sleepAfterMs * 0.6; }
 
     this.resize();
     this.play("idle", 0);
     const now = performance.now();
     this.nextBlink = now + 2000;
-    this.nextFidget = now + 15000 + Math.random() * 15000;
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
@@ -166,8 +213,69 @@ export class Avatar3D implements AvatarLike {
   setState(s: AvatarState) {
     this.host.dataset.state = s;
     if (s === this.state) return;
+    const prev = this.state;
     this.state = s;
+    this.stateSince = performance.now();
+    if (s !== "idle") this.poke();
+    if (s === "listening" && prev === "idle") this.sfx.play("pop");   // earcon on transitions only
+    this.sfx.duck(s === "speaking" || s === "listening" || s === "transcribing");
     if (!this.emoting) this.play(STATE_CLIP[s]);
+  }
+
+  /** Settings → Look & feel. */
+  configure(o: { juice?: Juice; volume?: number; sleepAfterMin?: number }) {
+    if (o.juice) {
+      this.juice = o.juice;
+      this.sfx.juice = o.juice;
+      this.vfx.enabled = o.juice !== "minimal";
+      this.vfx.reduced = o.juice === "calm";
+      if (this.brain) this.brain.fidgets = o.juice !== "minimal";
+    }
+    if (o.volume !== undefined) this.sfx.setVolume(o.volume);
+    if (o.sleepAfterMin && this.brain && !new URLSearchParams(location.search).has("sleep")) {
+      this.brain.sleepAfterMs = o.sleepAfterMin * 60_000;
+      this.brain.drowsyAfterMs = Math.max(30_000, this.brain.sleepAfterMs * 0.62);
+    }
+  }
+
+  // VFX sockets, relative to the head bone (it sits at the neck base: ~0.6 up; the top of the head is ~1.0).
+  private head(y = 0.17) { return this.life!.worldPos("head", new THREE.Vector3(), new THREE.Vector3(0, 0.36 + y, 0.02)); }
+  private mouth() { return this.life!.worldPos("head", new THREE.Vector3(), new THREE.Vector3(0.08, 0.1, 0.22)); }
+  private around(n: number, r = 0.42) {   // points on a ring around his upper body, for bursts
+    const c = this.life!.worldPos("chest", new THREE.Vector3(), new THREE.Vector3(0, 0.15, 0.05));
+    return Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      return c.clone().add(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r * 0.9, 0.1));
+    });
+  }
+
+  /** User activity: reset idle time; if he was asleep, wake up with a startle. */
+  poke() {
+    if (!this.brain) return;
+    if (this.brain.poke()) this.wake();
+  }
+
+  sleepNow() { if (this.brain) { this.brain.asleep = true; this.fallAsleep(); } }
+
+  private fallAsleep() {
+    this.sleeping = true;
+    this.expr = {};
+    this.nextZ = performance.now() + 900;
+    this.nextSnore = performance.now() + 2500;
+  }
+
+  wake() {
+    if (!this.sleeping && this.sleepAmt < 0.05) return;
+    this.sleeping = false;
+    this.yawnT = -1;
+    this.vfx.clear("z");
+    if (this.life) {
+      const pos = this.head(0.2);
+      this.vfx.spawn({ kind: "bang", at: pos, size: 0.26, life: 1.0, pop: true });
+      this.sfx.play("startle");
+    }
+    this.sleepAmt = 0.25;               // snap most of the way awake (it's a startle)
+    this.emote("surprised");
   }
 
   setLevel(v: number) {
@@ -179,6 +287,8 @@ export class Avatar3D implements AvatarLike {
   }
 
   emote(name: Emote) {
+    if (this.sleeping && name !== "surprised") return;
+    this.fx(name);
     let clip: string = name;
     if (name === "celebrate") clip = Math.random() < 0.3 ? "dance" : "flex";
     if (name === "shrug") clip = "surprised";
@@ -193,6 +303,61 @@ export class Avatar3D implements AvatarLike {
     this.emoteName = name;
   }
 
+  /** Effects + sound accents for emotes (events table; real clips get keyframe-timed events later). */
+  private fx(name: Emote) {
+    if (!this.life) return;
+    const head = this.head(0.2);
+    switch (name) {
+      case "celebrate": case "flex": case "dance":
+        // staggered twinkles on a ring around him (0.25 s each), so they read against the jungle, not his chest
+        this.around(10, 0.48).forEach((p, i) => this.vfx.spawn({ kind: "sparkle", at: p, size: 0.1 + Math.random() * 0.06,
+          life: 0.55, pop: true, delay: i * 0.06, spin: 2 }));
+        this.vfx.burst("star", head, 3, 0.6, 0.09, 1.0);
+        this.sfx.play("sparkle");
+        break;
+      case "happy": case "wave":
+        this.vfx.burst("heart", head, 4, 0.45, 0.09, 1.2);
+        this.sfx.play("pop");
+        break;
+      case "laugh":
+        this.vfx.burst("star", head, 4, 0.5, 0.06, 1.0);
+        this.sfx.play("boing");
+        break;
+      case "surprised":
+        if (!this.sleeping && this.sleepAmt < 0.3) this.vfx.spawn({ kind: "bang", at: this.head(0.2), size: 0.22, life: 0.8, pop: true });
+        break;
+      case "shrug":
+        this.vfx.spawn({ kind: "question", at: this.head(0.2), size: 0.16, life: 1.4, pop: true, sway: 0.02 });
+        this.sfx.play("boing", 0.6);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private doIdle(now: number) {
+    if (!this.brain || !this.life) return;
+    const busy = this.state !== "idle" || !!this.emoting || this.yawnT >= 0;
+    const a = this.brain.tick(now, busy);
+    if (a.kind === "glance") this.life.glance();
+    else if (a.kind === "clip") this.emote(a.name as Emote);
+    else if (a.kind === "yawn") { this.yawnT = 0; this.sfx.play("yawn"); }
+    else if (a.kind === "sleep") this.fallAsleep();
+  }
+
+  private sleepFrame(now: number) {
+    if (!this.life) return;
+    // ZZZ from the mouth on each slow exhale; rhythm effect: soft fade-in, sine sway, growing as they rise.
+    if (now > this.nextZ) {
+      this.nextZ = now + 1300 + Math.random() * 300;
+      const big = Math.random();
+      this.vfx.spawn({ kind: "z", at: this.mouth(), size: 0.11 + big * 0.08, life: 2.8, pop: false, sway: 0.05,
+        vel: new THREE.Vector3(0.11, 0.22, 0.02), grow: [0.6, 1.35], spin: 0.25,
+        onSpawn: () => this.sfx.play("zPop", 0.7) });
+    }
+    if (now > this.nextSnore) { this.nextSnore = now + 6500 + Math.random() * 1500; this.sfx.play("snore"); }
+  }
+
   // ------------------------------------------------------------ frame
   private setMorph(name: string, v: number) {
     for (const r of this.morphMap.get(name) ?? []) r.influences[r.index] = v;
@@ -203,13 +368,24 @@ export class Avatar3D implements AvatarLike {
     const t = performance.now();
     this.mixer?.update(dt);
 
-    // Idle fidget so he never looks frozen.
-    if (this.state === "idle" && !this.emoting && t > this.nextFidget) {
-      const pick = (["wave", "flex", "happy"] as Emote[])[Math.floor(Math.random() * 3)];
-      this.emote(pick);
-      this.host.querySelector(".banana-rain")?.replaceChildren();
-      this.nextFidget = t + 15000 + Math.random() * 15000;
+    // Idle life: weighted fidgets with cooldowns, then drowsy -> asleep (docs/ANIMATION-UI-DIRECTION.md §4).
+    this.doIdle(t);
+    const sleepTarget = this.sleeping ? 1 : 0;
+    this.sleepAmt += (sleepTarget - this.sleepAmt) * (1 - Math.exp(-(this.sleeping ? 0.8 : 4) * dt));
+    if (this.life) {
+      this.life.sleepiness = this.sleepAmt;
+      this.life.lookWeight = this.emoting && /dance|flex/.test(this.emoteName ?? "") ? 0.3 : 1;
+      this.life.update(dt, this.model!);
     }
+    if (this.sleeping) this.sleepFrame(t);
+    // Thinking for a while: little sweat drops at the temple.
+    if (this.state === "thinking" && t - this.stateSince > 3000 && t > this.nextSweat && this.life) {
+      this.nextSweat = t + 1700;
+      const temple = this.life.worldPos("head", new THREE.Vector3(), new THREE.Vector3(0.2, 0.34, 0.12));
+      this.vfx.spawn({ kind: "sweat", at: temple, size: 0.06, life: 0.9, pop: true,
+        vel: new THREE.Vector3(0.12, 0.15, 0), gravity: 1.2, onSpawn: () => this.sfx.play("sweat") });
+    }
+    this.vfx.update(dt);
 
     // Lip sync (after the mixer so it layers over clip-driven morphs).
     const talking = this.state === "speaking";
@@ -234,14 +410,34 @@ export class Avatar3D implements AvatarLike {
       if (!this.expr[k] && next < 0.002) delete this.exprNow[k];
     }
 
-    // Blinks.
+    // Yawn (drowsy): mouth stretches open over ~1.6 s, eyes squeeze, a pale puff at the end.
+    let yawn = 0;
+    if (this.yawnT >= 0) {
+      this.yawnT += dt;
+      const y = this.yawnT;
+      yawn = y < 0.5 ? y / 0.5 : y < 1.3 ? 1 : Math.max(0, 1 - (y - 1.3) / 0.5);
+      if (y > 1.25 && y - dt <= 1.25 && this.life) {
+        this.vfx.spawn({ kind: "puff", at: this.mouth(), size: 0.12, life: 0.9, vel: new THREE.Vector3(0.12, 0.1, 0.05),
+          grow: [0.6, 1.4], pop: false });
+      }
+      if (y > 1.9) this.yawnT = -1;
+    }
+    if (yawn > 0) {
+      this.setMorph("jawOpen", Math.max(this.jaw, yawn));
+      this.setMorph("mouthO", yawn * 0.6);
+      this.setMorph("squint", yawn * 0.8);
+    }
+
+    // Blinks (2 frames closing, 1 closed, 3 opening ≈ 140 ms; 15% double blinks). Asleep: eyes shut.
     if (t > this.nextBlink) {
       this.blinkUntil = t + 140;
-      this.nextBlink = t + 2500 + Math.random() * 3500;
+      this.nextBlink = t + (Math.random() < 0.15 ? 260 : 2000 + Math.random() * 4000);
     }
-    const blink = t < this.blinkUntil ? 1 : 0;
+    const blink = Math.max(t < this.blinkUntil ? 1 : 0, Math.min(1, this.sleepAmt * 1.4), this.brain?.drowsy ? 0.35 : 0);
     this.setMorph("blink_L", blink);
     this.setMorph("blink_R", blink);
+    // Snoring cheeks puff with each slow breath.
+    if (this.sleepAmt > 0.05) this.setMorph("cheekPuff", this.sleepAmt * (0.25 + 0.3 * Math.max(0, Math.sin(t / 1000 * 0.9))));
 
     // Glow follows the assistant state.
     const s = this.state;
@@ -251,12 +447,14 @@ export class Avatar3D implements AvatarLike {
     else if (s === "thinking") g = 0.7 + 0.5 * Math.sin(sec * Math.PI * 2 * 2);
     else if (s === "speaking") g = 1 + 1.6 * this.level;  // spec says 1 + 4×level; scaled for the live (no-bloom) render
     if (this.emoteName) g = Math.max(g, 1.3);
+    g *= 1 - 0.75 * this.sleepAmt;      // headset LED dims while he sleeps
     g = Math.min(g, 2.6);
     // The model ships with emissive strength 3 (tuned for offline renders); ~1 per step reads right live.
     for (const m of this.glow) m.emissiveIntensity = Math.min(this.glowBase.get(m) ?? 1, 1.2) * g;
 
     // No bloom post-processing: it breaks the transparent background in WebView2/Chromium.
     this.renderer.render(this.scene, this.camera);
+    this.life?.restore();
   }
 }
 
