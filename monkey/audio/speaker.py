@@ -62,14 +62,15 @@ class Speaker:
                                        blocksize=BLOCK, callback=self._callback)
         self._stream.start()
 
-    def say(self, sentence: str) -> None:
+    def say(self, sentence: str, engine=None) -> None:
+        """Queue a sentence. `engine` forces one voice (Settings → Test), with no fallback."""
         import time
 
         with self._lock:
             self._pending += 1
         self._last_audio = time.monotonic()
         self._set_speaking(True)
-        self._sentences.put(sentence)
+        self._sentences.put(sentence if engine is None else (sentence, engine))
 
     def stop(self) -> None:
         """Barge-in: drop everything queued and stop talking now."""
@@ -142,9 +143,13 @@ class Speaker:
             if sentence is None:
                 return
             gen = self._gen
-            for engine in self.engines:
+            engines = self.engines
+            if isinstance(sentence, tuple):
+                sentence, forced = sentence
+                engines = [forced]
+            for engine in engines:
                 try:
-                    if not engine.available():
+                    if not getattr(engine, "enabled", lambda: True)() or not engine.available():
                         continue
                     self._run_engine(engine, sentence, gen)
                     break

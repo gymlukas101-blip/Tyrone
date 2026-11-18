@@ -69,7 +69,7 @@ def main() -> None:
     res["mean_rtf"] = round(float(np.mean([r["rtf"] for r in rows])), 2)
     res["mean_first_audio_s"] = round(float(np.mean([r["first_audio_s"] for r in rows])), 2)
     (out / "results.json").write_text(json.dumps(res, indent=1))
-    print(json.dumps({k: res[k] for k in ("pack_mb", "load_s", "mean_rtf", "mean_first_audio_s", "reference")}))
+    print(json.dumps({k: res.get(k) for k in ("download", "files", "pack_mb", "load_s", "mean_rtf", "mean_first_audio_s", "reference")}))
 
 
 if __name__ == "__main__":

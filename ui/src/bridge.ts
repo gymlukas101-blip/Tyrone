@@ -60,6 +60,9 @@ export interface Api {
   cleanup_dismiss(): Promise<void>;
   report_ui_error(info: string): Promise<void>;
   make_voice_kit(takes: number): Promise<{ ok: boolean; error?: string }>;
+  offline_voice_state(): Promise<{ installed: boolean; own_voice: boolean; mode: string; downloading: boolean }>;
+  download_offline_voice(): Promise<{ ok: boolean; error?: string }>;
+  test_offline_voice(): Promise<{ ok: boolean; error?: string; own_voice?: boolean }>;
   get_user_sounds(): Promise<Record<string, string[]>>;
   get_sound(rel: string): Promise<string>;
   get_policy(): Promise<Policy>;
@@ -246,6 +249,13 @@ function mockApi(): Api {
       return { ok: true };
     },
     async get_user_sounds() { return {}; },
+    async offline_voice_state() { return { installed: false, own_voice: false, mode: "fallback", downloading: false }; },
+    async download_offline_voice() {
+      let mb = 0;
+      const iv = setInterval(() => { mb += 25; emit([["offlinevoice", mb >= 200 ? { finished: true, ok: true, mb: 200 } : { done: mb * 1e6, total: 200e6, what: "downloading" }]]); if (mb >= 200) clearInterval(iv); }, 200);
+      return { ok: true };
+    },
+    async test_offline_voice() { return { ok: false, error: "Download the offline voice first." }; },
     async get_sound() { return ""; },
     async get_policy() { return demoPolicy(); },
     async set_policy_entry(task, tier, model, effort) {

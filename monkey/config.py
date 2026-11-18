@@ -56,6 +56,7 @@ class Settings:
     juice_level: str = "auto"         # animation/VFX/SFX intensity: auto (follows Windows) | full | calm | minimal
     sfx_volume: int = 70              # 0-100, Monkey's sound effects (his voice has its own level)
     sleep_after_min: int = 8          # idle minutes before he dozes off (ZZZ)
+    offline_voice: str = "fallback"   # Pocket TTS clone: "fallback" (when Fish fails), "only" (never use Fish), "off"
     sfx_rejects: list = field(default_factory=list)  # sound takes you turned off in the Sound Lab ("laugh_2", ...)
     max_credits: bool = False         # paying with Claude Max's monthly API credits ($100): budget kept under it
     brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
@@ -106,6 +107,14 @@ class Config:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "monkey.db"
+
+    @property
+    def voice_pack_dir(self) -> Path:
+        """Offline voice model (~200 MB): machine-local (%LOCALAPPDATA%), never in the roaming profile."""
+        import os
+
+        local = os.environ.get("LOCALAPPDATA")
+        return Path(local) / "Monkey" / "voice-pack" if local else self.data_dir / "voice-pack"
 
     @property
     def cache_dir(self) -> Path:

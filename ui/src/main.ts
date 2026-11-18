@@ -113,7 +113,48 @@ function soundSection(s: Record<string, any>) {
       "(free until Nov 30, 2026) and saved on this PC, so they keep working after that. Takes about 3–5 minutes, once. " +
       "It also saves a clean sample of his voice for the offline voice."),
     h("div", { class: "field" }, h("span", {}, "Voice set"), make, status),
+    offlineVoiceRow(s),
     h("details", {}, h("summary", {}, "Sound Lab: hear every sound (click a number; right-click to turn a take off)"), lab));
+}
+/** Settings → Sound → Offline voice: Pocket TTS clone of Monkey's voice, free forever, runs on this PC. */
+function offlineVoiceRow(s: Record<string, any>) {
+  const st = h("span", { class: "meta", id: "offlineVoiceStatus" }, "…");
+  const refresh = async () => {
+    const v = await api.offline_voice_state();
+    st.textContent = v.downloading ? "Downloading…" : !v.installed ? "Not downloaded (~200 MB, once)"
+      : v.own_voice ? "✓ Ready: Monkey's own voice" : "✓ Ready (generic voice until you make Monkey's voice set)";
+    dl.textContent = v.installed ? "Re-download" : "⬇ Download";
+  };
+  const dl = h("button", { class: "ghost", type: "button", onclick: async () => {
+    const r = await api.download_offline_voice();
+    st.textContent = r.ok ? "Starting download…" : `⚠ ${r.error}`;
+  } }, "⬇ Download");
+  const test = h("button", { class: "ghost", type: "button", onclick: async () => {
+    const r = await api.test_offline_voice();
+    toast(r.ok ? (r.own_voice ? "🔊 Offline voice (Monkey's own)" : "🔊 Offline voice (generic: make the voice set to clone Monkey)") : `⚠ ${r.error}`);
+  } }, "▶ Test");
+  const mode = h("select", {},
+    h("option", { value: "fallback" }, "Use it when Fish isn't available"),
+    h("option", { value: "only" }, "Always use the offline voice (never Fish)"),
+    h("option", { value: "off" }, "Off (Windows voice as backup)"));
+  mode.value = s.offline_voice ?? "fallback";
+  mode.addEventListener("change", async () => { appState = await api.save_settings({ offline_voice: mode.value }); toast("Saved"); });
+  offlineVoiceRefresh = refresh;
+  void refresh();
+  return h("div", {},
+    h("div", { class: "field" }, h("span", {}, "Offline voice"), dl, test, st),
+    h("div", { class: "field" }, h("span", {}, ""), mode));
+}
+let offlineVoiceRefresh: (() => Promise<void>) | null = null;
+function offlineVoiceEvent(p: any) {
+  const st = document.getElementById("offlineVoiceStatus");
+  if (p.finished) {
+    toast(p.ok ? `✓ Offline voice downloaded (${p.mb} MB)` : `⚠ ${p.error}`);
+    void offlineVoiceRefresh?.();
+    return;
+  }
+  if (st) st.textContent = p.what === "unpacking" ? "Unpacking…" :
+    `Downloading ${Math.round(p.done / 1e6)} / ${Math.round(p.total / 1e6) || "?"} MB`;
 }
 let voiceKitHooks: { status: HTMLElement; done: () => Promise<void> } | null = null;
 function voiceKitEvent(p: any) {
@@ -289,7 +330,8 @@ function onEvent(name: string, p: any) {
       $("#routeChip").textContent = p.label;
       $("#routeChip").title = `${p.task ? p.task.replace(/_/g, " ") + ": " : ""}${p.reason}`; break;
     case "calibration": brainEvent(p); break;
-    case "voicekit": voiceKitEvent(p); break;
+    case "voicekit": voiceKitEvent(p); if (p.finished) void offlineVoiceRefresh?.(); break;
+    case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
     case "draft": draftCard(p); break;
     case "approval":

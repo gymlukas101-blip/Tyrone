@@ -58,7 +58,7 @@ The first time you talk to him, Monkey downloads the local speech-recognition mo
 | Step | Where | Required? |
 |---|---|---|
 | Anthropic API key | **Have Claude Max?** Claim your free $100/month of API credits (claude.ai → Settings → Billing → API credits), then platform.claude.com → API keys. See [docs/LLM-ACCESS.md](docs/LLM-ACCESS.md#using-your-claude-max-plans-api-credits-recommended) | **Yes** |
-| Fish Audio API key | fish.audio → API | Yes, for his real voice. Without it he falls back to the Windows voice. |
+| Fish Audio API key | fish.audio → API | Recommended: his real voice (free model until Nov 30, 2026), and needed once to make his voice set. After that, the offline voice (Settings → Sound) keeps his voice with no key. |
 | Design Monkey's voice | Settings → *Design voices* → listen → *Use this one* | Recommended |
 | Google (Gmail + Calendar) | See [Google setup](#google-setup) | Optional |
 | wisc.edu Outlook | Install and sign in to **classic Outlook**, then Settings → *Test connection* | Optional |
@@ -95,10 +95,13 @@ Alternatively, set the memory **sync folder** to a OneDrive folder on both PCs.
 | Settings and spend ledger | `%APPDATA%\Monkey\` |
 | API keys and Google token | `%APPDATA%\Monkey\secrets.dat`, encrypted with Windows DPAPI (only your Windows account on this PC can read it). Keys saved by older versions in Credential Manager move over automatically |
 | Chat history | `%APPDATA%\Monkey\monkey.db` (last messages show again when you reopen Monkey; ⟲ starts fresh) |
+| Monkey's voice set + voice sample | `%APPDATA%\Monkey\sfx\vocal\*.wav`, `%APPDATA%\Monkey\voice\monkey-ref.wav` (made once with Settings → Sound) |
+| Offline voice model | `%LOCALAPPDATA%\Monkey\voice-pack` (~200 MB, Kyutai Pocket TTS run with sherpa-onnx) |
 
 What gets sent where:
 - **Anthropic** receives your requests and the email, calendar and memory content needed to answer them.
-- **Fish Audio** receives the text Monkey speaks.
+- **Fish Audio** receives the text Monkey speaks. With the free `s2.1-pro-free` model (the default, free through Nov 30, 2026) Fish may use that text to improve its models; turn it off in Settings → Voice, or set Settings → Sound → Offline voice to "Always".
+- **The offline voice** runs entirely on your PC: nothing is sent anywhere. It clones Monkey's voice from the sample saved by "Make Monkey's voice set". Only clone voices you have the right to use.
 - **Speech-to-text** is local by default.
 
 Email and web content is treated as untrusted data: Monkey is instructed not to follow instructions inside emails or web pages.

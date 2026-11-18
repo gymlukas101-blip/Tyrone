@@ -210,10 +210,13 @@ class MonkeyApp:
         from .audio.tts import FishTTS, SystemTTS
 
         s = self.cfg.settings
+        fish = FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
+                       lambda: self.cfg.settings.fish_model, allow_free=lambda: self.cfg.settings.fish_allow_free,
+                       on_model_change=lambda m: self.cfg.update(fish_model=m))
+        fish.enabled = lambda: self.cfg.settings.offline_voice != "only"
+        self.offline_voice = self._make_offline_voice()
         self.speaker = Speaker(
-            [FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
-                     lambda: self.cfg.settings.fish_model, allow_free=lambda: self.cfg.settings.fish_allow_free,
-                     on_model_change=lambda m: self.cfg.update(fish_model=m)), SystemTTS()],
+            [fish, self.offline_voice, SystemTTS()],
             on_level=self.ui.level, on_state=lambda _: self._publish_state(), on_visemes=self.ui.visemes,
             on_fallback=self._voice_fallback,
         )
@@ -221,6 +224,7 @@ class MonkeyApp:
             self.speaker.start()
         except Exception as exc:  # noqa: BLE001
             self._emit("error", {"message": f"No speaker/headphones found: {exc}"})
+        self._warm_offline_voice()
         whisper = WhisperSTT(s.whisper_model, download_root=str(self.cfg.data_dir / "models"))
         deepgram = DeepgramSTT(lambda: keys.get("deepgram"))
         self.stt = lambda: deepgram if (self.cfg.settings.stt_engine == "deepgram" and keys.get("deepgram")) else whisper
@@ -263,6 +267,28 @@ class MonkeyApp:
             self._remember_chat(name, payload or {})
         self.ui.emit(name, payload)
 
+    def _warm_offline_voice(self) -> None:
+        """Load the offline model in the background so the first fallback sentence starts quickly."""
+        v = self.offline_voice
+
+        def warm():
+            try:
+                with v._lock:
+                    if v._tts is None:
+                        v._load()
+            except Exception as exc:  # noqa: BLE001
+                log.info("offline voice not ready: %s", exc)
+
+        if v.enabled() and v.available():
+            threading.Thread(target=warm, name="pocket-warm", daemon=True).start()
+
+    def _make_offline_voice(self):
+        from .audio.offline_voice import PocketVoice
+
+        v = PocketVoice(self.cfg.voice_pack_dir, lambda: self.cfg.data_dir / "voice" / "monkey-ref.wav")
+        v.enabled = lambda: self.cfg.settings.offline_voice != "off"
+        return v
+
     def _voice_fallback(self, engine: str, exc: Exception) -> None:
         """Monkey's Fish voice failed: say why (at most once a minute) instead of silently switching voices."""
         from .audio.tts import explain_fish_error
@@ -271,7 +297,9 @@ class MonkeyApp:
         if now - getattr(self, "_last_voice_warn", 0) < 60:
             return
         self._last_voice_warn = now
-        self._emit("warning", {"message": f"{explain_fish_error(exc)} Using the Windows voice for now."})
+        ov = getattr(self, "offline_voice", None)
+        backup = "Monkey's offline voice" if ov is not None and ov.enabled() and ov.available() else "the Windows voice"
+        self._emit("warning", {"message": f"{explain_fish_error(exc)} Using {backup} for now."})
 
     def _remember_chat(self, name: str, p: dict) -> None:
         """Keep the chat (exactly as shown on screen) so it's still there next time Monkey opens."""
@@ -846,6 +874,48 @@ class Api:
 
         threading.Thread(target=run, name="voicekit", daemon=True).start()
         return {"ok": True}
+
+    # offline voice (Pocket TTS via sherpa-onnx)
+    def offline_voice_state(self):
+        a = self._app
+        v = getattr(a, "offline_voice", None) or a._make_offline_voice()
+        ref = a.cfg.data_dir / "voice" / "monkey-ref.wav"
+        return {"installed": v.installed(), "own_voice": ref.exists(), "mode": a.cfg.settings.offline_voice,
+                "downloading": getattr(a, "_voice_dl", False)}
+
+    def download_offline_voice(self):
+        from .audio.offline_voice import download
+
+        a = self._app
+        if getattr(a, "_voice_dl", False):
+            return {"ok": False, "error": "Already downloading."}
+        a._voice_dl = True
+
+        def run():
+            try:
+                res = download(a.cfg.voice_pack_dir, progress=lambda p: a.ui.emit("offlinevoice", p))
+                a.ui.emit("offlinevoice", {"finished": True, **res})
+                if getattr(a, "offline_voice", None) is not None:
+                    a._warm_offline_voice()
+            except Exception as exc:  # noqa: BLE001
+                log.exception("offline voice download failed")
+                a.ui.emit("offlinevoice", {"finished": True, "ok": False, "error": f"Download failed: {exc}"})
+            finally:
+                a._voice_dl = False
+
+        threading.Thread(target=run, name="voice-pack", daemon=True).start()
+        return {"ok": True}
+
+    def test_offline_voice(self):
+        """Say a line with the offline voice only (so you can compare it with the Fish voice)."""
+        a = self._app
+        v = getattr(a, "offline_voice", None)
+        if v is None or not v.available():
+            return {"ok": False, "error": "Download the offline voice first."}
+        if a.speaker is None:
+            return {"ok": False, "error": "Audio isn't running."}
+        a.speaker.say("Yo! This is my offline voice. No internet, no credits, still me.", engine=v)
+        return {"ok": True, "own_voice": (a.cfg.data_dir / "voice" / "monkey-ref.wav").exists()}
 
     def get_user_sounds(self):
         from .audio.voicekit import user_sounds

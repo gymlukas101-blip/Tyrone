@@ -16,14 +16,14 @@ jobs:
       - run: pip install numpy httpx sherpa-onnx
       - name: Benchmark (2 threads, like a laptop under load)
         run: python -m tools.voice.bench_pocket --pack voice-pack --out voice-bench --threads 2
-      - name: Benchmark (4 threads)
-        run: python -m tools.voice.bench_pocket --pack voice-pack --out voice-bench-4t --threads 4
+      - name: Benchmark (1 thread, worst case)
+        run: python -m tools.voice.bench_pocket --pack voice-pack --out voice-bench-1t --threads 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: voice-bench
           path: |
             voice-bench
-            voice-bench-4t
+            voice-bench-1t
             voice-pack/**/*.txt
             voice-pack/**/*.md
