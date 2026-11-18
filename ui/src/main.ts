@@ -438,12 +438,26 @@ async function openSettings() {
           } }, "Design voices"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.test_voice();
-            toast(r.ok ? `✓ Using Monkey's Fish voice (${r.voice_id})` : `⚠ ${r.error} Playing the Windows voice instead.`, r.ok ? 4000 : 10000);
+            toast(r.ok ? `✓ Using Monkey's Fish voice (${r.voice_id}, ${r.model === "s2.1-pro-free" ? "free model" : r.model})` : `⚠ ${r.error} Playing the Windows voice instead.`, r.ok ? 5000 : 10000);
             if (r.ok) openSettings();
           } }, "Test voice")),
         voiceOut,
         field("Fish voice ID", "fish_voice_id", "text", { placeholder: "reference_id from fish.audio" }),
-        field("Fish model", "fish_model")),
+        h("div", { class: "field" }, h("span", {}, "Fish model"), (() => {
+          const sel = h("select", {},
+            h("option", { value: "s2.1-pro-free" }, "S2.1 Pro Free ($0, Fish's free tier, announced through Nov 30, 2026)"),
+            h("option", { value: "s2.1-pro" }, "S2.1 Pro (needs paid Fish API credits)"));
+          sel.value = s.fish_model ?? "s2.1-pro-free";
+          sel.addEventListener("change", async () => { appState = await api.save_settings({ fish_model: sel.value, fish_paid_confirmed: sel.value === "s2.1-pro" }); toast("Saved"); });
+          return sel;
+        })()),
+        h("label", { class: "field toggle" }, (() => {
+          const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
+          cb.checked = s.fish_allow_free !== false;
+          cb.addEventListener("change", async () => { appState = await api.save_settings({ fish_allow_free: cb.checked }); toast("Saved"); });
+          return cb;
+        })(), h("span", {}, "Use Fish's free model. Fish may use the text Monkey speaks to improve its models; turn off to use the offline voice only.")),
+        h("p", { class: "help" }, "“Design voices” is a paid Fish API feature (a fish.audio subscription doesn't include API credits). Your current voice works on the free model.")),
       h("section", {}, h("h4", {}, "Wake word & mic"),
         h("p", { class: "help" }, `Active wake word: ${appState.wakeword}. Push-to-talk hotkey works anytime.`),
         field("Sensitivity (0.3–0.9)", "wakeword_threshold", "number", { step: "0.05", min: "0.3", max: "0.9" }),

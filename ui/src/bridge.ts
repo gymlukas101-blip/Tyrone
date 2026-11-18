@@ -37,7 +37,7 @@ export interface Api {
   learn_style(): Promise<{ ok: boolean; error?: string; preview?: string }>;
   voice_design(instruction: string): Promise<{ ok: boolean; error?: string; candidates?: string[] }>;
   choose_voice(index: number): Promise<{ ok: boolean; error?: string; voice_id?: string }>;
-  test_voice(): Promise<{ ok: boolean; error?: string; voice_id?: string; engine?: string }>;
+  test_voice(): Promise<{ ok: boolean; error?: string; voice_id?: string; engine?: string; model?: string }>;
   export_memory(password: string): Promise<{ ok: boolean; error?: string; path?: string }>;
   import_memory(password: string): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   open_memory_folder(): Promise<void>;

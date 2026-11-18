@@ -149,7 +149,8 @@ class Listener:
                 scores = self.ww.predict(frame)
                 score = max(scores.values()) if scores else 0.0
                 # Be stricter while Monkey is talking so his own voice doesn't wake him.
-                thr = self.threshold() + (0.25 if self.is_speaking() else 0.0)
+                # (+0.1, not more: "Hey Monkey" must still interrupt him; echo of his own voice rarely scores high)
+                thr = self.threshold() + (0.1 if self.is_speaking() else 0.0)
                 if score >= min(thr, 0.95):
                     log.info("wake word %.2f", score)
                     self._begin_recording()

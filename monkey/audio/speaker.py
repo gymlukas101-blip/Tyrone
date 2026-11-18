@@ -17,6 +17,16 @@ from .visemes import estimate_visemes
 
 log = logging.getLogger(__name__)
 BLOCK = 1024  # ~23ms at 44.1k -> ~43 mouth updates per second
+STALL_S = 12.0   # "speaking" with no audio for this long = something hung: reset so Monkey never gets stuck
+
+
+def _deadline(text: str) -> float:
+    """Longest we wait for an engine to START producing audio for one sentence."""
+    return 8.0 + 0.06 * len(text)
+
+
+class EngineTimeout(RuntimeError):
+    pass
 
 
 class Speaker:
@@ -37,7 +47,9 @@ class Speaker:
         self._pending = 0
         self._lock = threading.Lock()
         self._stream = None
+        self._last_audio = 0.0
         threading.Thread(target=self._synth_loop, name="tts", daemon=True).start()
+        threading.Thread(target=self._watchdog, name="tts-watchdog", daemon=True).start()
 
     @property
     def speaking(self) -> bool:
@@ -51,8 +63,11 @@ class Speaker:
         self._stream.start()
 
     def say(self, sentence: str) -> None:
+        import time
+
         with self._lock:
             self._pending += 1
+        self._last_audio = time.monotonic()
         self._set_speaking(True)
         self._sentences.put(sentence)
 
@@ -76,6 +91,51 @@ class Speaker:
             if not value:
                 self.on_level(0.0)
 
+    def _run_engine(self, engine, sentence: str, gen: int) -> None:
+        """Stream one sentence from an engine on a helper thread, so a hung engine can't freeze Monkey."""
+        q: queue.Queue = queue.Queue()
+
+        def work():
+            try:
+                for chunk in engine.stream_pcm(sentence):
+                    q.put(chunk)
+                q.put(StopIteration)
+            except Exception as exc:  # noqa: BLE001
+                q.put(exc)
+
+        threading.Thread(target=work, name=f"tts-{type(engine).__name__}", daemon=True).start()
+        timeout, got = _deadline(sentence), False
+        while True:
+            try:
+                item = q.get(timeout=timeout if not got else 15.0)
+            except queue.Empty:
+                raise EngineTimeout(f"{type(engine).__name__} didn't produce audio in time") from None
+            if item is StopIteration:
+                if not got:
+                    raise RuntimeError(f"{type(engine).__name__} returned no audio")
+                return
+            if isinstance(item, Exception):
+                if got:          # failed mid-sentence: keep what played, don't repeat the start on another voice
+                    log.warning("TTS engine %s failed mid-sentence: %s", type(engine).__name__, item)
+                    return
+                raise item
+            got = True
+            if gen != self._gen:
+                return
+            self._audio.put(item)
+
+    def _watchdog(self) -> None:
+        import time
+
+        while True:
+            time.sleep(1.0)
+            if self._speaking and self._sentences.empty() and self._audio.empty() and self._buf.size == 0 \
+                    and time.monotonic() - self._last_audio > STALL_S:
+                log.warning("speaker stalled (pending=%s); resetting", self._pending)
+                with self._lock:
+                    self._pending = 0
+                self._set_speaking(False)
+
     def _synth_loop(self) -> None:
         while True:
             sentence = self._sentences.get()
@@ -86,10 +146,7 @@ class Speaker:
                 try:
                     if not engine.available():
                         continue
-                    for chunk in engine.stream_pcm(sentence):
-                        if gen != self._gen:
-                            break
-                        self._audio.put(chunk)
+                    self._run_engine(engine, sentence, gen)
                     break
                 except Exception as exc:  # noqa: BLE001 - try the next engine
                     log.warning("TTS engine %s failed: %s", type(engine).__name__, exc)
@@ -115,6 +172,7 @@ class Speaker:
                         self._pending = max(0, self._pending - 1)
                     continue
                 self._buf = nxt
+            self._last_audio = __import__("time").monotonic()
             take = min(frames - filled, self._buf.size)
             out[filled:filled + take] = self._buf[:take]
             self._buf = self._buf[take:]

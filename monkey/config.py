@@ -40,7 +40,9 @@ class Settings:
     user_name: str = ""
     # Voice
     fish_voice_id: str = "4a396e7e91a640a2b1e0f06249cbcd14"  # Fish Audio voice (reference_id) - your pick
-    fish_model: str = "s2.1-pro"      # Fish TTS model header value
+    fish_model: str = "s2.1-pro-free"  # Fish TTS model header: "s2.1-pro-free" ($0, Fish may use text for training) | "s2.1-pro" (paid)
+    fish_allow_free: bool = True      # allow Fish's free model (else offline voice only)
+    fish_paid_confirmed: bool = False # user explicitly chose the paid model (skip the free migration)
     stt_engine: str = "whisper"       # "whisper" (local, free) | "deepgram" (faster, paid)
     whisper_model: str = "small.en"
     # Wake word
@@ -116,6 +118,9 @@ class Config:
             try:
                 raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
                 known = {k: v for k, v in raw.items() if k in Settings.__dataclass_fields__}
+                # One-time move to Fish's free model (the API is pay-as-you-go; subscriptions don't include it).
+                if known.get("fish_model") == "s2.1-pro" and not known.get("fish_paid_confirmed"):
+                    known["fish_model"] = "s2.1-pro-free"
                 return Settings(**known)
             except (json.JSONDecodeError, TypeError):
                 pass

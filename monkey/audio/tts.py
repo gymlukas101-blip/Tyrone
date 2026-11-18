@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import os
+import sys
 import tempfile
 from typing import Iterator
 
@@ -19,6 +20,8 @@ import numpy as np
 
 FISH_API = "https://api.fish.audio"
 TTS_RATE = 44100
+FREE_MODEL = "s2.1-pro-free"   # $0 developer tier (Fish: free through 2026-11-30, requests may be used for training)
+PAID_MODEL = "s2.1-pro"
 
 
 def normalize_voice_id(value: str) -> str:
@@ -35,8 +38,13 @@ def explain_fish_error(exc: Exception) -> str:
     t = str(exc)
     if "401" in t or "403" in t:
         return "Fish Audio didn't accept the API key. Re-paste it in Settings → API keys → Fish Audio."
+    if "voice-design" in t and "402" in t:
+        return ("Voice design is a paid feature on Fish's API (a fish.audio subscription doesn't include API credits). "
+                "Your current voice still works. To try new voices, design one on the fish.audio website and paste its ID.")
     if "402" in t or "insufficient" in t.lower() or "balance" in t.lower() or "credit" in t.lower():
-        return "Your Fish Audio account is out of credits (fish.audio → billing)."
+        if FREE_MODEL in t:
+            return "Fish's free model isn't available right now (the free period may have ended)."
+        return "That Fish model needs paid API credits; Monkey switched to Fish's free model."
     if "404" in t or "reference" in t.lower() or "model not found" in t.lower():
         return "Fish couldn't find that voice. Check the Fish voice ID (the 32-character code from the voice's link)."
     if "429" in t:
@@ -54,36 +62,68 @@ MONKEY_PREVIEW_TEXT = "Yo, what's good? I got you. Your exam's Thursday at nine,
 
 
 class FishTTS:
-    def __init__(self, api_key_getter, voice_id_getter, model_getter):
+    def __init__(self, api_key_getter, voice_id_getter, model_getter, allow_free=lambda: True,
+                 on_model_change=None):
         self._key, self._voice, self._model = api_key_getter, voice_id_getter, model_getter
+        self._allow_free = allow_free
+        self._on_model_change = on_model_change   # persist an automatic paid -> free switch
+        self._forced_free = False
 
     def available(self) -> bool:
-        return bool(self._key())
+        if not self._key():
+            return False
+        return self.model() != FREE_MODEL or bool(self._allow_free())
 
-    def stream_pcm(self, text: str) -> Iterator[np.ndarray]:
-        """Yield int16 mono PCM chunks at TTS_RATE as they arrive."""
+    def model(self) -> str:
+        m = self._model() or FREE_MODEL
+        return FREE_MODEL if self._forced_free else m
+
+    def _request(self, text: str, model: str):
         body = {"text": text, "format": "pcm", "sample_rate": TTS_RATE, "latency": "balanced", "normalize": True}
         voice = normalize_voice_id(self._voice())
         if voice:
             body["reference_id"] = voice
-        headers = {"Authorization": f"Bearer {self._key()}", "model": self._model() or "s2.1-pro"}
-        leftover = b""
-        with httpx.stream("POST", f"{FISH_API}/v1/tts", json=body, headers=headers, timeout=30) as r:
-            if r.status_code >= 400:
-                r.read()
-                raise RuntimeError(f"Fish TTS {r.status_code}: {r.text[:200]}")
-            for chunk in r.iter_bytes(8192):
-                data = leftover + chunk
-                cut = len(data) - (len(data) % 2)
-                leftover = data[cut:]
-                if cut:
-                    yield np.frombuffer(data[:cut], dtype=np.int16)
+        # The model is chosen by this HEADER (a body field is ignored); unknown values fall back to paid s2.1-pro.
+        headers = {"Authorization": f"Bearer {self._key()}", "model": model}
+        return httpx.stream("POST", f"{FISH_API}/v1/tts", json=body, headers=headers, timeout=30)
+
+    def stream_pcm(self, text: str) -> Iterator[np.ndarray]:
+        """Yield int16 mono PCM chunks at TTS_RATE as they arrive.
+
+        402 on a paid model -> retry once on the free model (and remember it). 429 -> wait 2 s, retry once."""
+        import time
+
+        model = self.model()
+        for attempt in range(3):
+            with self._request(text, model) as r:
+                if r.status_code == 402 and model != FREE_MODEL and self._allow_free():
+                    r.read()
+                    model = FREE_MODEL
+                    self._forced_free = True
+                    if self._on_model_change:
+                        self._on_model_change(FREE_MODEL)
+                    continue
+                if r.status_code == 429 and attempt < 2:
+                    r.read()
+                    time.sleep(2)
+                    continue
+                if r.status_code >= 400:
+                    r.read()
+                    raise RuntimeError(f"Fish TTS {r.status_code} ({model}): {r.text[:200]}")
+                leftover = b""
+                for chunk in r.iter_bytes(8192):
+                    data = leftover + chunk
+                    cut = len(data) - (len(data) % 2)
+                    leftover = data[cut:]
+                    if cut:
+                        yield np.frombuffer(data[:cut], dtype=np.int16)
+                return
 
 
 def fish_voice_design(api_key: str, instruction: str = MONKEY_VOICE_PROMPT,
                       preview_text: str = MONKEY_PREVIEW_TEXT) -> list[bytes]:
     """Generate candidate voices from a description. Returns WAV byte strings."""
-    r = httpx.post(
+    r = httpx.post(  # paid-only on the API: a 402 here is explained by explain_fish_error()
         f"{FISH_API}/v1/voice-design",
         headers={"Authorization": f"Bearer {api_key}", "model": "voice-design-1"},
         json={"instruction": instruction, "reference_text": preview_text},
@@ -128,35 +168,50 @@ def fish_create_voice(api_key: str, wav: bytes, title: str = "Monkey") -> str:
 
 
 class SystemTTS:
-    """Offline fallback using the OS voice (SAPI on Windows)."""
+    """Offline fallback using the Windows voice (SAPI 5), called directly through COM.
 
-    def __init__(self):
-        self._engine = None
+    Not pyttsx3: its runAndWait() is known to hang on repeated calls from a background thread, which froze
+    Monkey mid-sentence. Every call here makes fresh SAPI objects in a COM-initialized thread and renders the
+    sentence to a WAV file synchronously."""
 
     def available(self) -> bool:
+        if sys.platform != "win32":
+            return False
         try:
-            import pyttsx3  # noqa: F401
+            import win32com.client  # noqa: F401
 
             return True
         except Exception:  # noqa: BLE001
             return False
 
+    def _render(self, text: str, path: str) -> None:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        try:
+            voice = win32com.client.Dispatch("SAPI.SpVoice")
+            for v in voice.GetVoices():
+                desc = v.GetDescription().lower()
+                if "david" in desc or "guy" in desc or "male" in desc:
+                    voice.Voice = v
+                    break
+            voice.Rate = 1
+            stream = win32com.client.Dispatch("SAPI.SpFileStream")
+            stream.Open(path, 3)              # SSFMCreateForWrite
+            voice.AudioOutputStream = stream
+            voice.Speak(text, 0)              # synchronous
+            stream.Close()
+        finally:
+            pythoncom.CoUninitialize()
+
     def stream_pcm(self, text: str) -> Iterator[np.ndarray]:
-        import pyttsx3
         import soundfile as sf
 
-        if self._engine is None:
-            self._engine = pyttsx3.init()
-            self._engine.setProperty("rate", 175)
-            for v in self._engine.getProperty("voices"):
-                if "david" in v.name.lower() or "male" in (getattr(v, "gender", "") or "").lower():
-                    self._engine.setProperty("voice", v.id)
-                    break
         fd, path = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
         try:
-            self._engine.save_to_file(text, path)
-            self._engine.runAndWait()
+            self._render(text, path)
             data, sr = sf.read(path, dtype="int16")
             if data.ndim > 1:
                 data = data[:, 0]

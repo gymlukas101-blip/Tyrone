@@ -212,7 +212,8 @@ class MonkeyApp:
         s = self.cfg.settings
         self.speaker = Speaker(
             [FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
-                     lambda: self.cfg.settings.fish_model), SystemTTS()],
+                     lambda: self.cfg.settings.fish_model, allow_free=lambda: self.cfg.settings.fish_allow_free,
+                     on_model_change=lambda m: self.cfg.update(fish_model=m)), SystemTTS()],
             on_level=self.ui.level, on_state=lambda _: self._publish_state(), on_visemes=self.ui.visemes,
             on_fallback=self._voice_fallback,
         )
@@ -800,7 +801,9 @@ class Api:
             self._app._voice_candidates = fish_voice_design(key, instruction)
             return {"ok": True, "candidates": [base64.b64encode(w).decode() for w in self._app._voice_candidates]}
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": str(exc)}
+            from .audio.tts import explain_fish_error
+
+            return {"ok": False, "error": explain_fish_error(RuntimeError(f"voice-design {exc}"))}
 
     def choose_voice(self, index: int):
         from .audio.tts import fish_create_voice
@@ -826,8 +829,12 @@ class Api:
             result = {"ok": False, "engine": "windows", "error": "No Fish Audio key saved yet (Settings → API keys)."}
         else:
             try:
-                fish = FishTTS(lambda: keys.get("fish"), lambda: s.fish_voice_id, lambda: s.fish_model)
+                if not s.fish_allow_free and (s.fish_model or "") == "s2.1-pro-free":
+                    raise RuntimeError("free model turned off in Settings")
+                fish = FishTTS(lambda: keys.get("fish"), lambda: s.fish_voice_id, lambda: s.fish_model,
+                               on_model_change=lambda m: a.cfg.update(fish_model=m))
                 next(iter(fish.stream_pcm("Test.")), None)
+                result["model"] = fish.model()
             except Exception as exc:  # noqa: BLE001
                 result = {"ok": False, "engine": "windows", "error": explain_fish_error(exc)}
         a._last_voice_warn = time.time()   # the toast below already explains any problem

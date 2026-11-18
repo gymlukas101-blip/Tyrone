@@ -127,3 +127,138 @@ def test_speaker_reports_fallback():
             break
         time.sleep(0.02)
     assert seen and seen[0][0] == "Broken" and "404" in seen[0][1]
+
+
+# ------------------------------------------------------------------ Fish free model
+class _FakeStream:
+    def __init__(self, status, body=b""):
+        self.status_code, self._body, self.text = status, body, body.decode(errors="ignore") if body else ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+    def iter_bytes(self, n):
+        yield self._body
+
+
+def test_fish_paid_402_falls_back_to_free(monkeypatch):
+    import httpx
+
+    from monkey.audio import tts
+
+    seen, switched = [], []
+
+    def fake_stream(method, url, json=None, headers=None, timeout=None):
+        seen.append(headers["model"])
+        return _FakeStream(402, b'{"detail":"payment required"}') if headers["model"] == "s2.1-pro" \
+            else _FakeStream(200, b"\x01\x00\x02\x00")
+
+    monkeypatch.setattr(httpx, "stream", fake_stream)
+    f = tts.FishTTS(lambda: "k", lambda: "https://fish.audio/m/4a396e7e91a640a2b1e0f06249cbcd14/", lambda: "s2.1-pro",
+                    on_model_change=switched.append)
+    chunks = list(f.stream_pcm("hi"))
+    assert seen == ["s2.1-pro", "s2.1-pro-free"] and switched == ["s2.1-pro-free"] and len(chunks) == 1
+    assert f.model() == "s2.1-pro-free"
+
+
+def test_fish_429_retries_then_raises(monkeypatch):
+    import httpx
+
+    from monkey.audio import tts
+
+    calls = []
+    monkeypatch.setattr(httpx, "stream", lambda *a, **k: calls.append(1) or _FakeStream(429, b"busy"))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    f = tts.FishTTS(lambda: "k", lambda: "", lambda: "s2.1-pro-free")
+    import pytest
+    with pytest.raises(RuntimeError, match="429"):
+        list(f.stream_pcm("hi"))
+    assert len(calls) == 3
+
+
+def test_free_model_respects_privacy_toggle():
+    from monkey.audio import tts
+
+    assert not tts.FishTTS(lambda: "k", lambda: "", lambda: "s2.1-pro-free", allow_free=lambda: False).available()
+    assert tts.FishTTS(lambda: "k", lambda: "", lambda: "s2.1-pro", allow_free=lambda: False).available()
+
+
+def test_settings_migrate_to_free_model(tmp_path):
+    import json
+
+    from monkey.config import Config
+
+    (tmp_path / "settings.json").write_text(json.dumps({"fish_model": "s2.1-pro"}))
+    assert Config(tmp_path).settings.fish_model == "s2.1-pro-free"
+    (tmp_path / "settings.json").write_text(json.dumps({"fish_model": "s2.1-pro", "fish_paid_confirmed": True}))
+    assert Config(tmp_path).settings.fish_model == "s2.1-pro"
+
+
+def test_voice_design_402_explained():
+    from monkey.audio.tts import explain_fish_error
+
+    msg = explain_fish_error(RuntimeError("voice-design Client error '402 Payment Required' for url"))
+    assert "paid" in msg and "fish.audio website" in msg
+
+
+def test_hung_voice_engine_falls_through_and_never_sticks(monkeypatch):
+    """Regression: the Windows voice hung mid-sentence and Monkey stayed 'Talking' forever."""
+    import threading
+    import time
+
+    import numpy as np
+
+    from monkey.audio import speaker as spk
+
+    monkeypatch.setattr(spk, "_deadline", lambda text: 0.3)
+    forever = threading.Event()
+
+    class Hangs:
+        def available(self):
+            return True
+
+        def stream_pcm(self, text):
+            forever.wait()          # never returns (like pyttsx3's runAndWait)
+            yield np.zeros(1, dtype=np.int16)
+
+    class Ok:
+        def available(self):
+            return True
+
+        def stream_pcm(self, text):
+            yield np.ones(100, dtype=np.int16)
+
+    fell = []
+    sp = spk.Speaker([Hangs(), Ok()], on_level=lambda v: None, on_state=lambda s: None,
+                     on_fallback=lambda n, e: fell.append(n))
+    sp.say("hello there")
+    for _ in range(100):
+        if not sp._audio.empty():
+            break
+        time.sleep(0.02)
+    assert fell == ["Hangs"] and not sp._audio.empty()   # the second engine produced the sentence
+    forever.set()
+
+
+def test_speaker_watchdog_resets_stuck_speaking(monkeypatch):
+    import time
+
+    from monkey.audio import speaker as spk
+
+    monkeypatch.setattr(spk, "STALL_S", 0.2)
+    states = []
+    sp = spk.Speaker([], on_level=lambda v: None, on_state=states.append)
+    sp._set_speaking(True)
+    sp._pending = 3                   # pretend sentences were lost
+    sp._last_audio = time.monotonic() - 5
+    for _ in range(40):
+        if not sp.speaking:
+            break
+        time.sleep(0.1)
+    assert not sp.speaking and states[-1] is False and sp._pending == 0
