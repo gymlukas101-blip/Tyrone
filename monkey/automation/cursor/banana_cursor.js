@@ -61,7 +61,7 @@
     "@keyframes bcSpin{to{transform:rotate(360deg)}}",
     ".bc .badge{position:absolute;left:var(--bx);top:var(--by);min-width:18px;height:18px;padding:0 5px;border-radius:9px;",
     "  font:800 11px/18px 'Segoe UI',system-ui,sans-serif;color:#2a1c00;background:#ffd60a;box-shadow:0 1px 3px rgba(0,0,0,.45);",
-    "  border:1.5px solid #4d2b0f;text-align:center;opacity:0;transform:scale(.6);transition:opacity .15s,transform .15s}",
+    "  border:1.5px solid #4d2b0f;text-align:center;white-space:nowrap;opacity:0;transform:scale(.6);transition:opacity .15s,transform .15s}",
     ".bc .badge.on{opacity:1;transform:scale(1)}",
     ".bc .badge.amber{background:#ff9f1a}.bc .badge.err{background:#ff5a6e;color:#fff}.bc .badge.ok{background:#39d96a}",
     ".bc .spark{position:absolute;width:5px;height:5px;margin:-2.5px;border-radius:50%;background:#fff3a8;",
@@ -70,7 +70,20 @@
     ".bc.err .body{animation:bcShake .32s ease}",
     "@keyframes bcShake{25%{translate:-2px 0}75%{translate:2px 0}}",
     ".bc.reduced .body,.bc.reduced .rip,.bc.reduced .rays i,.bc.reduced .ring svg,.bc.reduced .spark{animation:none!important;transition:none!important}",
-    ".bc.reduced .rip,.bc.reduced .arcs{display:none}"
+    ".bc.reduced .rip,.bc.reduced .arcs{display:none}",
+    // "Monkey's pick": a jungle-style tag beside the option he recommends (feedback only, never clickable)
+    ".pick{position:absolute;left:0;top:0;display:flex;align-items:center;gap:4px;height:20px;padding:0 8px 0 3px;",
+    "  border-radius:10px;background:linear-gradient(180deg,#ffe866,#ffc400);border:2px solid #4d2b0f;",
+    "  box-shadow:0 2px 0 #4d2b0f,0 0 8px rgba(255,196,0,.55);font:800 11px/1 'Segoe UI',system-ui,sans-serif;",
+    "  color:#3a2206;letter-spacing:.2px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .18s ease;",
+    "  z-index:2147483646}",
+    ".pick.on{opacity:1;animation:bcBob 1.8s ease-in-out infinite}",
+    ".pick:before{content:'';position:absolute;left:-8px;top:50%;margin-top:-5px;border:5px solid transparent;",
+    "  border-right:6px solid #4d2b0f}",
+    ".pick img,.pick svg{width:17px;height:17px;object-fit:contain;margin-top:-3px;filter:drop-shadow(0 1px 0 rgba(77,43,15,.6))}",
+    ".pick b{font-weight:900;background:#4d2b0f;color:#ffe14a;border-radius:7px;padding:1px 5px;margin-left:1px}",
+    "@keyframes bcBob{50%{translate:3px 0}}",
+    ".bc.reduced~.pick.on,.pick.on.still{animation:none}"
   ].join("\n");
 
   var RING = '<svg viewBox="0 0 40 40" width="100%" height="100%"><g fill="none" stroke-width="5.5" stroke-linecap="butt">' +
@@ -117,6 +130,18 @@
       "</div>";
     layer.appendChild(root);
     var body = root.querySelector(".body"), fx = root.querySelector(".fx"), badge = root.querySelector(".badge");
+    var pick = doc.createElement("div");
+    pick.className = "pick";
+    pick.setAttribute("aria-hidden", "true");
+    layer.appendChild(pick);
+    var pickAt = null;                                // document coordinates, so the tag stays put when you scroll
+    var placePick = function () {
+      if (!pickAt) return;
+      var sx = host === doc.querySelector("monkey-cursor") ? (window.scrollX || 0) : 0;
+      var sy = host === doc.querySelector("monkey-cursor") ? (window.scrollY || 0) : 0;
+      pick.style.transform = "translate3d(" + (pickAt.x - sx) + "px," + (pickAt.y - sy - 10) + "px,0)";
+    };
+    window.addEventListener("scroll", placePick, { passive: true });
 
     var dbg = { ripples: 0, lastRipple: null, hovers: 0 };
     var pos = { x: -999, y: -999 }, from = null, to = null, t0 = 0, dur = 0, raf = 0, visible = false;
@@ -274,8 +299,22 @@
         return { x: r.left - h.left + hx * sx, y: r.top - h.top + hy * sy, size: size, visible: visible };
       },
       position: function () { return { x: pos.x, y: pos.y }; },
+      /** Tag the option Monkey recommends: (x, y) = just right of the option's label, in host coordinates. */
+      mark: function (x, y, letter) {
+        var injected = host === doc.querySelector("monkey-cursor");
+        pickAt = { x: x + (injected ? (window.scrollX || 0) : 0), y: y + (injected ? (window.scrollY || 0) : 0) };
+        pick.innerHTML = (sprite ? '<img alt="" src="' + sprite.src + '">' : (opts.svg || "")) +
+          "<span>Monkey's pick</span>" + (letter ? "<b>" + String(letter).slice(0, 2) + "</b>" : "");
+        pick.classList.toggle("still", !!cfg._reduced);
+        placePick();
+        pick.classList.add("on");
+        return true;
+      },
+      unmark: function () { pickAt = null; pick.classList.remove("on"); return true; },
       debug: function () { return { ripples: dbg.ripples, lastRipple: dbg.lastRipple, fxNodes: fx.childNodes.length,
-        classes: root.className, visible: visible, badge: badge.textContent }; },
+        classes: root.className, visible: visible, badge: badge.textContent,
+        pick: pick.classList.contains("on") ? { text: pick.textContent, rect: (function () {
+          var r = pick.getBoundingClientRect(); return { x: r.left, y: r.top + r.height / 2, w: r.width }; })() } : null }; },
       timings: T,
     };
     layout();

@@ -81,7 +81,26 @@ export function taskPanel(compact = false): HTMLElement {
       .filter(Boolean).join(" · ")));
     if (t.state === "NEEDS_INPUT" && pend) {
       const card = h("div", { class: "needs" }, compact ? "" : h("p", {}, pend.message));
-      if (pend.kind === "approval" && ap) {
+      const say = async (text: string) => {
+        const r = await api.automation_reply(t.id, text);
+        toast(r.message, 3500);
+      };
+      if (pend.kind === "question" && pend.info?.options) {
+        const rec = pend.info.recommend?.letter;
+        if (compact) card.append(h("p", { class: "q" }, pend.info.question ?? ""));
+        card.append(h("div", { class: "opts" }, ...pend.info.options.map((o, i) => {
+          const L = String.fromCharCode(65 + i);
+          return h("button", { type: "button", class: `opt${L === rec ? " picked" : ""}`, title: `Answer ${L}`,
+            onclick: () => void say(L) }, h("b", {}, L), h("span", {}, o),
+            L === rec ? h("span", { class: "pickbadge", title: pend.info?.recommend?.reason ?? "" }, "🍌 Monkey's pick") : "");
+        })));
+        if (pend.info.recommend?.reason) card.append(h("p", { class: "meta why" }, `Why ${rec}: ${pend.info.recommend.reason}`));
+        card.append(h("p", { class: "meta" }, "Click a letter, or say or type it (“B”). You choose; Monkey clicks it."));
+      } else if (pend.kind === "confirm") {
+        if (compact) card.append(h("p", { class: "q" }, `“${pend.info?.statement ?? ""}”`));
+        card.append(h("button", { type: "button", class: "primary mini", onclick: () => void say("I confirm") }, "I confirm"),
+          h("p", { class: "meta" }, "Only if it's true for you. You can also say or type “I confirm”."));
+      } else if (pend.kind === "approval" && ap) {
         card.append(h("div", { class: "row" },
           h("button", { type: "button", class: "primary mini", onclick: async () => {
             const r = await api.automation_approve(t.id, ap.id, ap.token, true); if (!r.ok) toast(`⚠ ${r.error}`); } }, "Allow once"),
@@ -155,7 +174,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
     h("label", { class: "field toggle" }, askMore, h("span", {}, "Ask me before he types into or saves anything, too")),
-    h("p", { class: "help" }, `Monkey never answers quiz or exam questions, ticks confirmations for you, signs in or types passwords: he hands those to you and waits. He asks before anything that sends, submits, buys or deletes. Stop anytime with the Stop button or ${hotkey()}.`),
+    h("p", { class: "help" }, `Questions and confirmations are yours: Monkey reads each one out with his pick and a reason, then clicks exactly what you say ("B", "I confirm"). He clicks Complete module on his own. He never signs in or types passwords, and asks before anything that sends, submits, buys or deletes. Stop anytime with the Stop button or ${hotkey()}.`),
     h("div", { class: "row" },
       h("button", { type: "button", class: "ghost", onclick: async () => {
         const d = await api.automation_demo(); objective.value = d.objective; url.value = d.url; domains.value = d.domain; } }, "Try the safe demo course"),
@@ -220,6 +239,7 @@ export function initOverlay(avatarHost: HTMLElement, setMood: (mood: string) => 
     ring.dataset.help = t?.state === "NEEDS_INPUT" ? "1" : "";
     status.textContent = t ? `Monkey · ${STATE_LABEL[t.state] ?? t.state}` : "Monkey";
     if (t?.state === "NEEDS_INPUT" && mode === "minimized") setMode("compact");      // never hide a question
+    if (t?.state === "NEEDS_INPUT" && t.pending?.kind === "question" && mode !== "expanded") setMode("expanded");
     setTimeout(reportHits, 50);
   });
   onChange(() => setMood(current ? moodFor(current.state) : "idle"));

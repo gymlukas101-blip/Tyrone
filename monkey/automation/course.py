@@ -4,7 +4,9 @@ It reads the accessibility outline (roles + names), never screen positions, so r
 re-rendered pages and different layouts still work. Routine pages cost no tokens. Anything it doesn't recognize is
 handed to the Claude planner; anything that is the user's to do (answers, attestations, sign-in) is handed to the user.
 
-It never answers questions, ticks confirmations, signs in, speeds up or skips media, or touches completion flags.
+Questions and confirmations are the user's: Monkey reads them out with a suggestion and clicks only the option the user
+picks ("B") or the confirmation they give ("I confirm"). He never signs in, speeds up or skips media, or touches
+completion flags.
 """
 from __future__ import annotations
 
@@ -43,6 +45,22 @@ class Step:
     expect: str = "change"          # change | media_playing | none
     subgoal: str = ""
     approval_id: str = ""
+    info: dict = field(default_factory=dict)    # question/options or the confirmation statement, for the user
+
+
+CHECK = re.compile(r"^\W*(check|check answer|submit answer|check my answer)\W*$", re.I)
+
+
+def question_text(obs: Observation) -> str:
+    """The question itself: a question group's name, else the first line of page text with a question mark."""
+    for e in obs.elements:
+        if e.role in ("group", "radiogroup") and e.name and len(e.name) > 6:
+            return re.sub(r"^\s*question\s*\d*\s*[:.]\s*", "", e.name, flags=re.I).strip()
+    for line in obs.text.splitlines():
+        line = line.strip()
+        if "?" in line and 6 < len(line) < 300:
+            return re.sub(r"^\s*question\s*\d*\s*[:.]\s*", "", line, flags=re.I).strip()
+    return "Here's the question."
 
 
 @dataclass
@@ -134,16 +152,26 @@ class CourseSkill:
         complete = obs.find(("button", "link"), COMPLETE)
         enabled_next = [e for e in complete + cont if not e.disabled]
         if attest and not enabled_next:
-            return Step("user", user_kind="user_turn", wait_change=True, timeout_s=1800,
+            return Step("user", user_kind="confirm", wait_change=True, timeout_s=1800,
                         subgoal="your confirmation",
-                        message=f"This needs your own confirmation (“{attest[0].name[:80]}”). Tick it yourself if "
-                                "it's true; I'll take it from there.")
+                        message=f"This needs your confirmation: “{attest[0].name[:120]}”. Say or type “I confirm” if "
+                                "that's true (or tick it yourself).",
+                        info={"statement": attest[0].name[:200]})
         question = [e for e in obs.elements if e.in_question and e.role in ("radio", "checkbox", "textbox", "combobox")]
         if question and not enabled_next:
+            opts = [e.name for e in question if e.role in ("radio", "checkbox") and e.name]
+            qtext = question_text(obs)
+            if opts and len(opts) <= 8:
+                return Step("user", user_kind="question", wait_change=True, timeout_s=1800,
+                            subgoal="your answer to the question",
+                            message=f"{qtext} " + " ".join(f"{chr(65 + i)}) {o}." for i, o in enumerate(opts)) +
+                                    " Say or type a letter.",
+                            info={"question": qtext, "options": opts,
+                                  "check": next((e.name for e in obs.find(("button",), CHECK) if not e.disabled), "")})
             return Step("user", user_kind="user_turn", wait_change=True, timeout_s=1800,
-                        subgoal="your answer to the practice question",
-                        message="There's a question here, and the answers are yours. Answer it in the browser "
-                                "(ask me if you want it explained) and I'll continue when it's done.")
+                        subgoal="your answer to the question",
+                        message="There's a question here that needs typing. Answer it in the browser and I'll "
+                                "continue when it's done.")
         # 7. Media: press the page's own Play, then wait locally until it really ends (no tokens, no skipping).
         media = [m for m in obs.media if not m.get("ended")]
         if media and not enabled_next:
@@ -196,3 +224,39 @@ _PLAY_READY_JS = """() => [...document.querySelectorAll('video,audio')].some(m =
 _NEXT_ENABLED_JS = """() => [...document.querySelectorAll('button,a,[role=button]')].some(b =>
   /^\\W*(continue|next|next page|proceed|complete module|finish module|mark module complete)\\W*$/i
     .test((b.innerText || b.getAttribute('aria-label') || '').trim()) && !b.disabled)"""
+
+
+# ---- the user's reply to a question or confirmation ("B", "option b", "bee", "I confirm") ------------------------------
+_SPOKEN = {"a": "a", "ay": "a", "eh": "a", "b": "b", "be": "b", "bee": "b", "c": "c", "see": "c", "sea": "c",
+           "d": "d", "dee": "d", "e": "e", "f": "f", "eff": "f", "g": "g", "gee": "g", "h": "h"}
+_LETTER = re.compile(r"^\W*(?:(?:it'?s|its|i'?ll go with|go with|pick|choose|answer|option|letter|the answer is)\s+)*"
+                     r"\(?([a-z]{1,3}|[1-8])\)?\W*$", re.I)
+_CONFIRM = re.compile(r"^\W*(?:yes,?\s+)?(?:i\s+)?confirm(?:ed)?\b(?:[^?]*)$", re.I)
+
+
+def parse_reply(text: str, pending: dict | None) -> dict | None:
+    """{"kind": "answer", "index": n} | {"kind": "confirm"} | {"kind": "wrong_kind", "message"} | None (not a reply)."""
+    if not pending or pending.get("kind") not in ("question", "confirm"):
+        return None
+    t = " ".join((text or "").strip().split())
+    if not t or len(t) > 80:
+        return None
+    if pending["kind"] == "confirm":
+        if _CONFIRM.match(t):
+            return {"kind": "confirm"}
+        if _LETTER.match(t) and (_SPOKEN.get(_LETTER.match(t).group(1).lower()) or _LETTER.match(t).group(1).isdigit()):
+            return {"kind": "wrong_kind", "message": "That one's a confirmation, not a question: say “I confirm” if "
+                                                     "it's true."}
+        return None
+    m = _LETTER.match(t)
+    if m:
+        g = m.group(1).lower()
+        idx = int(g) - 1 if g.isdigit() else ("abcdefgh".index(_SPOKEN[g]) if g in _SPOKEN else None)
+        n = len(pending.get("info", {}).get("options", []))
+        if idx is not None:
+            if 0 <= idx < n:
+                return {"kind": "answer", "index": idx}
+            return {"kind": "wrong_kind", "message": f"There are only {n} options here (A to {chr(64 + n)})."}
+    if _CONFIRM.match(t):
+        return {"kind": "wrong_kind", "message": "That's a question: say a letter, like “B”."}
+    return None

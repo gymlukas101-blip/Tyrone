@@ -30,3 +30,12 @@ def test_course_completes_and_is_verified_by_the_server(variants, kw):
 def test_restart_mid_course_resumes_from_what_the_site_shows():
     r = run_one({"slow"}, media=1.0, seed=4, timeout=220, restart_test=True)
     assert r["restart_paused"] and r["verified_success"], r
+
+
+def test_you_say_it_he_clicks_it_with_monkeys_pick_tag():
+    """Questions/confirmations answered through Monkey (a wrong letter first), Complete module clicked automatically."""
+    r = run_one({"labels", "modal"}, media=1.0, seed=5, timeout=220, relay=True, wrong_first=True, cursor=True)
+    assert r["verified_success"], r
+    assert r["your_choice_clicks"] == 20                  # 4 × (wrong pick, check, right pick, check, confirm)
+    assert len(r["marks"]) >= 4 and all("Monkey's pick" in m["text"] for m in r["marks"])
+    assert not r["exam_submitted"] and not r["unauthorized"]

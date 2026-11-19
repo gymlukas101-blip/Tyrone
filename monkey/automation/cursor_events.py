@@ -170,6 +170,15 @@ class BrowserCursor:
         self._call("hide")
         self._emit("hide")
 
+    def mark(self, x: float, y: float, letter: str = "") -> bool:
+        """Show the "Monkey's pick" tag at (x, y) (viewport px, just right of the recommended option)."""
+        on = bool(self._call("mark", x, y, letter))
+        self._emit("mark", x=x, y=y, letter=letter)
+        return on
+
+    def unmark(self) -> None:
+        self._call("unmark")
+
     def tip(self) -> dict | None:
         return self._call("tip")
 

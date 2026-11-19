@@ -489,3 +489,18 @@ body.overlay #app { display: block; height: 100vh; }
 .cs-drop { border: 2px dashed #6b7480; color: #9aa3ad; border-radius: 8px; padding: 8px 12px; }
 .cs-ctl { display: flex; flex-wrap: wrap; gap: 6px; }
 .cs-ctl .ghost.mini { margin-left: 0; }
+.taskpanel .needs .opts { display: grid; gap: 5px; margin: 4px 0; }
+.taskpanel .needs .opt { display: flex; align-items: center; gap: 8px; text-align: left; padding: 5px 8px; border-radius: 10px;
+  background: var(--panel); border: 1.5px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
+.taskpanel .needs .opt b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--panel2); border: 1.5px solid var(--line); flex: none; }
+.taskpanel .needs .opt:hover { border-color: var(--accent); }
+.taskpanel .needs .opt.picked { border-color: #ffd60a; box-shadow: 0 0 0 2px rgba(255, 214, 10, .25); }
+.taskpanel .needs .opt.picked b { background: #ffd60a; color: #3a2206; border-color: #4d2b0f; }
+.pickbadge { margin-left: auto; white-space: nowrap; font-size: 11px; font-weight: 900; color: #3a2206; padding: 2px 8px;
+  border-radius: 10px; background: linear-gradient(180deg, #ffe866, #ffc400); border: 1.5px solid #4d2b0f;
+  box-shadow: 0 2px 0 #4d2b0f; }
+.taskpanel .needs .q { margin: 0 0 4px; font-weight: 700; }
+.taskpanel .needs .why { font-style: italic; }
+#ov .taskpanel.compact .needs .opt { padding: 3px 6px; font-size: 12px; }
+#ov .taskpanel.compact .pickbadge { font-size: 10px; padding: 1px 6px; }

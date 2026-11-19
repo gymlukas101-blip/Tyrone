@@ -257,3 +257,13 @@ def test_memory_search_skips_this_conversation_but_keeps_past_ones(tmp_path):
     out = runner.t_search_memory("library desk")
     assert "Sophomore CS major" in out and "shift moved to Friday" in out
     assert "Student at UW" not in out
+
+
+
+def test_a_letter_during_a_computer_task_goes_to_the_task_not_the_chat(mk, monkeypatch):
+    a, api, events = mk
+    monkeypatch.setattr(a.automation, "handle_reply", lambda text: "B: Your roommate. Checking it…" if text == "B" else None)
+    monkeypatch.setattr(a.agent, "handle", lambda *x, **k: (_ for _ in ()).throw(AssertionError("went to the chat")))
+    monkeypatch.setattr(a, "_say", lambda s: None)
+    a.ask("B", typed=True)
+    assert ("done", {"text": "B: Your roommate. Checking it…"}) in events

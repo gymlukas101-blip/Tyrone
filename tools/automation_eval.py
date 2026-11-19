@@ -59,8 +59,22 @@ def user_turn(page) -> str:
     return "nothing to do"
 
 
+def correct_index(question: str, options: list[str]) -> int:
+    """The simulated user knows the material (the demo course's answer key)."""
+    for q, opts, right in QUESTIONS:
+        if q[:30] in question or question[:30] in q:
+            return options.index(opts[right]) if opts[right] in options else right
+    return 0
+
+
+def fake_advisor(question: str, options: list[str]) -> dict:
+    """Stands in for the Haiku suggestion (no API key in CI): suggests the right one, with a reason."""
+    return {"index": correct_index(question, options), "reason": "that's what the lesson covered.", "usd": 0.0}
+
+
 def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, pause_test: bool = False,
-            restart_test: bool = False, headless: bool = True, cursor: bool = False) -> dict:
+            restart_test: bool = False, headless: bool = True, cursor: bool = False, relay: bool = False,
+            wrong_first: bool = False) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="monkey-eval-"))
     course = DemoCourse(media_seconds=media, variants=variants, seed=seed).start()
     gate = PermissionGate()
@@ -75,7 +89,9 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
             cur = BrowserCursor(CursorSettings(motion="full"))
         return BrowserSession(tmp / "profile", gate, headless=headless, executable_path=browser_path(), cursor=cur)
 
-    mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]))
+    marks: list = []
+    mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]),
+                      advisor=fake_advisor if relay else None)
     t = mgr.create("Finish all 4 modules of the safety training", course.url, ["127.0.0.1"])
     started = time.time()
     user_acts: list[str] = []
@@ -106,7 +122,34 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
                     if store.load(t.id).state != S.PAUSED:
                         resumed_ok = True
                         break
-            if cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("user_turn", "sign_in"):
+            if relay and cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("question", "confirm"):
+                key = (cur.pending.get("message"), len(cur.checkpoints))
+                if key not in handled:
+                    handled.add(key)
+                    time.sleep(0.4)                                  # the tag is drawn right after the question
+                    if cur.pending["kind"] == "confirm":
+                        said = "I confirm"
+                    else:
+                        info = cur.pending["info"]
+                        if (info.get("recommend") or {}).get("letter") and mgr.session is not None and cursor:
+                            n0 = len(marks)
+                            mgr.session.inbox.put(lambda page: marks.append(
+                                page.evaluate("() => window.__monkeyCursor && window.__monkeyCursor.debug().pick")))
+                            for _ in range(30):                      # read the tag before answering
+                                if len(marks) > n0:
+                                    break
+                                time.sleep(0.1)
+                        right = correct_index(info["question"], info["options"])
+                        if wrong_first and not any(u.startswith("wrong") for u in user_acts if info["question"][:20] in u):
+                            said = chr(65 + (right + 1) % len(info["options"]))
+                            user_acts.append(f"wrong:{info['question'][:20]}")
+                        else:
+                            said = chr(65 + right)
+                    user_acts.append(f"said {said}: {mgr.reply(t.id, said)}")
+                time.sleep(0.3)
+                continue
+            if cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("user_turn", "sign_in",
+                                                                                      "question", "confirm"):
                 key = (cur.pending.get("message"), cur.last_url, len(cur.checkpoints))
                 if key not in handled and mgr.session is not None:
                     handled.add(key)
@@ -125,7 +168,8 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
         if not cur.terminal:
             cur.state = S.RUNNING                     # what the DB holds if the process died mid-step
             store.save(cur)
-        mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]))
+        mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]),
+                          advisor=fake_advisor if relay else None)
         restarted = store.load(t.id).state == S.PAUSED
         mgr.start(t.id)
     final = None
@@ -152,6 +196,8 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
         "user_acts": user_acts, "errors": [e["kind"] for e in final.errors][-8:], "note": final.note,
         "pause_ok": paused_ok and resumed_ok if pause_test else None, "restart_paused": restarted if restart_test else None,
         "refused": sum(1 for a in store.audit_log(t.id) if a["outcome"] == "refused"), "cursor": cursor,
+        "your_choice_clicks": sum(1 for a in store.audit_log(t.id) if a["outcome"] == "your choice"),
+        "marks": [m for m in marks if m],
     }
     course.stop()
     shutil.rmtree(tmp, ignore_errors=True)

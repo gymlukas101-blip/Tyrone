@@ -229,3 +229,35 @@ def test_evidence_must_be_on_the_page():
     obs = Observation(title="Done", text="All 4 modules are complete.")
     assert evidence_on_page("all 4 modules are complete", obs)
     assert not evidence_on_page("Course passed with 100%", obs) and not evidence_on_page("", obs)
+
+
+# ---------------------------------------------------------------- "you say it, he clicks it"
+def test_reply_parser_letters_spoken_forms_and_confirmations():
+    from monkey.automation.course import parse_reply
+
+    q = {"kind": "question", "info": {"options": ["911", "Your roommate", "Your professor"]}}
+    c = {"kind": "confirm", "info": {"statement": "I confirm I reviewed module 1 myself"}}
+    assert parse_reply("B", q) == {"kind": "answer", "index": 1}
+    assert parse_reply("option c", q)["index"] == 2 and parse_reply("bee", q)["index"] == 1
+    assert parse_reply("see", q)["index"] == 2 and parse_reply("2", q)["index"] == 1
+    assert parse_reply("D", q)["kind"] == "wrong_kind"                       # only A-C here
+    assert parse_reply("I confirm", q)["kind"] == "wrong_kind"               # a question needs a letter
+    assert parse_reply("what's the capital of France?", q) is None           # normal chat, not a reply
+    assert parse_reply("I confirm", c) == {"kind": "confirm"} and parse_reply("confirm", c) == {"kind": "confirm"}
+    assert parse_reply("B", c)["kind"] == "wrong_kind"
+    assert parse_reply("B", None) is None and parse_reply("B", {"kind": "approval"}) is None
+
+
+def test_user_choice_grant_is_exact_and_one_time():
+    g = PermissionGate()
+    sc = scope()
+    pick = Action("click", Target("radio", "911", in_question=True))
+    other = Action("click", Target("radio", "Your roommate", in_question=True))
+    url = "http://127.0.0.1/module/1/3"
+    assert g.authorize(sc, pick, url).user_only                               # not without your choice
+    g.grant_user_choice("t1", pick, url)
+    assert not g.authorize(sc, other, url).allowed                            # only the option you picked
+    assert g.authorize(sc, pick, url).allowed                                 # that one, once
+    assert not g.authorize(sc, pick, url).allowed
+    with pytest.raises(PermissionError):
+        g.grant_user_choice("t1", Action("type", Target("textbox", "Password", input_type="password")), url)

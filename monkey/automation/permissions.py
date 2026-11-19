@@ -198,6 +198,9 @@ class PermissionGate:
         if risk == Risk.FORBIDDEN:
             return Decision(False, risk, why)
         if risk == Risk.USER_ONLY:
+            # Your own answer or confirmation (said, typed or clicked in Monkey) lets him click exactly that, once.
+            if self._consume(scope.id, action.fingerprint(page_url)):
+                return Decision(True, risk, "your choice")
             return Decision(False, risk, why, user_only=True)
         if risk == Risk.HIGH or (risk == Risk.MEDIUM and getattr(scope, "confirm_medium", False)):
             if self._consume(scope.id, action.fingerprint(page_url)):
@@ -223,6 +226,16 @@ class PermissionGate:
                 raise PermissionError("That approval isn't valid any more")
             a.status, a.token = "approved", ""
             return a
+
+    def grant_user_choice(self, task_id: str, action: Action, page_url: str) -> None:
+        """Only Monkey's reply handler calls this, with the user's own letter or "I confirm": a one-time grant for that
+        exact click. Page content can't reach it, and FORBIDDEN actions (passwords, codes) can never be granted."""
+        if classify(action)[0] == Risk.FORBIDDEN:
+            raise PermissionError("That can't be done for you")
+        a = Approval("uc_" + secrets.token_hex(4), task_id, action.fingerprint(page_url), action.describe(), "user_choice",
+                     token="", status="approved")
+        with self._lock:
+            self._approvals[a.id] = a
 
     def deny(self, approval_id: str) -> None:
         with self._lock:

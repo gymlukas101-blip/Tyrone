@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -47,7 +48,7 @@ class _Flags:
 class TaskManager:
     def __init__(self, store: TaskStore, gate: PermissionGate, session_factory: Callable[[Task], BrowserSession],
                  emit: Callable[[str, dict], None] = lambda n, p: None, planner=None, skill=None,
-                 max_session_losses: int = 2):
+                 max_session_losses: int = 2, advisor=None):
         self.store = store
         self.gate = gate
         self.session_factory = session_factory
@@ -55,6 +56,8 @@ class TaskManager:
         self.planner = planner
         self.skill = skill or CourseSkill()
         self.max_session_losses = max_session_losses
+        self.advisor = advisor          # (question, options) -> {"index", "reason"}: a suggestion; the user decides
+        self._replies: dict[str, dict] = {}
         self.session: BrowserSession | None = None
         self._flags: dict[str, _Flags] = {}
         # Playwright's sync API is bound to the thread that started it, so every task (and the browser) lives on
@@ -134,6 +137,26 @@ class TaskManager:
         f = self._flags.get(task_id)
         if f:
             f.wake.set()
+
+    def reply(self, task_id: str, text: str) -> str | None:
+        """The user's answer ("B") or confirmation ("I confirm") for the question/confirmation on screen.
+        Returns what to tell them, or None if the text isn't a reply (it then goes to the normal chat)."""
+        from .course import parse_reply
+
+        t = self.store.load(task_id)
+        if t is None or t.state != S.NEEDS_INPUT:
+            return None
+        r = parse_reply(text, t.pending)
+        if r is None:
+            return None
+        if r["kind"] == "wrong_kind":
+            return r["message"]
+        self._replies[task_id] = r
+        self.user_done(task_id)
+        if r["kind"] == "confirm":
+            return "Confirmed. Ticking it and finishing the module."
+        opt = t.pending.get("info", {}).get("options", [])[r["index"]]
+        return f"{chr(65 + r['index'])}: {opt}. Checking it…"
 
     def approve(self, task_id: str, approval_id: str, token: str) -> None:
         self.gate.approve(approval_id, token)
@@ -377,8 +400,18 @@ class TaskManager:
                 t.pending = {"kind": step.user_kind, "message": step.message}
                 if step.approval_id:
                     t.pending["approval_id"] = step.approval_id
-                self._set(t, S.NEEDS_INPUT, step.message)
+                if step.user_kind in ("question", "confirm"):
+                    self._describe(t, step, memo)
+                    self._mark_pick(s, t, obs)
+                self._set(t, S.NEEDS_INPUT, t.pending["message"])
+                self._replies.pop(t.id, None)
                 self._wait_user(t, f, obs.signature if step.wait_change else None, step.timeout_s)
+                r = self._replies.pop(t.id, None)
+                cur = getattr(s, "cursor", None)
+                if cur is not None and cur.enabled:
+                    cur.unmark()
+                if r is not None and not self._should_stop(f):
+                    self._apply_reply(t, s, step, r, memo, f)
             elif step.kind == "retry":
                 retries += 1
                 t.error("site_error", step.subgoal)
@@ -402,6 +435,95 @@ class TaskManager:
                     verify_fails = 0
 
     # ---- pieces --------------------------------------------------------------------------------------------------
+    def _describe(self, t: Task, step: Step, memo: dict) -> None:
+        """What Monkey says for a question (with his suggestion) or a confirmation (its exact words)."""
+        info = dict(step.info)
+        if step.user_kind == "confirm":
+            t.pending.update(info=info, speak=f"This one asks you to confirm: {info['statement']}. Say “I confirm” "
+                                                 f"if that's true.")
+            return
+        q, opts = info["question"], info["options"]
+        letters = " ".join(f"{chr(65 + i)}: {o}." for i, o in enumerate(opts))
+        rec = memo.setdefault("advice", {}).get(q)
+        if rec is None and self.advisor is not None and t.usage.model_calls < t.budget.max_model_calls:
+            try:
+                rec = self.advisor(q, opts) or {}
+                t.usage.model_calls += 1
+                t.usage.usd += float(rec.get("usd", 0) or 0)
+            except Exception:  # noqa: BLE001 - no suggestion is fine; the user still answers
+                log.debug("advisor failed", exc_info=True)
+                rec = {}
+            memo["advice"][q] = rec
+        rec = rec or {}
+        again = memo.pop("wrong", None)
+        lead = f"That wasn't it ({again}). " if again else ""
+        if "index" in rec and 0 <= rec["index"] < len(opts) and not again:
+            info["recommend"] = {"letter": chr(65 + rec["index"]), "reason": rec.get("reason", "")[:200]}
+            tip = f" I'd pick {chr(65 + rec['index'])}: {rec.get('reason', '')}".rstrip()
+        else:
+            tip = ""
+        t.pending.update(info=info, message=f"{lead}{q} {letters}{tip} Say or type a letter.",
+                         speak=f"{lead}{q} {letters}{tip}")
+
+    _LABEL_RIGHT_JS = """el => { const l = el.closest('label') || (el.labels && el.labels[0]) || el;
+      const r = l.getBoundingClientRect(); return {x: r.right, y: r.top + r.height / 2}; }"""
+
+    def _mark_pick(self, s: BrowserSession, t: Task, obs: Observation) -> None:
+        """Tag the option Monkey recommends, right beside it on the page (cursor art style; never clickable)."""
+        cur = getattr(s, "cursor", None)
+        rec = (t.pending.get("info") or {}).get("recommend") if t.pending else None
+        if cur is None or not cur.enabled or not rec:
+            return
+        idx = ord(rec["letter"]) - 65
+        opts = t.pending["info"]["options"]
+        el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opts[idx]), None)
+        if el is None:
+            return
+        try:
+            loc = s.locate(el)
+            loc.scroll_into_view_if_needed(timeout=2000)
+            p = loc.evaluate(self._LABEL_RIGHT_JS)
+            cur.mark(p["x"] + 14, p["y"], rec["letter"])
+        except Exception:  # noqa: BLE001 - a tag is a nicety; the question still waits for you
+            log.debug("couldn't place the pick tag", exc_info=True)
+
+    def _apply_reply(self, t: Task, s: BrowserSession, step: Step, r: dict, memo: dict, f: _Flags) -> None:
+        """Do exactly what the user said, through one-time grants, and check the page for the result."""
+        from .course import CHECK
+
+        obs = s.observe()
+        url = s.page.url if s.page else ""
+
+        def click_granted(el, why):
+            a = Action("click", el.target())
+            self.gate.grant_user_choice(t.id, a, url)
+            res = s.act(t, a, el, paused=self._should_stop(f))
+            t.usage.actions += 1
+            self.store.audit(t.id, "click", res.decision.risk.name if res.decision else "", f"{el.role} {el.name}", url,
+                             "your choice" if res.ok else "failed")
+            return res.ok
+
+        if r["kind"] == "confirm":
+            statement = step.info.get("statement", "")
+            box = next((e for e in obs.elements if e.role == "checkbox" and not e.checked and e.name == statement), None)
+            if box is not None and click_granted(box, "confirmation"):
+                t.checkpoint("confirmed", url, "you confirmed", {"statement": statement[:120]})
+            return
+        opt = step.info["options"][r["index"]]
+        el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opt), None)
+        if el is None or not click_granted(el, "answer"):
+            t.error("answer_failed", opt)
+            return
+        before = s.observe()
+        check = next((e for e in before.find(("button",), CHECK) if not e.disabled), None)
+        if check is not None:
+            click_granted(check, "check")
+            s.wait_change(before.signature, 6, lambda: self._should_stop(f))
+        after = s.observe()
+        if re.search(r"not quite|incorrect|wrong|try again", after.text, re.I):
+            memo["wrong"] = f"{chr(65 + r['index'])} was marked wrong"
+        t.checkpoint("answered", url, f"you chose {chr(65 + r['index'])}", {"choice": chr(65 + r["index"])})
+
     def _over_budget(self, t: Task, t0: float) -> str:
         b, u = t.budget, t.usage
         if (u.elapsed_s + time.time() - t0) / 60 > b.max_minutes:

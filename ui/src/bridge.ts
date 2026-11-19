@@ -121,6 +121,7 @@ export interface Api {
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
   automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
   automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;
+  automation_reply(taskId: string, text: string): Promise<{ ok: boolean; message: string }>;
   automation_history(taskId: string): Promise<{ ok: boolean; error?: string; task?: AutoTask; log?: AuditRow[] }>;
   automation_stop_all(): Promise<{ ok: boolean }>;
   automation_windows(): Promise<{ ok: boolean; windows: { hwnd: number; title: string; process: string; sensitive: boolean }[] }>;
@@ -129,7 +130,8 @@ export interface Api {
 
 export interface AutoTask {
   id: string; objective: string; mode: string; state: string; note: string; subgoal: string; start_url: string;
-  allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string } | null;
+  allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string;
+    info?: { question?: string; options?: string[]; statement?: string; recommend?: { letter: string; reason: string } } } | null;
   progress: { steps: number; modules_done: number }; usage: { actions: number; model_calls: number; usd: number; elapsed_s: number };
   created: number; updated: number; outcome: Record<string, any> | null; errors: { kind: string; detail: string }[];
 }
@@ -542,6 +544,7 @@ function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, 
       return { ok: true };
     },
     async automation_approve() { return { ok: true }; },
+    async automation_reply(_id: string, text: string) { return { ok: true, message: `${text}: checking it…` }; },
     async automation_history() { return { ok: true, task: st.tasks[0], log: [
       { ts: Date.now() / 1000, kind: "click", risk: "LOW", target: "link Start module 1", host: "127.0.0.1", outcome: "done" },
       { ts: Date.now() / 1000, kind: "play", risk: "LOW", target: "button Play lesson", host: "127.0.0.1", outcome: "done" }] }; },

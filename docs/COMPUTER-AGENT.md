@@ -52,6 +52,24 @@ python -m monkey
 - the banana's look at 125/150% scaling;
 - GPU/CPU in Task Manager while a lesson plays (expected: near idle).
 
+## Answering questions: "you say it, he clicks it"
+
+1. When a question appears, Monkey **reads it and the options aloud**, then gives **his pick and one sentence why**. The suggestion comes from Haiku 5.5, about $0.001 per question; the question text is marked as untrusted page data.
+2. A golden **"Monkey's pick" tag with the banana** appears beside that option on the page. The task panel and the companion show letter buttons, with the same badge on the pick.
+3. You **say, type or click** a letter ("B", "bee", "option b" and "2" all work). Monkey clicks that option and presses Check answer.
+   - If the site says it's wrong, he tells you and asks again.
+   - If it's right, he moves on.
+4. At a confirmation he reads the **exact statement** ("I confirm I reviewed module 2 myself"). Saying or typing **"I confirm"** ticks that box for the current module only. He then clicks **Complete module automatically**. That's a medium-risk action and runs without asking, as long as "Ask me before he types into or saves anything" is unticked, which is the default.
+5. How it's enforced:
+   - Your reply creates a **one-time grant for exactly that click** (that option, Check answer, that confirmation box).
+   - Only Monkey's own reply handler can create one, from your voice, chat or a button in Monkey's window.
+   - Page content can't create one.
+   - A different option isn't covered by the grant.
+   - Passwords and codes can never be granted.
+   - The audit log marks these clicks "your choice".
+
+You can still answer in the browser yourself; Monkey notices and continues.
+
 ## Evaluation (headless, Linux, real Chromium; `python -m tools.automation_eval --runs 24 --cursor alternate`)
 
 | Measure | Result (24 runs: 12 variant mixes × cursor off/on) |
@@ -111,7 +129,7 @@ What a run tests:
   - What it never decides from: page prose.
   - What each risk level does:
     - HIGH needs one-time UI tokens, consumed once.
-    - USER_ONLY (assessments, attestations, sign-in, survey answers) goes to the user.
+    - USER_ONLY (questions, attestations, sign-in, survey answers) goes to the user. Monkey clicks one only with that user's explicit one-time choice ("B", "I confirm"); sign-in is always done by the user.
     - FORBIDDEN (password, OTP and card fields; `javascript:`, `file:`, `data:` and `chrome:` URLs; off-list hosts) never runs.
 - **Untrusted content.** Page content is untrusted. Claude gets it inside `<untrusted_page>`, but the safety comes from the gate, not the prompt: the tests show a model that follows injected text gets refused.
 - **Data flow to Anthropic.** Only when the skill is stuck, Claude receives:

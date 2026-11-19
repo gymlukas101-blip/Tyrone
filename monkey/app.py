@@ -603,6 +603,15 @@ class MonkeyApp:
             self.ui.emit("emote", {"name": "sleep"})
 
     def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
+        # A letter ("B") or "I confirm" while a computer task is waiting on a question/confirmation goes to the task.
+        reply = self.automation.handle_reply(text) if getattr(self, "automation", None) else None
+        if reply is not None:
+            if not typed:
+                self.ui.emit("user", {"text": text})
+            self.ui.emit("delta", {"text": reply})
+            self.ui.emit("done", {"text": reply})
+            self._say(reply)
+            return
         if self._ensure_client() is None:
             self._emit("error", {"message": "Paste your Claude key in Settings → Start here first."})
             return
@@ -1757,6 +1766,9 @@ class Api:
     def automation_approve(self, task_id: str, approval_id: str, token: str, allow: bool = True):
         return self._app.automation.approve(task_id, approval_id, token, allow)
 
+    def automation_reply(self, task_id: str, text: str):
+        return self._app.automation.reply(task_id, text)
+
     def automation_history(self, task_id: str):
         return self._app.automation.history(task_id)
 
@@ -1775,7 +1787,7 @@ class Api:
             a.cfg.update(overlay_geom={k: int(v) for k, v in value.items() if k in ("x", "y", "w", "h")})
         elif action == "mode" and value in ("compact", "expanded", "minimized"):
             a.cfg.update(overlay_mode=value)
-            size = {"compact": (260, 352), "expanded": (380, 560), "minimized": (96, 96)}[value]
+            size = {"compact": (260, 352), "expanded": (380, 610), "minimized": (96, 96)}[value]
             if win is not None:
                 win.resize(*size)
         elif action in ("show", "hide"):
@@ -1954,7 +1966,7 @@ def run() -> None:
 
     if not position_on_screen(g.get("x"), g.get("y")):           # first run, or that monitor was unplugged
         g = {}
-    size = {"compact": (260, 352), "expanded": (380, 560), "minimized": (96, 96)}.get(app.cfg.settings.overlay_mode,
+    size = {"compact": (260, 352), "expanded": (380, 610), "minimized": (96, 96)}.get(app.cfg.settings.overlay_mode,
                                                                                       (260, 352))
     overlay = webview.create_window(
         "Monkey companion", url=str(index), js_api=OverlayApi(app), width=size[0], height=size[1],
