@@ -13,7 +13,7 @@ Cursor: [docs/cursor/README.md](cursor/README.md) and [REFERENCE-ANALYSIS.md](cu
 | D. Browser/desktop action drivers | Browser done. Desktop UIA driver written and tested on Windows CI (Notepad). It doesn't run tasks yet. |
 | E. Durable TaskManager | Done: state machine, store, checkpoints, budgets, approvals, pause/stop/e-stop, restart recovery. |
 | F. Synthetic 4-module workflow | Done: `monkey/automation/democourse.py` plus a 24-run evaluation (below). |
-| G. Recovery, security, packaging, regression | Done for the browser path. Packaging is updated (Playwright + Edge). Windows CI run pending. |
+| G. Recovery, security, packaging, regression | Done for the browser path. Packaging is updated (Playwright + Edge). Windows CI is green, and the installer artifact is on run 44615984685. |
 | Banana cursor | Done. The base art is the DEFAULT cursor isolated from the owner's reference (original pixels, IoU 0.99). Effects are measured from it. The Windows overlay hasn't been watched on the Dell yet. |
 
 Next, by evidence:
@@ -92,8 +92,8 @@ What a run tests:
 | `pytest tests/test_automation_desktop.py` | Coordinate maps (DPI, monitors to the left), sensitive windows; on Windows: Notepad UIA typing, observe-only refusal, native banana overlay | 5 passed, 3 skipped (Windows-only) |
 | `pytest tests/test_banana_cursor.py` | Banana in the real click path (see the cursor README) | 12 passed |
 | `pytest tests/test_automation_adversarial.py` | User's password never readable or typable, injected controls refused at the driver, a dead click isn't progress, e-stop halts mid-wait | 4 passed |
-| `pytest tests/test_automation_e2e.py` | Full course twice (with pause test; with cursor) plus a restart | see the CI run |
-| Whole suite | No regressions | see the commit message / CI |
+| `pytest tests/test_automation_e2e.py` | Full course twice (with pause test; with cursor) plus a restart | passed (Linux and Windows CI) |
+| Whole suite | No regressions | Linux container: 390 passed, 4 skipped. **Windows CI (run 44615984685): 391 passed, 3 skipped**, including Edge via `channel="msedge"`, Notepad UIA and the native banana overlay. The PyInstaller exe self-test passed. |
 
 ## Security review
 
