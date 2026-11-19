@@ -1297,8 +1297,8 @@ function memoryInspector() {
         } }, "Edit"),
         h("button", { class: "ghost mini", type: "button", title: "Delete this from Monkey's memory", onclick: async () => {
           const res = await api.memory_forget(f.id);
-          toast(res.ok ? "Forgotten" : `⚠ ${res.error}`);
-          if (res.ok) r.remove();
+          toast(res.ok ? `Forgotten: "${f.text.slice(0, 60)}"` : `⚠ ${res.error}`, 6000);
+          if (res.ok) void load();                  // refreshes the "N things" count too
         } }, "Forget")));
     return r;
   };

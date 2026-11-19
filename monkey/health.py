@@ -95,14 +95,15 @@ def _voice_checks(app) -> list[Check]:
     out = []
     s = app.cfg.settings
     fish = bool(keys.get("fish"))
-    out.append(Check("Voice", "Fish Audio key", OK if fish else WARN, "saved" if fish else "not saved",
-                     "" if fish else "Optional: Settings → Start here → Fish Audio key (without it Monkey uses his backup voice)"))
-    ref = Path(app.cfg.data_dir) / "voice" / "monkey-ref.wav"
-    out.append(Check("Voice", "Monkey's voice sample", OK if ref.exists() else WARN,
-                     "present" if ref.exists() else "missing (the offline voice will sound generic)",
-                     "" if ref.exists() else "Optional: Settings → Voice & sound → Make Monkey's voice set"))
     ov = getattr(app, "offline_voice", None)
     have_ov = bool(ov is not None and ov.available())
+    # Optional extras are a grey dash, not a warning: testers read "4 warnings" as "never all good".
+    out.append(Check("Voice", "Fish Audio key", OK if fish else (SKIP if have_ov else WARN), "saved" if fish else "not saved",
+                     "" if fish else "Optional: Settings → Start here → Fish Audio key (without it Monkey uses his backup voice)"))
+    ref = Path(app.cfg.data_dir) / "voice" / "monkey-ref.wav"
+    out.append(Check("Voice", "Monkey's voice sample", OK if ref.exists() else SKIP,
+                     "present" if ref.exists() else "missing (the offline voice will sound generic)",
+                     "" if ref.exists() else "Optional: Settings → Voice & sound → Make Monkey's voice set"))
     out.append(Check("Voice", "Offline voice", OK if have_ov else WARN,
                      "ready" if have_ov else "not downloaded yet",
                      "" if have_ov else "Settings → Voice & sound → Backup voice → Download"))

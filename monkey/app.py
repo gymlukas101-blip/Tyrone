@@ -601,6 +601,10 @@ class MonkeyApp:
             # Typing means "I'm not talking right now": don't open the mic for a follow-up afterwards (testers read
             # "Listening…" after a typed question as Monkey eavesdropping). Voice turns still continue hands-free.
             self._in_conversation = False
+            if self._listening:                       # mic opened (e.g. a mic click), then they typed instead
+                self._listening = False
+                if self.listener is not None and hasattr(self.listener, "cancel"):
+                    self.listener.cancel()
         if self.listener is not None and self.listener.mode == "conversation":
             self.listener.end_conversation()          # only listen again once he has answered
 

@@ -53,6 +53,20 @@ def test_typed_question_does_not_open_the_mic(mk, monkeypatch):
     assert a._in_conversation is False
 
 
+def test_typing_closes_a_mic_that_was_left_open(mk, monkeypatch):
+    """A mic click followed by typing left 'Ears up…' on screen with the mic still open."""
+    from types import SimpleNamespace as NS
+
+    a, api, _ = mk
+    monkeypatch.setattr(a, "_ensure_client", lambda: object())
+    monkeypatch.setattr(a.agent, "handle", lambda *x, **k: "ok")
+    cancelled = []
+    a.listener = NS(mode="wake", cancel=lambda: cancelled.append(1), end_conversation=lambda: None)
+    a._listening = True
+    a.ask("who's my math prof?", typed=True)
+    assert a._listening is False and cancelled
+
+
 def test_calendar_day_window_and_local_times():
     w = ToolRunner._day_window("tomorrow")
     today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
