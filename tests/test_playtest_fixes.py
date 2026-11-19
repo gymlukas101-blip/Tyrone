@@ -221,3 +221,25 @@ def test_brief_today_lists_classes_from_notes():
     today = next(x for x in b["sections"] if x["title"] == "Today")
     assert today["items"][0].startswith("11:00 AM COMP SCI 300") and "PSYCH 202" in today["items"][1]
     assert not any("MATH" in i for i in today["items"])
+
+
+# ---------------------------------------------------------------- verification round 5
+def test_memory_search_skips_this_conversation_but_keeps_past_ones(tmp_path):
+    """Monkey's earlier reply in the same chat (with a since-corrected fact) came back as a 'memory'."""
+    from monkey.memory.history import HistoryStore
+    from monkey.memory import facts as F
+
+    root = tmp_path / "memory"
+    (root / "memories").mkdir(parents=True)
+    F.add_fact(root / "memories", "profile.md", "Sophomore CS major, works at the library desk")
+    hist = HistoryStore(tmp_path / "h.db")
+    old = hist.start_session("old")
+    hist.add_message(old, "assistant", "Monkey said: the library desk shift moved to Friday", "reply")
+    now = hist.start_session("now")
+    hist.add_message(now, "assistant", "Here's what I know: Student at UW, library desk maybe", "reply")
+    runner = ToolRunner(NS(history=hist, emit=lambda *a: None, memory=NS(memory_root=str(root))))
+    runner._mem_root = lambda: root / "memories"
+    runner.user_texts, runner.session_id = ["what about the library desk"], now
+    out = runner.t_search_memory("library desk")
+    assert "Sophomore CS major" in out and "shift moved to Friday" in out
+    assert "Student at UW" not in out

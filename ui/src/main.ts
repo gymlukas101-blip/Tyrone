@@ -1084,6 +1084,8 @@ function healthSection() {
     h("div", { class: "field" }, btn), out);
 }
 
+const FIX_LABEL: Record<string, string> = { start: "Add Claude key", sound: "Open Voice & sound", feel: "Open Look & mic",
+  accounts: "Open Accounts", advanced: "Open Advanced", memory: "See what Monkey knows", brief: "Set class times" };
 const FIX_SECTION: Record<string, string> = { Brain: "start", Voice: "sound", Listening: "feel", Google: "accounts",
   Calendar: "accounts", Canvas: "accounts", Outlook: "accounts", Garmin: "advanced", Memory: "memory",
   "Morning brief": "brief", Budget: "advanced", App: "feel" };
@@ -1108,7 +1110,8 @@ function healthEvent(p: any) {
         c.fix && (c.status === "fail" || c.status === "warn") ? h("span", { class: "hfix" }, ` → ${c.fix} `,
           FIX_SECTION[c.area] ? h("button", { class: "ghost mini", type: "button", onclick: () => {
             if (c.area === "Memory") void openMemory(); else void openSettings(FIX_SECTION[c.area]);
-          } }, "Fix it") : "") : "")))),
+            toast("After fixing it, click Check everything again for a fresh report");
+          } }, FIX_LABEL[FIX_SECTION[c.area]] ?? "Fix it") : "") : "")))),
     h("button", { class: "ghost mini", type: "button", onclick: async () => {
       try { await navigator.clipboard.writeText(lastHealthReport); toast("Report copied: paste it anywhere (a text, Discord, or to Claude)"); }
       catch { toast("⚠ Couldn't copy"); }

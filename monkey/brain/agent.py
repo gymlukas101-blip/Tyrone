@@ -291,6 +291,7 @@ class Agent:
             self.user_texts.append(text)
             begin = getattr(self.tools, "begin_turn", None)
             if begin is not None:
+                self.tools.session_id = self.session_id  # memory search skips this chat; it's already in context
                 begin(text, self.user_texts)
 
             route = self.router.route(text, importance, sticky=sticky)  # type: ignore[arg-type]
