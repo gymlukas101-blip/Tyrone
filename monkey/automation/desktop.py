@@ -274,13 +274,16 @@ class DesktopSession:
     def read_text(self, c: Control) -> str:
         if c.is_password:
             return "[hidden]"
-        try:
-            return c._wrapper.window_text() or c._wrapper.get_value()
-        except Exception:  # noqa: BLE001
+        # The value first: window_text() is the control's *name* for edits ("Text Editor"), not what's typed in it.
+        for get in (lambda w: w.iface_value.CurrentValue, lambda w: w.get_value(), lambda w: "\n".join(w.texts()),
+                    lambda w: w.window_text()):
             try:
-                return c._wrapper.iface_value.CurrentValue
-            except Exception:  # noqa: BLE001
-                return ""
+                v = get(c._wrapper)
+                if v and v != c.name:
+                    return v
+            except Exception:  # noqa: BLE001 - this control doesn't support that pattern
+                continue
+        return ""
 
     def act(self, scope, action: Action, c: Control | None = None):
         from .browser import ActResult
