@@ -125,13 +125,16 @@ function offlineVoiceRow(s: Record<string, any>) {
   const refresh = async () => {
     const v = await api.offline_voice_state();
     st.textContent = v.downloading ? "Downloading…" : !v.installed ? "Not downloaded yet (about 200 MB, one time)"
-      : v.own_voice ? "✓ Ready, sounds like Monkey" : "✓ Ready (a generic voice until you make Monkey's voice set above)";
+      : v.own_voice ? "✓ On: if the main voice is down, Monkey uses this (sounds like him)" : "✓ On: if the main voice is down, Monkey uses this (a generic voice; the voice set above makes it sound like him)";
     dl.textContent = v.installed ? "Download again" : "⬇ Download";
+    (dl as HTMLButtonElement).disabled = !!v.downloading;
     test.disabled = !v.installed;
   };
   const dl = h("button", { class: "ghost", type: "button", onclick: async () => {
+    (dl as HTMLButtonElement).disabled = true;
     const r = await api.download_offline_voice();
     st.textContent = r.ok ? "Starting download…" : `⚠ ${r.error}`;
+    if (!r.ok) (dl as HTMLButtonElement).disabled = false;
   } }, "⬇ Download");
   const test = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.test_offline_voice();
@@ -219,6 +222,16 @@ function card(title: string, ...body: Child[]) {
     h("button", { class: "close", title: "Close", onclick: () => c.remove() }, "✕"),
     h("h3", {}, title), ...body);
   c.dataset.title = title;
+  // Older cards fold to their title bar (click to open) so the conversation stays readable.
+  cards.querySelectorAll<HTMLElement>(".card").forEach((old) => {
+    if (!(old.classList.contains("draft") && !old.classList.contains("sent"))) old.classList.add("folded");
+  });
+  c.querySelector("h3")!.addEventListener("click", () => {
+    if (c.classList.contains("folded")) {
+      cards.querySelectorAll<HTMLElement>(".card").forEach((o) => { if (o !== c && !(o.classList.contains("draft") && !o.classList.contains("sent"))) o.classList.add("folded"); });
+      c.classList.remove("folded");
+    }
+  });
   cards.prepend(c);
   while (cards.children.length > 4) cards.lastElementChild!.remove();
   return c;
@@ -278,17 +291,20 @@ function rankingCard(p: any) {
 function eventsCard(p: any) {
   card("📅 Calendar", p.label ? h("p", { class: "help" }, h("strong", {}, p.label)) : "",
     p.events.length ? h("ul", { class: "items" }, ...p.events.map((e: any) => h("li", {},
-      h("span", { class: "badge" }, e.source === "calendar" ? "your calendar" : e.source),
+      h("span", { class: "badge" }, ({ calendar: "your calendar", ics: "your calendar", google: "Google", canvas: "Canvas", outlook: "Outlook" } as Record<string, string>)[e.source] ?? e.source),
       h("div", {}, h("div", {}, e.title), h("div", { class: "meta" }, `${e.when ?? fmtTime(e.start)}${e.location ? " · " + e.location : ""}`)))))
       : h("p", { class: "help" }, "Nothing on your calendar then."));
 }
 
 function emailsCard(p: any) {
   if (!p.emails.length) return;
-  card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {},
-    h("span", { class: "badge" }, e.account),
+  // Click an email to have Monkey read it to you (testers expected rows to open).
+  card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {
+      class: "clickable", title: "Click to have Monkey read it",
+      onclick: () => { api.send_text(`Read me the email "${e.subject}" from ${e.sender} (id ${e.id}, ${e.account}).`, null); } },
+    h("span", { class: "badge" }, e.account === "gmail" ? "Gmail" : e.account === "outlook" ? "Outlook" : e.account),
     h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
-      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`))))));
+      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)} · click to read`))))));
 }
 
 function imagesCard(p: any) {
@@ -434,7 +450,7 @@ $("#convEnd").addEventListener("click", () => { $("#convChip").hidden = true; vo
 $("#newChat").addEventListener("click", () => {
   api.new_conversation(); log.replaceChildren();
   cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if (!(c.classList.contains("draft") && !c.classList.contains("sent"))) c.remove(); });
-  addMsg("sys", "New conversation started. Earlier chats are still saved in your history.");
+  addMsg("sys", "New conversation started. Monkey still remembers the earlier ones (Settings → Memory).");
 });
 $("#settingsBtn").addEventListener("click", () => openSettings());
 $("#labBtn").addEventListener("click", () => {
@@ -542,7 +558,7 @@ async function openSettings(section?: string) {
     const save = async () => {
       if (!inp.value.trim()) return;
       const r = await api.save_key(name, inp.value.trim());
-      if (!r.ok) { note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; return; }
+      if (!r.ok) { keyWarnings[name] = r.error ?? "it wasn't accepted"; note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; inp.select(); return; }
       inp.value = "";
       if (r.warning) { keyWarnings[name] = r.warning; toast(`⚠ ${label}: ${r.warning}`, 9000); }
       else {
@@ -587,7 +603,7 @@ async function openSettings(section?: string) {
       const v = type === "number" ? Number(inp.value) : inp.value;
       appState = await api.save_settings({ [key]: v });
       applyLook(appState.settings);
-      toast("Saved");
+      toast(`Saved: ${label}`);
     });
     return h("div", { class: "field" }, h("span", {}, label), inp);
   };
@@ -649,7 +665,7 @@ async function openSettings(section?: string) {
         h("label", { class: "field toggle" }, (() => {
           const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
           cb.checked = s.conversation_mode !== false;
-          cb.addEventListener("change", async () => { appState = await api.save_settings({ conversation_mode: cb.checked }); toast("Saved"); });
+          cb.addEventListener("change", async () => { appState = await api.save_settings({ conversation_mode: cb.checked }); toast(`Keep listening until the conversation is over: ${cb.checked ? "on" : "off"}`); });
           return cb;
         })(), h("span", {}, "Keep listening until the conversation is over (say “Hey Monkey” once, then just talk; say “thanks” or “that's all” to end)")),
         field("End a conversation after this many seconds of quiet", "conversation_idle_s", "number", { min: "15", max: "600", step: "5", placeholder: "90" }),
@@ -665,7 +681,7 @@ async function openSettings(section?: string) {
         h("div", { class: "field" }, h("span", {}, "Something not working?"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.open_log();
-            if (!r.ok) toast(`Log file: ${r.path}`);
+            toast(r.ok ? "Opened Monkey's log file (it shows what went wrong, for whoever helps you)" : `Log file: ${r.path}`, 6000);
           } }, "Open log")),
         h("div", { class: "field" }, h("span", {}, "Speech recognition"), (() => {
           const sel = h("select", {}, h("option", { value: "whisper" }, "Local Whisper (free, private)"),
@@ -720,13 +736,13 @@ async function openSettings(section?: string) {
             await openSettings();
             document.getElementById("googleSignIn")?.focus();
           } }, hasClient ? "Change setup file…" : "Choose file…");
-          const signIn = h("button", { class: hasClient ? "primary" : "ghost", type: "button", id: "googleSignIn", disabled: !hasClient, onclick: async () => {
+          const signIn = h("button", { class: hasClient && !connected ? "primary" : "ghost", type: "button", id: "googleSignIn", disabled: !hasClient, onclick: async () => {
             const r = await api.google_sign_in();
             if (!r.ok) { st.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
             st.textContent = "Opening Google sign-in in your browser…";
           } }, connected ? "Sign in again" : "Sign in with Google");
           return h("div", {},
-            h("p", { class: "help" }, connected ? "Monkey can read your Gmail and Google Calendar." :
+            h("p", { class: "help" }, connected ? `✓ Connected${appState.settings.google_account ? ` as ${appState.settings.google_account}` : ""}. Monkey can read your Gmail and Google Calendar.` :
               "Needs a one-time Google setup (about 5 minutes, steps below). Only want your schedule? The calendar link above is enough."),
             !connected && h("div", { class: "field" }, status(hasClient), h("span", {}, "Step 1: your Google setup file"), pick,
               h("span", { class: "meta" }, hasClient ? "✓ Loaded" : "client_secret_….json from your Downloads")),
@@ -743,18 +759,6 @@ async function openSettings(section?: string) {
           appState.connections.outlook && h("button", { class: "ghost", type: "button", onclick: async () => {
             await api.disconnect_outlook(); toast("Outlook disconnected: Monkey won't open it"); openSettings();
           } }, "Disconnect")),
-        (() => {
-          const ta = h("textarea", { rows: 2, placeholder: appState.connections.calendar_ics ? "Calendar link saved (paste to replace)" : "https://calendar.google.com/calendar/ical/…/private-…/basic.ics" }) as HTMLTextAreaElement;
-          return h("div", {},
-            h("div", { class: "field" }, status(!!appState.connections.calendar_ics), h("span", {}, "Calendar link (no sign-in)"), ta,
-              h("button", { class: "ghost", type: "button", onclick: async () => {
-                if (!ta.value.trim()) return;
-                const r = await api.save_key("calendar_ics", ta.value.trim());
-                toast(r.ok ? (r.warning ? `⚠ ${r.warning}` : `✓ ${r.note ?? "Saved"}`) : `⚠ ${r.error}`);
-                if (r.ok) openSettings();
-              } }, "Save")),
-            h("p", { class: "help" }, "Easiest way to give Monkey your class schedule: Google Calendar (web) → ⚙ Settings → click your calendar on the left → Integrate calendar → copy “Secret address in iCal format” and paste it here. Read-only; one link per line for several calendars. Keep it private: anyone with the link can see that calendar."));
-        })(),
         field("Canvas site", "canvas_base_url", "url"),
         h("div", { class: "field" }, h("span", {}, "Email writing style"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
@@ -842,8 +846,10 @@ async function openSettings(section?: string) {
         h("div", { class: "field", id: "voiceVolume" }, h("span", {}, "Monkey's voice volume"), (() => {
           const r = h("input", { type: "range", min: "25", max: "200", step: "5", value: String(s.voice_volume ?? 100),
             title: "100% = as loud as YouTube and music at the same Windows volume" }) as HTMLInputElement;
-          r.addEventListener("change", async () => { appState = await api.save_settings({ voice_volume: Number(r.value) }); toast(`Voice ${r.value}%`); });
-          return r;
+          const pct = h("span", { class: "meta" }, `${r.value}%`);
+          r.addEventListener("input", () => { pct.textContent = `${r.value}%`; });
+          r.addEventListener("change", async () => { appState = await api.save_settings({ voice_volume: Number(r.value) }); toast(`Saved: Monkey's voice at ${r.value}%`); });
+          return h("span", { class: "rangewrap" }, r, pct);
         })()),
         h("div", { class: "field", id: "voiceLoudness" }, h("label", {}, (() => {
           const c = h("input", { type: "checkbox" }) as HTMLInputElement;
@@ -903,6 +909,9 @@ async function openSettings(section?: string) {
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   organizeSettings(dlg);
+  dlg.querySelectorAll<HTMLDetailsElement>(".body details").forEach((d) => d.addEventListener("toggle", () => {
+    if (d.open && d.id !== "set-advanced") setTimeout(() => d.scrollIntoView({ behavior: "smooth", block: "nearest" }), 30);
+  }));
   for (const id of settingsOpenDetails) dlg.querySelector<HTMLDetailsElement>(`details#${id}`)?.setAttribute("open", "");
   if (!dlg.open) dlg.showModal();
   const body = dlg.querySelector<HTMLElement>(".body")!;
@@ -924,6 +933,7 @@ function organizeSettings(dlg: HTMLDialogElement) {
   const mic = sec("Wake word & mic"), accounts = sec("Accounts"), garmin = sec("Garmin"), brain = sec("Brain & budget");
   const look = sec("Look & feel"), sound = sec("Sound"), images = sec("Images & updates"), brief = sec("Morning brief"), memory = sec("Memory");
   // Start: name + the two keys that matter (Claude required, Fish optional)
+  if (health) health.id = "set-check";
   if (you) {
     you.id = "set-start"; you.querySelector("h4")!.textContent = "Start here";
     move(keysSec?.querySelector('[data-key="anthropic"]'), you);
@@ -946,10 +956,10 @@ function organizeSettings(dlg: HTMLDialogElement) {
   if (images && look) { for (const el of [...images.children].slice(1)) if (el !== imgModel) look.append(el); }
   // Advanced: optional keys, Fish voice design, Garmin, brain/budget/benchmark, image model, tech details
   const adv = h("details", { id: "set-advanced", class: "advanced" }, h("summary", {}, "⚙️ Advanced (optional keys, voice design, Garmin, AI models & budget, developer tools)")) as HTMLDetailsElement;
+  for (const x of [brain, garmin, fishSec]) if (x) adv.append(x);
   if (keysSec) { keysSec.querySelector("h4")!.textContent = "Optional keys"; adv.append(keysSec); }
   const ws = you?.querySelector("#workspaceRow");
   if (ws && keysSec) keysSec.append(ws);
-  for (const x of [fishSec, garmin, brain]) if (x) adv.append(x);
   if (imgModel) adv.append(h("section", {}, h("h4", {}, "Images"), imgModel));
   if (images) images.remove();
   adv.append(h("section", {}, h("h4", {}, "Developer"), (() => {
@@ -968,6 +978,13 @@ function organizeSettings(dlg: HTMLDialogElement) {
 }
 
 function jumpTo(dlg: HTMLDialogElement, id: string) {
+  if (id === "start" || id === "check") {           // the top: "Is everything working?" + Start here
+    dlg.querySelector<HTMLElement>(".body")!.scrollTop = 0;
+    const box = dlg.querySelector<HTMLElement>(id === "check" ? "#set-check" : "#set-start");
+    box?.classList.add("attention");
+    setTimeout(() => box?.classList.remove("attention"), 1600);
+    return;
+  }
   const el = dlg.querySelector<HTMLElement>(`#set-${id}`);
   if (!el) return;
   if (el instanceof HTMLDetailsElement) el.open = true;
@@ -1115,14 +1132,27 @@ function briefSettings(s: Record<string, any>) {
       : "Not set yet: type the start time of your first class on each school day, then click Confirm schedule.")
       + ` ${st.canvas.message}`;
     taskState.textContent = st.task ? `✓ On${st.verified ? `: ready at ${friendly(st.next_run)} even if Monkey is closed` : ""}` : "Off";
+    taskToggle.textContent = st.task ? "Turn off" : "Turn on";
+    taskToggle.className = st.task ? "ghost" : "primary";
+    taskOn = !!st.task;
   };
+  let taskOn = false;
+  const taskToggle = h("button", { class: "primary", type: "button", onclick: async () => {
+    if (taskOn) { await api.brief_task_disable(); taskHint.textContent = ""; toast("Turned off"); void refresh(); return; }
+    const r = await api.brief_task_enable();
+    if (!r.ok && r.needs_schedule) { needSchedule(r.error ?? ""); return; }
+    taskHint.textContent = r.ok ? "" : `⚠ ${r.error}`;
+    toast(r.ok ? "✓ On: the brief gets made even when Monkey is closed" : `⚠ ${r.error}`);
+    void refresh();
+  } }, "Turn on");
   void refresh();
   const detect = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.brief_candidates();
     if (!r.ok) { taskHint.textContent = `⚠ ${r.error}`; return toast(`⚠ ${r.error}`); }
     const c = r.candidates ?? {};
     for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
-    toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from your calendar. Check them, then Confirm.` : "No recurring classes found in the next 2 weeks.");
+    taskHint.textContent = "";
+    toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from ${r.source || "your calendar"}. Check them, then click Confirm schedule.` : "Couldn't find your classes. Type the first class time for each day instead.");
   } }, "Detect from calendar");
   const confirmBtn = h("button", { class: "primary", type: "button", onclick: async () => {
     const byDay: Record<string, string> = {};
@@ -1131,6 +1161,7 @@ function briefSettings(s: Record<string, any>) {
     const st = await api.brief_confirm(byDay, "confirmed in app");
     appState = await api.get_state();
     toast(st.verified ? "✓ Schedule saved" : "Schedule cleared");
+    if (st.verified) taskHint.textContent = "";
     void refresh();
   } }, "Confirm schedule");
   const speak = h("input", { type: "checkbox", checked: !!s.brief_speak_on_open }) as HTMLInputElement;
@@ -1141,18 +1172,9 @@ function briefSettings(s: Record<string, any>) {
     h("p", { class: "help" }, "On school days Monkey prepares a brief 90 minutes before your earliest confirmed class (Chicago time, weekends off): today's classes, what's due in 72 hours ranked by grade impact, unread email, weather and the one thing to do first. It shows in the app; nothing is sent anywhere."),
     grid, h("div", { class: "field" }, detect, confirmBtn), status,
     h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
-    h("div", { class: "field" }, h("span", {}, "Canvas token expires"), expires),
+    appState.keys.canvas_token ? h("div", { class: "field" }, h("span", {}, "Canvas access token expires"), expires) : "",
     h("label", { class: "field toggle" }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "meta" }, "Phone notifications: off (needs your approval before it can be turned on)")),
-    h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"),
-      h("button", { class: "ghost", type: "button", onclick: async () => {
-        const r = await api.brief_task_enable();
-        if (!r.ok && r.needs_schedule) { needSchedule(r.error ?? ""); return; }
-        taskHint.textContent = r.ok ? "" : `⚠ ${r.error}`;
-        toast(r.ok ? "✓ On: the brief gets made even when Monkey is closed" : `⚠ ${r.error}`);
-        void refresh();
-      } }, "Turn on"),
-      h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); taskHint.textContent = ""; toast("Turned off"); void refresh(); } }, "Turn off"),
-      taskState),
+    h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"), taskToggle, taskState),
     h("p", { class: "help" }, "Windows wakes your PC a little early to build it (silently, no notifications)."),
     taskHint,
     appState.settings.show_tech_details ? h("details", {}, h("summary", {}, "Technical details (Windows Task Scheduler)"),
@@ -1169,12 +1191,13 @@ const FRIENDLY_SOURCE: Record<string, string> = {
   "profile.md": "about you", "classes.md": "your classes", "preferences.md": "your preferences", "projects.md": "your projects",
   "people.md": "people you know", "writing_style.md": "your writing style",
 };
-function memoryUsed(items: { kind: string; ref: string; date: string; source: string; status: string }[]) {
+function memoryUsed(items: { kind: string; ref: string; date: string; source: string; status: string; text?: string }[]) {
   const tech = !!appState.settings.show_tech_details;
   // Internal notes (model policy, site shortcuts) aren't "memories" a person cares about.
   items = items.filter((i) => tech || i.kind !== "fact" || i.source in FRIENDLY_SOURCE);
   if (!items.length) return;
-  const label = items.map((i) => `${i.kind === "fact" ? (tech ? i.source : FRIENDLY_SOURCE[i.source]) : i.kind === "episode" ? "an earlier chat" : "this conversation"} · ${i.date}`);
+  const label = items.map((i) => i.text ? `“${i.text}”` :
+    `${i.kind === "fact" ? (tech ? i.source : FRIENDLY_SOURCE[i.source]) : i.kind === "episode" ? "an earlier chat" : "this conversation"} · ${i.date}`);
   const chip = h("details", { class: "memchip" }, h("summary", {}, `🧠 used ${items.length} memor${items.length === 1 ? "y" : "ies"}`),
     h("ul", {}, ...label.map((t) => h("li", {}, t))));
   log.append(chip);
@@ -1184,7 +1207,7 @@ function memoryUsed(items: { kind: string; ref: string; date: string; source: st
 function memoryInspector() {
   const FILE_LABEL: Record<string, string> = { "profile.md": "About you", "classes.md": "Classes", "preferences.md": "Preferences",
     "projects.md": "Projects", "people.md": "People", "writing_style.md": "Writing style" };
-  const q = h("input", { type: "search", placeholder: "Filter (e.g. roommate, math)" }) as HTMLInputElement;
+  const q = h("input", { type: "search", placeholder: "Filter" }) as HTMLInputElement;
   const out = h("div", { class: "memlist" });
   const row = (f: { id: string; file: string; text: string; date: string }) => {
     const r: HTMLElement = h("div", { class: "memhit" },
@@ -1370,13 +1393,17 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
     addMsg("sys", "Monkey's ready.");
   }
   // Whatever you changed in Settings (accounts, schedule, Canvas) shows up on the brief card right away.
-  $<HTMLDialogElement>("#settings").addEventListener("close", () => { void showMorningBrief(true); });
+  $<HTMLDialogElement>("#settings").addEventListener("close", () => {
+    void showMorningBrief(true);
+    void api.get_state().then((st) => { appState = st; applyChrome(st); updateWelcome(); });
+  });
 })();
 
 let welcomeEl: HTMLElement | null = null;
 function updateWelcome() {
   if (!welcomeEl) return;
-  welcomeEl.textContent = appState.keys.fish
-    ? "You're all set! Ask Monkey anything: \"what's due this week?\""
-    : "You're all set! Ask Monkey anything: \"what's due this week?\" (Optional: add a Fish Audio key in Settings → Start here for Monkey's real voice.)";
+  const c = appState.connections;
+  const next = c.canvas ? "Try: \"what's due this week?\"" : c.calendar_ics || c.google_calendar ? "Try: \"what's on tomorrow?\""
+    : "Next: add your Canvas or calendar link in Settings → Accounts, then ask \"what's due this week?\"";
+  welcomeEl.textContent = `You're all set! ${next}` + (appState.keys.fish ? "" : " (Optional: a Fish Audio key in Settings → Start here gives Monkey his real voice.)");
 }

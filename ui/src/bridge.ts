@@ -70,7 +70,7 @@ export interface Api {
   history_export(): Promise<{ ok: boolean; error?: string; path?: string }>;
   brief_status(): Promise<BriefStatus>;
   brief_preview(opened: boolean, refresh?: boolean): Promise<{ ok: boolean; error?: string; brief?: Brief | null }>;
-  brief_candidates(): Promise<{ ok: boolean; error?: string; candidates?: Record<string, { time: string; title: string; seen: number }> }>;
+  brief_candidates(): Promise<{ ok: boolean; error?: string; source?: string; candidates?: Record<string, { time: string; title: string; seen: number }> }>;
   brief_confirm(byDay: Record<string, string>, source: string): Promise<BriefStatus>;
   brief_task_preview(): Promise<{ ok: boolean; error?: string; xml?: string; needs_schedule?: boolean }>;
   brief_task_enable(): Promise<{ ok: boolean; error?: string; needs_schedule?: boolean }>;

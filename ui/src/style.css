@@ -392,3 +392,18 @@ details.advanced { margin: 10px 0; }
 details.advanced > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f); outline-offset: 4px; border-radius: 10px; }
 .dot.bad { background: #ff6b6b; box-shadow: 0 0 0 2px #7a1d1d; }
+
+.items li.clickable { cursor: pointer; border-radius: 8px; }
+.items li.clickable:hover { background: rgba(255,255,255,.06); }
+
+/* Older cards fold to their title bar */
+#cards .card.folded > :not(h3):not(.close) { display: none; }
+#cards .card.folded { padding-bottom: 0; }
+#cards .card.folded h3 { cursor: pointer; margin-bottom: 0; border-radius: 15px; border-bottom: none; }
+#cards .card.folded h3::after { content: "  ▸ open"; font-size: 12px; opacity: .8; }
+/* checkbox sits right next to its words */
+.settings .field > label { display: inline-flex; align-items: center; gap: 8px; justify-self: start; text-align: left; }
+.rangewrap { display: inline-flex; align-items: center; gap: 8px; }
+.briefsec { justify-items: start; text-align: left; }
+.briefsec .items { width: 100%; }
+.briefsec .items li { display: block; text-align: left; }

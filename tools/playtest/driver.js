@@ -69,7 +69,7 @@ const SEE = () => {
     const c = { n, kind, label: label.replace(/\s+/g, " ").slice(0, 90) };
     if (tag === "select") { c.value = el.options[el.selectedIndex]?.text; c.options = [...el.options].map((o) => o.text); }
     else if (type === "checkbox") c.checked = el.checked;
-    else if ("value" in el && tag !== "button" && type !== "range") c.value = String(el.value || "").slice(0, 60);
+    else if ("value" in el && tag !== "button" && type !== "range") c.value = String(el.value || "").slice(0, tag === "textarea" ? 400 : 80);
     else if (type === "range") c.value = el.value + ` (${el.min}-${el.max})`;
     if (tag === "summary") c.open = !!el.parentElement?.open;
     if (el.disabled) c.disabled = true;
@@ -82,7 +82,7 @@ const SEE = () => {
   while ((node = walker.nextNode())) {
     const t = node.textContent.replace(/\s+/g, " ").trim();
     if (!t || !node.parentElement || !visible(node.parentElement)) continue;
-    if (node.parentElement.closest("script,style,select,option")) continue;
+    if (node.parentElement.closest("script,style,select,option,textarea")) continue;   // boxes: see controls[].value
     if (t === last) continue;
     lines.push(t); last = t;
   }

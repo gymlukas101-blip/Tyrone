@@ -182,6 +182,11 @@ class Listener:
         if self._mode == "conversation":
             self._mode = "wake"
 
+    def cancel(self) -> None:
+        """You tapped ✕: stop listening right now, even mid-recording (back to waiting for the wake word)."""
+        if self._mode in ("conversation", "record"):
+            self._mode = "wake"
+
     def _begin_recording(self) -> None:
         self._ep = self._endpointer()
         self._mode = "record"

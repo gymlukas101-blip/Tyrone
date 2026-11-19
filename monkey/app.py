@@ -210,6 +210,8 @@ class MonkeyApp:
             client.messages.count_tokens(**probe)
             return {"ok": True}
         except anthropic.APIStatusError as exc:
+            if exc.status_code == 401:
+                return {"ok": False, "error": workspace.describe(exc), "rejected": True}
             if workspace.needs_workspace(exc) and self._fix_workspace():
                 try:
                     self.client.messages.count_tokens(**probe)
@@ -494,10 +496,16 @@ class MonkeyApp:
         self._conv_timer.daemon = True
         self._conv_timer.start()
 
-    def end_conversation(self, reason: str = "") -> None:
+    def end_conversation(self, reason: str = "", cancel: bool = False) -> None:
         was = self._in_conversation
         self._in_conversation = False
         self._reply_done = False
+        if cancel:                                    # the ✕ on "Listening…": stop the mic now, not at its timeout
+            self._listening = False
+            if self._agent_state == "listening":
+                self._agent_state = "idle"
+            if self.listener is not None and hasattr(self.listener, "cancel"):
+                self.listener.cancel()
         if self._conv_timer is not None:
             self._conv_timer.cancel()
             self._conv_timer = None
@@ -784,6 +792,10 @@ class Api:
         if name == "anthropic":
             a.cfg.update(first_run_complete=True, anthropic_workspace_id="")
             check = a.verify_anthropic()
+            if check.get("rejected"):          # a wrong or half-pasted key: don't keep it around looking "saved"
+                keys.delete(name)
+                a.client = None
+                return {"ok": False, "error": check.get("error", "Anthropic didn't accept the key.")}
             if not check.get("ok"):
                 return {"ok": True, "hint": keys.hints().get(name, ""), "warning": check.get("error", "")}
             return {"ok": True, "hint": keys.hints().get(name, ""), "note": check.get("note", "")}
@@ -1068,19 +1080,28 @@ class Api:
 
         from .routines.morning import TZ, candidate_schedule
 
+        from .routines.morning import schedule_from_notes
+
         a = self._app
         cals = a._calendars()
-        if not cals:
+        found, source = {}, ""
+        if cals:
+            now = _dt.now(TZ)
+            events = []
+            for p in cals:
+                try:
+                    events += p.list_events(now, now + timedelta(days=14))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("calendar read failed: %s", type(exc).__name__)
+            found, source = candidate_schedule(events, now), "your calendar"
+        if not found:
+            notes = schedule_from_notes(a.memory.read("classes.md") or "")
+            if notes:
+                found, source = notes, "your notes"
+        if not found and not cals:
             return {"ok": False, "error": "To detect your classes, add your calendar link (Settings → Accounts) or connect "
                                           "Google. Or just type your first class time for each day here."}
-        now = _dt.now(TZ)
-        events = []
-        for p in cals:
-            try:
-                events += p.list_events(now, now + timedelta(days=14))
-            except Exception as exc:  # noqa: BLE001
-                log.warning("calendar read failed: %s", type(exc).__name__)
-        return {"ok": True, "candidates": candidate_schedule(events, now)}
+        return {"ok": True, "candidates": found, "source": source}
 
     def brief_confirm(self, by_day: dict, source: str = "confirmed in app"):
         """The user confirmed (or edited) their earliest weekday class times. Only this enables timed briefs."""
@@ -1249,8 +1270,8 @@ class Api:
         return {"ok": True, "restored": restored}
 
     def end_conversation(self):
-        """The ✕ on the "Listening…" chip: stop listening without the wake word."""
-        self._app.end_conversation("closed")
+        """The ✕ on the "Listening…" chip: stop listening now (even mid-recording), back to the wake word."""
+        self._app.end_conversation("closed", cancel=True)
 
     def open_log(self):
         p = self._app.cfg.data_dir / "monkey.log"
@@ -1313,6 +1334,11 @@ class Api:
         def run():
             try:
                 a.google.sign_in(on_url=lambda url: a.ui.emit("google", {"stage": "opening", "url": url}))
+                try:                                  # "Connected as you@gmail.com" (testers asked which account)
+                    prof = a.google.service("gmail", "v1").users().getProfile(userId="me").execute()
+                    a.cfg.update(google_account=str(prof.get("emailAddress", ""))[:120])
+                except Exception:  # noqa: BLE001
+                    pass
                 a.ui.emit("google", {"stage": "done"})
             except SignInCancelled:
                 a.ui.emit("google", {"stage": "cancelled"})
@@ -1374,6 +1400,7 @@ class Api:
 
     def google_sign_out(self):
         self._app.google.sign_out()
+        self._app.cfg.update(google_account="")
 
     def test_outlook(self):
         """The Connect button: the only place Monkey starts Outlook on its own. Success turns Outlook on."""

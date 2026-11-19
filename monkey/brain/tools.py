@@ -75,8 +75,9 @@ LOCAL_TOOLS: list[dict] = [
           "stress, steps. `day` is 'today' (includes last night's sleep), 'yesterday', or YYYY-MM-DD. Shows a "
           "health card on screen.", {"day": S}),
     _tool("open_settings", "Open Monkey's Settings at a section so the user can change something themselves "
-          "(you can't change settings for them). section: start, accounts, sound, brief, memory, feel or advanced.",
-          {"section": {"type": "string", "enum": ["start", "accounts", "sound", "brief", "memory", "feel", "advanced"]}}),
+          "(you can't change settings for them). section: check (Check everything: tests every part and makes a "
+          "report they can copy), start, accounts, sound, brief, memory, feel or advanced.",
+          {"section": {"type": "string", "enum": ["check", "start", "accounts", "sound", "brief", "memory", "feel", "advanced"]}}),
     _tool("emote", "Make your 3D avatar react with a short animation. Use sparingly, at most once per reply: "
           "good news -> happy or flex, a joke -> laugh, greeting -> wave, the user finished something -> dance, "
           "bad news -> sad, wow -> surprised.",
@@ -337,7 +338,8 @@ class ToolRunner:
 
     def t_get_calendar(self, days_ahead: int = 1, day: str = ""):
         if not self.s.calendars:
-            return "No calendars are connected yet. Tell the user to add a calendar link or connect Google in Settings → Accounts."
+            return ("No calendar is connected yet. Say so in one sentence and call open_settings('accounts') so they can add "
+                    "their calendar link (easiest) or connect Google.")
         win = self._day_window(day)
         events = self._events(days_ahead, *(win[:2] if win else (None, None)))
         label = win[2] if win else ("Today" if (days_ahead or 1) <= 1 else f"Next {days_ahead} days")
@@ -362,7 +364,8 @@ class ToolRunner:
 
     def t_get_emails(self, account: str = "all", unread_only: bool = False, max_results: int = 15, query: str = ""):
         if not self.s.mail:
-            return "No email accounts are connected yet. Tell the user to connect Gmail/Outlook in Settings."
+            return ("No email is connected yet. Say so in one sentence and call open_settings('accounts') so they can connect "
+                    "Gmail (or school Outlook).")
         emails = self._emails(account, unread_only, max_results, query)
         self.s.emit("emails", {"emails": [e.brief() for e in emails]})
         return [e.brief() for e in emails] or "No matching emails."
@@ -423,7 +426,8 @@ class ToolRunner:
             return "Canvas isn't connected."
         board = self.s.assignments.load()
         if board["source"] == "none":
-            return "Canvas isn't connected. Tell the user to add the Canvas token or calendar feed link in Settings."
+            return ("Canvas isn't connected. Say so in one sentence and call open_settings('accounts') so they can paste "
+                    "their Canvas calendar link (Canvas → Calendar → Calendar Feed).")
         self.s.emit("assignments", board)
         keep = ("id", "title", "course", "due", "tier", "priority", "reason", "missing", "points", "impact_pct")
         out = {

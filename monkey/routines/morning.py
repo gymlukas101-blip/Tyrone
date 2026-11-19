@@ -51,6 +51,49 @@ def _hhmm(s: str | None) -> time | None:
         return None
 
 
+import re as _re
+
+NOT_A_CLASS = _re.compile(r"(?i)\b(office hours?|exam|midterm|final|quiz|study|review session|dentist|doctor|meeting|club)\b")
+_DAY_TOKENS = {"mon": "mon", "tue": "tue", "tues": "tue", "wed": "wed", "thu": "thu", "thur": "thu", "thurs": "thu", "fri": "fri"}
+_LETTERS = {"M": "mon", "T": "tue", "W": "wed", "R": "thu", "F": "fri"}
+
+
+def schedule_from_notes(text: str) -> dict[str, dict]:
+    """Class times written in your notes ("MATH 222 — Mon/Wed/Fri 9:55", "CS 300 TTh 11:00am") -> earliest per day.
+    Used when no calendar is connected (testers had already imported their schedule and had to retype it)."""
+    out: dict[str, dict] = {}
+    for line in (text or "").splitlines():
+        line = _re.sub(r"<!--.*?-->", "", line).strip(" -*•\t")
+        tm = _re.search(r"\b(\d{1,2}):(\d{2})\s*([ap]\.?m\.?)?", line, _re.I)
+        if not tm or NOT_A_CLASS.search(line) or _re.search(r"(?i)\blab\b", line[:tm.start()].split("—")[-1] if "—" in line else ""):
+            continue
+        before = line[:tm.start()]
+        days: list[str] = []
+        for tok in _re.findall(r"[A-Za-z]+", before):
+            low = tok.lower()
+            if low in _DAY_TOKENS:
+                days.append(_DAY_TOKENS[low])
+            elif tok.upper() in ("MWF", "TTH", "TR", "MW", "WF", "TTHF") or (len(tok) <= 4 and tok.isupper() and set(tok) <= set("MTWRF")):
+                t = tok.upper().replace("TH", "R")
+                days += [_LETTERS[c] for c in t if c in _LETTERS]
+        if not days:
+            continue
+        h, m, ap = int(tm.group(1)), int(tm.group(2)), (tm.group(3) or "").lower()
+        if ap.startswith("p") and h < 12:
+            h += 12
+        elif not ap and 1 <= h <= 6:
+            h += 12                                   # "2:30" in a class list means the afternoon
+        if not (7 <= h <= 21):
+            continue
+        hhmm = f"{h:02d}:{m:02d}"
+        title = _re.split(r"\s[—–-]\s|\(", before)[0]
+        title = _re.sub(r"(?i)\b(mon|tues?|wed|thu(rs?)?|fri|MWF|TTh|TR|MW|WF)\b[/,&\s]*", "", title).strip(" —–-,/")[:40] or line[:40]
+        for d in dict.fromkeys(days):
+            if d in SCHOOL_DAYS and (d not in out or hhmm < out[d]["time"]):
+                out[d] = {"time": hhmm, "title": title, "seen": 1}
+    return dict(sorted(out.items(), key=lambda kv: DAYS.index(kv[0])))
+
+
 def candidate_schedule(events: list, now: datetime) -> dict[str, dict]:
     """Earliest recurring timed event per weekday over the next 2 weeks, as candidates for the user to confirm.
 
@@ -66,6 +109,8 @@ def candidate_schedule(events: list, now: datetime) -> dict[str, dict]:
         st = e.start.astimezone(TZ)
         if e.end and (e.end - e.start) > timedelta(hours=4):
             continue
+        if st.hour < 7 or NOT_A_CLASS.search(e.title or ""):
+            continue                                  # office hours, exams, study groups, odd early slots aren't classes
         key = (DAYS[st.weekday()], e.title.strip(), st.strftime("%H:%M"))
         seen.setdefault(key, []).append(st)
     # "recurring" = the same title at the same time at least twice in the window, on any weekday (a MWF lecture
@@ -171,11 +216,13 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         timed = sorted([e for e in (evs or []) if not getattr(e, "all_day", False) and e.start], key=lambda e: e.start)
         items = [f"{e.start.astimezone(TZ):%I:%M %p}".lstrip("0") + f" {e.title}" + (f" ({e.location})" if e.location else "")
                  for e in timed]
+        if not items and fc:                           # don't say "nothing today" next to "first class at 11"
+            items = [f"{fc:%I:%M %p}".lstrip("0") + " First class (from your class times)"]
         sections.append(Section("Today", "ok" if items else "empty", items,
                                 "" if items else "Nothing on your calendar today."))
-    else:
-        sections.append(Section("Today", st, [], "Calendar not connected." if st == "not_connected"
-                                else f"Calendar unavailable ({evs})."))
+    else:                                             # honest status, but still show what the schedule says
+        sections.append(Section("Today", st, [f"{fc:%I:%M %p}".lstrip("0") + " First class (from your class times)"] if fc else [],
+                                "Calendar not connected." if st == "not_connected" else f"Calendar unavailable ({evs})."))
     if not schedule.verified:
         sections[-1].note = (sections[-1].note + " " if sections[-1].note else "") + \
             "Class schedule not confirmed yet, so the brief isn't timed."

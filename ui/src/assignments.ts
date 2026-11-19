@@ -60,7 +60,8 @@ function row(it: Item) {
       h("div", { class: "asg-why" }, it.done ? (it.reason || "done") : it.reason || countdown(it.due))),
     h("div", { class: "asg-side" },
       it.done ? h("span", { class: "tier done" }, "done") : h("span", { class: `tier ${it.tier}` }, it.tier),
-      it.done ? null : h("span", { class: "due" }, countdown(it.due))),
+      // the reason line already says "overdue by 28h" / "due in 21h"; show the actual due time here instead
+      it.done || !it.due ? null : h("span", { class: "due" }, new Date(it.due).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))),
   );
   if (!it.done) {
     const bar = h("div", { class: `prio ${it.tier}`, title: `Priority ${it.priority}/100` });
@@ -157,9 +158,9 @@ function draw() {
     h("div", { class: "asg-head" },
       ring(st.week_done ?? 0, st.week_total ?? 0),
       h("div", {},
-        h("div", { class: "asg-headline" }, `${st.week_done ?? 0} of ${st.week_total ?? 0} due this week are done`),
+        h("div", { class: "asg-headline" }, `${board.todo.length} to do`),
         h("div", { class: "meta" },
-          [board.todo.length !== (st.week_total ?? 0) - (st.week_done ?? 0) ? `${board.todo.length} left to do in total (overdue and later ones too)` : "",
+          [`${st.week_done ?? 0} of ${st.week_total ?? 0} due this week done`,
            st.missing ? `${st.missing} missing` : "", st.critical ? `${st.critical} critical` : "",
            board.source === "feed" ? "sorted by due date" : "ranked by grade impact, due date & your grade"]
             .filter(Boolean).join(" · ")))),

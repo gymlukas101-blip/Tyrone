@@ -125,3 +125,57 @@ def test_open_settings_tool(tmp_path):
     emitted = []
     r = ToolRunner(NS(emit=lambda n, p: emitted.append((n, p)))).t_open_settings("sound")
     assert emitted == [("open_settings", {"section": "sound"})] and "sound" in r
+
+
+# ---------------------------------------------------------------- verification round 2
+def test_class_times_from_notes_and_calendar_ignores_non_classes():
+    from monkey.routines.morning import TZ, candidate_schedule, schedule_from_notes
+
+    notes = ("- MATH 222 (Calculus 2) — Mon/Wed/Fri 9:55, Van Vleck\n- COMP SCI 300 — Tue/Thu 11:00; lab Wed 1:30\n"
+             "- PSYCH 202 — Tue/Thu 2:30\n- Office hours Fri 3:00\n- (Monkey fills in your classes)")
+    got = schedule_from_notes(notes)
+    assert {d: v["time"] for d, v in got.items()} == {"mon": "09:55", "tue": "11:00", "wed": "09:55", "thu": "11:00", "fri": "09:55"}
+    assert got["tue"]["title"] == "COMP SCI 300"
+    fri = datetime(2026, 11, 20, 5, 0, tzinfo=TZ)
+    odd = [Event(id="o", source="google", title="Office hours: MATH 222", start=fri, end=fri + timedelta(hours=1))]
+    assert candidate_schedule(odd, fri) == {}            # the 5 AM "class" testers got is gone
+
+
+def test_detect_uses_notes_when_no_calendar(mk):
+    a, api, _ = mk
+    a.memory.write("classes.md", "# Classes\n- BIO 151 MWF 8:50\n- CS 300 TTh 11:00am\n")
+    r = api.brief_candidates()
+    assert r["ok"] and r["source"] == "your notes" and r["candidates"]["mon"]["time"] == "08:50"
+
+
+def test_rejected_claude_key_is_not_kept(mk, monkeypatch):
+    a, api, _ = mk
+    monkeypatch.setattr(a, "verify_anthropic", lambda: {"ok": False, "rejected": True,
+                                                        "error": "Anthropic didn't accept the key."})
+    r = api.save_key("anthropic", "sk-ant-api03-half")
+    assert r["ok"] is False and "didn't accept" in r["error"] and not keys.get("anthropic")
+
+
+def test_x_on_listening_stops_the_mic_now(mk):
+    a, api, events = mk
+    cancelled = []
+    a.listener = NS(mode="record", muted=False, cancel=lambda: cancelled.append(1), end_conversation=lambda: None)
+    a._listening = True
+    api.end_conversation()
+    assert cancelled and a._listening is False
+    assert events[-1][0] == "state" and events[-1][1]["state"] != "listening"
+
+
+def test_brief_today_shows_first_class_when_calendar_is_empty():
+    from tests.test_morning import SCHED, at, sources
+
+    from monkey.routines.morning import build
+
+    b = build(at(2026, 11, 19, 7, 0), SCHED, sources(None), "morning").to_dict()
+    today = next(s for s in b["sections"] if s["title"] == "Today")
+    assert today["items"] and "First class" in today["items"][0] and "Nothing on your calendar" not in today["note"]
+
+
+def test_not_connected_tells_claude_to_open_settings():
+    r = ToolRunner(NS(calendars=[], emit=lambda *a: None)).t_get_calendar()
+    assert "open_settings('accounts')" in r

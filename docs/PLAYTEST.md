@@ -41,3 +41,30 @@ Stop it with `tools/playtest/stop.sh 1`.
 | Smaller copy issues ($ counter, Quick/Important cost, "paste it to Claude", "0 MB", "Open folder" gave no feedback) | — | Plain wording and tooltips |
 
 Rig limits: no microphone or speakers, no real Claude (a scripted stand-in calls the same tools), and a 2D avatar (the 3D one is too slow on a CPU-only server). Voice, wake word and answer quality still need checks on a real PC.
+
+## Verification round 1: 4 fresh testers, same personas and tasks, not told what changed
+- **Task success:** 17 of 18 tasks, up from 13 of 19 for the same personas in the discovery passes.
+- **Median ease (1–7):** about 5.5, up from about 4.
+- **Would recommend:** 7, 7, 7 and 6 out of 10, up from 3, 4, 5 and 5.
+- **What still came up, and the round-2 fixes:**
+  - "Check everything" was scrolled out of view when Monkey opened Settings → Start. Start now opens at the top, and there's a `check` section for "is everything working?".
+  - Tapping ✕ on "Listening…" didn't stop push-to-talk ("Ears up…" stayed). ✕ now cancels at once.
+  - A rejected Claude key showed "saved ••••". It's no longer kept.
+  - "Detect from calendar" picked office hours at 5 AM as a class. It now ignores office hours, exams, study groups and anything before 7 AM, and falls back to class times in your notes.
+  - The brief said "first class at 11" next to "nothing today". Today now lists the first class from your schedule.
+  - Not connected? Tool results now tell Monkey to open Settings → Accounts.
+  - The calendar link box appeared twice, a regression from round 1. Removed.
+  - Older cards fold to their title bar.
+  - Email rows are clickable (Monkey reads the email).
+  - The volume slider shows a %.
+  - The backup voice's download button is disabled while downloading.
+  - Turn on/Turn off for the brief is now one toggle.
+  - Google shows "Connected as …".
+  - Memory chips show the actual facts used.
+  - Homework: "N to do" headline, with the due time shown once.
+  - Friendly calendar source names.
+  - Toasts name the setting that changed.
+- **Rig artifacts fixed:**
+  - sample events at odd hours;
+  - text-box contents read wrong;
+  - the stand-in brain's memory search.

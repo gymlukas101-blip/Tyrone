@@ -98,10 +98,12 @@ def sample_emails():
 def sample_google_events(start, end):
     from monkey.integrations.base import Event
 
-    n = _now().replace(minute=0, second=0, microsecond=0)
-    rows = [("Office hours: MATH 222", 1, 26, "Van Vleck 501"), ("Dentist", 2, 39, ""), ("Study group (CS 300)", 1, 50, "College Library")]
-    evs = [Event(id=f"g{i}", source="google", title=t, start=n + timedelta(hours=h), end=n + timedelta(hours=h + d),
-                 location=loc) for i, (t, d, h, loc) in enumerate(rows)]
+    day0 = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # fixed daytime slots (days from today, hour): realistic whatever time the test runs
+    rows = [("Office hours: MATH 222", 1, (1, 15), "Van Vleck 501"), ("Dentist", 1, (2, 10), ""),
+            ("Study group (CS 300)", 2, (3, 19), "College Library")]
+    evs = [Event(id=f"g{i}", source="google", title=t, start=day0 + timedelta(days=dd, hours=hh),
+                 end=day0 + timedelta(days=dd, hours=hh + d), location=loc) for i, (t, d, (dd, hh), loc) in enumerate(rows)]
     return [e for e in evs if start <= e.start <= end]
 
 
@@ -150,7 +152,7 @@ class ScriptedBrain:
                     (r"\b(what you know|forget|wrong about me|change what|fix what|memory|notes)\b", "memory"),
                     (r"\b(morning brief|class times|schedule)\b.*\b(set|change|turn|fix|how)\b|\b(set|change|how)\b.*\b(morning brief|class times)\b", "brief"),
                     (r"\b(connect|hook up|link|sign in)\b.*\b(gmail|google|canvas|calendar|outlook)\b", "accounts"),
-                    (r"\b(is everything|all working|check everything|working right)\b", "start")]
+                    (r"\b(is everything|all working|check everything|working right|report)\b", "check")]
         if re.search(r"\b(how|where|can you|make|change|turn|fix|set|connect|hook|link|check|everything)\b", t) and want("open_settings"):
             for pat, sec in sections:
                 if re.search(pat, t):
@@ -177,8 +179,9 @@ class ScriptedBrain:
         if re.search(r"\bopen\b", t) and want("open_website"):
             target = re.sub(r".*\bopen\s+", "", t).strip(" ?.!") or "canvas"
             return "open_website", {"target": target}
-        if re.search(r"\b(know about me|remember about me|what do you know)", t) and want("search_memory"):
-            return "search_memory", {"query": "about the user", "scope": "all"}
+        if re.search(r"\b(know about me|remember about me|what do you know|who'?s my|who is my|what'?s my)", t) and want("search_memory"):
+            q = re.sub(r"(?i)\b(what do you know about me|who'?s|who is|what'?s|my|me|about|the)\b|[?.!]", " ", text).strip() or "profile"
+            return "search_memory", {"query": q, "scope": "all"}
         if re.search(r"\bremember\b", t) and want("remember"):
             fact = re.sub(r"(?i)\b(can you |could you |please |pls )?remember( that| this)?\b[:,]?", " ", text)
             fact = re.sub(r"\s+", " ", fact).strip(" .,!?")
@@ -250,6 +253,13 @@ class ScriptedBrain:
             content = r.get("content")
             if isinstance(content, list):
                 content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+            m = re.search(r"open_settings\('(\w+)'\)", content or "")
+            if m and "open_settings" in _tool_names(params):     # like Claude: say it, then open the right spot
+                self.last_tool = "open_settings"
+                first = re.split(r"(?<=\.)\s", content)[0]
+                return [NS(type="text", text=first + " I opened the spot where you can hook it up. "),
+                        NS(type="tool_use", name="open_settings", input={"section": m.group(1)},
+                           id="toolu_" + uuid.uuid4().hex[:10])], "tool_use"
             return [NS(type="text", text=self.summarize(self.last_tool, content or ""))], "end_turn"
         text = _strip_context(text or "")
         tool, args = self.plan(text, _tool_names(params))
@@ -469,7 +479,8 @@ def build_app(data: Path, profile: str, bridge: Bridge):
     a.gmail.get = lambda i: next(e for e in sample_emails() if e.id == i)
     a.gmail.list_sent = lambda max_results=100: []
     a.gmail.create_draft = lambda to, cc, subject, body, reply_to_id="": DraftResult("pt-" + uuid.uuid4().hex[:6], "")
-    a.gmail.send_draft = lambda *x, **k: bridge.opened.append("SENT EMAIL (playtest: not really sent)")
+    a.gmail.send_draft = lambda pid, to, cc, subject, body: bridge.opened.append(
+        f"SENT EMAIL (playtest: not really sent) to={','.join(to)} subject={subject!r} body={body[:200]!r}")
     a.gmail.open_draft = lambda *x, **k: None
     a.gcal.available = signed
     a.gcal.list_events = sample_google_events
