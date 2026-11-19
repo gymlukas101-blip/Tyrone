@@ -14,6 +14,7 @@ export interface AppState {
   breakdown: { model: string; calls: number; usd: number }[];
   memory_files: string[];
   version: string;
+  transfer?: { at: string; backup: string; moved: string[]; from_version: string; keys: string[] } | null;
 }
 
 export interface MemoryHit { kind: string; ref: string; text: string; date: string; source: string; status: string; score: number; sensitive: boolean }
@@ -52,8 +53,11 @@ export interface Api {
   voice_design(instruction: string): Promise<{ ok: boolean; error?: string; candidates?: string[] }>;
   choose_voice(index: number): Promise<{ ok: boolean; error?: string; voice_id?: string }>;
   test_voice(): Promise<{ ok: boolean; error?: string; voice_id?: string; engine?: string; model?: string }>;
-  export_memory(password: string): Promise<{ ok: boolean; error?: string; path?: string }>;
-  import_memory(password: string): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
+  export_memory(password: string, include_keys?: boolean): Promise<{ ok: boolean; error?: string; path?: string; folder?: string; keys?: string[]; mb?: number }>;
+  import_memory(password: string): Promise<{ ok: boolean; error?: string; files?: number; keys?: string[]; keys_failed?: string[]; restart?: boolean; from_version?: string }>;
+  restart_app(): Promise<{ ok: boolean; error?: string }>;
+  transfer_seen(): Promise<{ ok: boolean }>;
+  open_documents_folder(): Promise<{ ok: boolean }>;
   open_memory_folder(): Promise<void>;
   memory_search(query: string, scope: string, includeHistory: boolean): Promise<{ ok: boolean; error?: string; hits?: MemoryHit[] }>;
   memory_forget(factId: string): Promise<{ ok: boolean; error?: string; file?: string }>;
@@ -267,6 +271,9 @@ function mockApi(): Api {
     async test_voice() { return { ok: true, voice_id: "4a396e7e91a640a2b1e0f06249cbcd14", engine: "fish" }; },
     async export_memory() { return { ok: false, error: "Demo mode" }; },
     async import_memory() { return { ok: false, error: "Demo mode" }; },
+    async restart_app() { return { ok: false, error: "Demo mode" }; },
+    async transfer_seen() { return { ok: true }; },
+    async open_documents_folder() { return { ok: true }; },
     async open_memory_folder() {},
     async memory_search(q: string) {
       return { ok: true, hits: q ? [

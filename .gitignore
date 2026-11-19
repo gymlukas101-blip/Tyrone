@@ -15,6 +15,4 @@ token*.json
 .env
 wakeword/sherpa-kws/
 monkey/_version.py
-tools/sfx/raw/
 wakeword/vad/
-tools/blender/src/AO_*.png

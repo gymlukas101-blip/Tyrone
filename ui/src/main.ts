@@ -815,15 +815,11 @@ async function openSettings() {
         })()),
       briefSettings(s),
       h("section", {}, h("h4", {}, "Memory"),
-        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit. Export to move Monkey to another PC (encrypted with your password).`),
+        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit.`),
         field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),
-        (() => {
-          const pw = h("input", { type: "password", placeholder: "export/import password (8+ chars)" });
-          return h("div", { class: "field" }, pw,
-            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.export_memory(pw.value), "Exported") }, "Export"),
-            h("button", { class: "ghost", type: "button", onclick: async () => resultToast(await api.import_memory(pw.value), "Imported — restart Monkey") }, "Import"),
-            h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open folder"));
-        })(),
+        h("div", { class: "field" }, h("span", {}, ""),
+          h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open memory folder")),
+        moveToNewPc(),
         memoryInspector(),
         contextImport(),
         historyControls(s)),
@@ -1056,6 +1052,48 @@ async function restoreTranscript() {
   log.scrollTop = log.scrollHeight;
 }
 
+// ------------------------------------------------------------------ move to a new PC
+function moveToNewPc(): HTMLElement {
+  const pw = h("input", { type: "password", placeholder: "Password for the file (8+ characters)", autocomplete: "new-password" }) as HTMLInputElement;
+  const withKeys = h("input", { type: "checkbox" }) as HTMLInputElement;
+  withKeys.checked = true;
+  const out = h("div", { class: "meta", id: "transferStatus" });
+  const exportBtn = h("button", { class: "primary", type: "button", onclick: async () => {
+    if (pw.value.length < 8) { toast("⚠ Use a password of at least 8 characters"); return; }
+    out.textContent = "Packing everything up…";
+    const r = await api.export_memory(pw.value, withKeys.checked);
+    if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
+    out.replaceChildren(`Saved ${r.path} (${r.mb} MB${r.keys?.length ? `, ${r.keys.length} keys inside` : ", no keys"}). Copy it to a USB drive or your personal Google Drive. `,
+      h("button", { class: "ghost", type: "button", onclick: () => api.open_documents_folder() }, "Open folder"));
+    toast("Transfer file ready");
+  } }, "Export for new PC");
+  const importBtn = h("button", { class: "ghost", type: "button", onclick: async () => {
+    out.textContent = "Checking the file…";
+    const r = await api.import_memory(pw.value);
+    if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
+    out.replaceChildren(`Got ${r.files} files${r.keys?.length ? ` and ${r.keys.length} keys` : ""}${r.keys_failed?.length ? ` (couldn't save: ${r.keys_failed.join(", ")})` : ""}. Restart to finish moving in. `,
+      h("button", { class: "primary", type: "button", onclick: async () => {
+        const x = await api.restart_app(); if (!x.ok) toast(`⚠ ${x.error}`);
+      } }, "Restart Monkey"));
+  } }, "Import from old PC");
+  return h("div", { id: "moveToNewPc" },
+    h("p", {}, h("strong", {}, "Move to a new PC")),
+    h("p", { class: "help" }, "One encrypted file with your memory, chats, settings, voice and (optionally) your API keys and sign-ins. "
+      + "On the old PC: Export. On the new PC: install Monkey, Import the file with the same password, restart."),
+    h("div", { class: "field" }, pw),
+    h("div", { class: "field" }, h("label", {}, withKeys, " Include my API keys and sign-ins (protected by this password)")),
+    h("div", { class: "field" }, exportBtn, importBtn),
+    out);
+}
+
+function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
+  addMsg("sys", `Moved in from your old PC${t.from_version ? ` (Monkey ${t.from_version})` : ""}: ${t.moved.join(", ")}`
+    + `${t.keys.length ? ` + ${t.keys.length} keys` : ""}. Your previous files are saved in ${t.backup}. `
+    + "One-time steps for this PC: turn the morning brief back on (Settings → Morning brief), download the offline voice "
+    + "(Settings → Sound), and Connect Outlook if you want school mail.");
+  void api.transfer_seen();
+}
+
 // ------------------------------------------------------------------ boot
 (async () => {
   api = await waitForApi();
@@ -1067,6 +1105,7 @@ async function restoreTranscript() {
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
   await restoreTranscript();
+  if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {
     addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");

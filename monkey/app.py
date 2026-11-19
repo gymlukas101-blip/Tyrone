@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -679,6 +680,21 @@ class MonkeyApp:
 
         launch_url(url)
 
+    @staticmethod
+    def _open_path(folder: Path) -> None:
+        if sys.platform == "win32":
+            os.startfile(folder)  # type: ignore[attr-defined]  # noqa: S606
+        else:
+            webbrowser.open(Path(folder).as_uri())
+
+    def _unseen_transfer(self) -> dict | None:
+        """What a "Move to a new PC" import brought over, until the UI has shown it once."""
+        try:
+            d = json.loads((self.cfg.data_dir / "last_transfer.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return None if d.get("seen") else d
+
 
 def _thumb_data_uri(path: Path, size: int = 1024) -> str:
     """Downscaled JPEG data URI so generated images show in the UI without a file server."""
@@ -719,6 +735,7 @@ class Api:
                 "garmin": a.garmin.connected(),
                 "calendar_ics": ks.get("calendar_ics", False),
             },
+            "transfer": a._unseen_transfer(),
             "month_usd": a.ledger.month_to_date(),
             "budget_usd": a.cfg.settings.monthly_budget_usd,
             "breakdown": a.ledger.breakdown(),
@@ -1480,33 +1497,79 @@ class Api:
         return result
 
     # memory
-    def export_memory(self, password: str):
-        from .memory.export import export_bundle
+    def export_memory(self, password: str, include_keys: bool = True):
+        """Settings -> Memory -> Move to a new PC -> Export: one encrypted file with everything personal."""
+        from .memory.export import NO_KEY, export_bundle
 
         a = self._app
         try:
-            target = Path.home() / "Documents" / f"Monkey-backup-{datetime.now():%Y%m%d-%H%M}.monkey"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            path = export_bundle(a.cfg.data_dir, a.cfg.memory_dir, target, password or "")
-            return {"ok": True, "path": str(path)}
+            ks = {}
+            if include_keys:
+                ks = {k: v for k in keys.KNOWN_KEYS if k not in NO_KEY and (v := keys.get(k))}
+            target = Path.home() / "Documents" / f"Monkey-transfer-{datetime.now():%Y%m%d-%H%M}.monkey"
+            path = export_bundle(a.cfg.data_dir, a.cfg.memory_dir, target, password or "", keys=ks,
+                                 version=__version__)
+            return {"ok": True, "path": str(path), "folder": str(path.parent), "keys": sorted(ks),
+                    "mb": round(path.stat().st_size / 1e6, 1)}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
     def import_memory(self, password: str):
+        """Pick a .monkey file; keys are saved right away, files are swapped in when Monkey restarts."""
         import webview
 
-        from .memory.export import import_bundle
+        from .memory.export import stage_import
 
         a = self._app
         try:
             dialog = getattr(getattr(webview, "FileDialog", None), "OPEN", None) or webview.OPEN_DIALOG
-            picked = a.ui.window.create_file_dialog(dialog, file_types=("Monkey backup (*.monkey)",))
+            picked = a.ui.window.create_file_dialog(dialog, file_types=("Monkey transfer file (*.monkey)",))
             if not picked:
                 return {"ok": False, "error": "No file chosen"}
-            restored = import_bundle(Path(picked[0]), a.cfg.data_dir, a.cfg.memory_dir, password or "")
-            return {"ok": True, "restored": restored}
+            staged = stage_import(Path(picked[0]), a.cfg.data_dir, password or "")
+            saved, failed = [], []
+            for name, value in staged["keys"].items():
+                if name not in keys.KNOWN_KEYS:
+                    continue
+                try:
+                    keys.set(name, value)
+                    saved.append(name)
+                except Exception:  # noqa: BLE001
+                    failed.append(name)
+            return {"ok": True, "files": len(staged["files"]), "keys": saved, "keys_failed": failed,
+                    "restart": True, "from_version": staged["manifest"].get("version", "")}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
+
+    def restart_app(self):
+        """Relaunch Monkey (after an import). Waits for this copy to exit so the single-instance lock is free."""
+        exe = sys.executable
+        args = [exe, *sys.argv[1:]] if getattr(sys, "frozen", False) else [exe, "-m", "monkey"]
+        try:
+            if sys.platform == "win32":
+                cmdline = subprocess.list2cmdline(args)
+                subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" {cmdline}', shell=False,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            else:
+                subprocess.Popen(["sh", "-c", 'sleep 2; exec "$@"', "sh", *args])
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{exc}. Quit Monkey from the tray and open it again."}
+        threading.Timer(0.3, lambda: os._exit(0)).start()
+        return {"ok": True}
+
+    def transfer_seen(self):
+        p = self._app.cfg.data_dir / "last_transfer.json"
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            d["seen"] = True
+            p.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        except (OSError, ValueError):
+            pass
+        return {"ok": True}
+
+    def open_documents_folder(self):
+        self._app._open_path(Path.home() / "Documents")
+        return {"ok": True}
 
     def open_memory_folder(self):
         folder = Path(self._app.memory.memory_root)

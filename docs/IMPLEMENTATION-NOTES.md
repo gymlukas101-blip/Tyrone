@@ -249,3 +249,29 @@ The TTS played raw: Fish comes out around -20..-24 LUFS, and the offline and Win
 - Lip sync still reads the unboosted signal.
 - Settings → Look & sound: **Monkey's voice volume** (25–200%, on top of the matched level) and **Match the loudness of videos and music** (on by default; off plays the engine's raw level).
 - Tests: `tests/test_loudness.py`.
+
+## Move to a new PC (v0.3.36)
+
+The old Export/Import couldn't move a whole install:
+- it left out `voice/`, `garmin/`, `skills/` and all keys (DPAPI ties `secrets.dat` to one PC);
+- it copied `monkey.db` raw while open, so rows still in the WAL were lost;
+- it overwrote `settings.json`/`monkey.db` under the running app, which then saved its old settings back over them.
+
+Now (`monkey/memory/export.py`):
+- **Format `MONKEY2`**: scrypt + Fernet over a zip of memory, settings, a SQLite online-backup snapshot of the db, voice, garmin, skills, and an opt-in `keys.json`.
+  - `manifest.json` lists key names only.
+  - Never included: `secrets.dat`, logs, `cache`, the voice pack, `export_password`.
+- **`stage_import`**:
+  - validates every entry (allowed top-level names only, no absolute or `..` paths, size cap);
+  - unpacks to `<data>/_incoming/` and writes `.ready` last;
+  - the app saves keys into the new PC's DPAPI store right away.
+- **`apply_pending_transfer`** runs in `monkey/__main__.py` before settings or the db open:
+  - moves the replaced files (plus any stale `-wal`/`-shm`) to `backups/pre-transfer-<time>/`;
+  - clears `memory_dir_override`;
+  - writes `last_transfer.json`, which the UI shows once.
+  - It can resume after a crash, and drops an unfinished unpack.
+- **Restart Monkey** relaunches after a 2 s delay, so the single-instance mutex is free.
+- `MONKEY1` files still import.
+- Tests: `tests/test_transfer.py`.
+- User guide: `docs/MOVE-TO-NEW-PC.md`. Session handoff: `docs/HANDOFF.md`. Repo rules for future sessions: `CLAUDE.md`.
+- `tools/sfx/raw/` and the AO bakes are now committed, so nothing lives only in a dev container.
