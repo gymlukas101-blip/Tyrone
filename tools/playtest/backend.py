@@ -143,6 +143,8 @@ class ScriptedBrain:
     def plan(self, text: str, tools: set[str]):
         t = text.lower()
         want = lambda name: name in tools  # noqa: E731
+        if re.search(r"\b(did|was|has)\b.*\b(send|sent|go through|went)", t):
+            return None, None
         if re.search(r"\b(write|draft|email|message)\b.*\b(prof|professor|ta|whitfield|instructor)", t) and want("draft_email"):
             return "draft_email", {"account": "gmail", "to": ["whitfield@math.playtest.edu"], "cc": [],
                                    "subject": "Question about Problem Set 7",
@@ -166,15 +168,21 @@ class ScriptedBrain:
             return "open_website", {"target": target}
         if re.search(r"\b(know about me|remember about me|what do you know)", t) and want("search_memory"):
             return "search_memory", {"query": "about the user", "scope": "all"}
-        m = re.search(r"\bremember (that )?(.+)", text, re.I)
-        if m and want("remember"):
-            return "remember", {"fact": m.group(2).strip(" ."), "file": "profile.md", "evidence": text.strip()}
+        if re.search(r"\bremember\b", t) and want("remember"):
+            fact = re.sub(r"(?i)\b(can you |could you |please |pls )?remember( that| this)?\b[:,]?", " ", text)
+            fact = re.sub(r"\s+", " ", fact).strip(" .,!?")
+            if len(fact) >= 4:
+                return "remember", {"fact": fact[0].upper() + fact[1:], "file": "profile.md", "evidence": text.strip()}
         return None, None
 
     def answer_text(self, text: str) -> str:
         t = text.lower()
         if re.search(r"\b(hi|hey|yo|hello|sup)\b", t):
             return "Yo! What's up? I can check your classes, what's due, your email, or help you write to a professor."
+        if re.search(r"\b(did|was|has)\b.*\b(send|sent|go through|went)", t):
+            return "If the card says ✓ Sent, it went out. I never send anything without you clicking Send."
+        if "remember" in t:
+            return "Remember what? Tell me the thing, like \"my roommate's name is Sam\"."
         if "thank" in t:
             return "Anytime."
         if "who are you" in t or "what can you do" in t:
@@ -188,6 +196,17 @@ class ScriptedBrain:
         except (TypeError, ValueError):
             data = content
         if isinstance(data, str):
+            if tool == "search_memory":
+                facts = [re.sub(r"\[[^\]]*\]|<[^>]+>|\(.*?\)|\b\w+=\S+", "", ln).strip(" -•") for ln in data.splitlines()]
+                facts = [f for f in facts if len(f) > 3][:6]
+                return ("Here's what I know about you:\n" + "\n".join(f"• {f}" for f in facts)) if facts else \
+                    "I don't know much about you yet."
+            if tool == "remember" and data.startswith(("Saved", "Already known")):
+                fact = re.sub(r"^\w[\w ]*: \[[^\]]*\] ", "", data)
+                return f"Got it, I'll remember: {fact}"
+            if tool == "draft_email" and data.startswith("Draft saved"):
+                return "Drafted it. It's on screen: fix anything you want, then hit Send. Nothing goes out until you do."
+            data = re.sub(r"(?i)\s*Tell the user[^.]*\.", "", data)   # Claude doesn't read its instructions aloud
             return data if len(data) < 400 else data[:400] + "…"
         if tool == "get_assignments":
             todo = data.get("todo", [])
@@ -390,7 +409,24 @@ def build_app(data: Path, profile: str, bridge: Bridge):
             return lambda *x, **k: None
     a.listener = _Listener()
     a.wakeword_label = "Hey Monkey (keyword spotter)"
-    a.offline_voice = NS(available=lambda: False, enabled=lambda: True)
+    import monkey.audio.offline_voice as ov_mod
+    ov_state = {"installed": False}
+    a.offline_voice = NS(available=lambda: ov_state["installed"], installed=lambda: ov_state["installed"],
+                         enabled=lambda: a.cfg.settings.offline_voice != "off")
+
+    def fake_download(target, progress=None):        # the real one is ~200 MB from GitHub; simulated here
+        total = 198_000_000
+        for i in range(1, 11):
+            time.sleep(0.4)
+            if progress:
+                progress({"done": total * i // 10, "total": total, "what": "downloading"})
+        if progress:
+            progress({"done": total, "total": total, "what": "unpacking"})
+        time.sleep(0.6)
+        ov_state["installed"] = True
+        return {"ok": True, "name": "monkey-voice-pack.tar.bz2", "mb": 198}
+    ov_mod.download = fake_download
+    a._warm_offline_voice = lambda: None
 
     # Google
     def fake_sign_in(on_url=None, timeout_s=300):
