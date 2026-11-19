@@ -236,6 +236,8 @@ class MonkeyApp:
             [fish, self.offline_voice, SystemTTS()],
             on_level=self.ui.level, on_state=self._on_speaker_state, on_visemes=self.ui.visemes,
             on_fallback=self._voice_fallback,
+            loudness=lambda: (bool(self.cfg.settings.voice_match_loudness),
+                              max(0.25, min(2.0, (self.cfg.settings.voice_volume or 100) / 100))),
         )
         try:
             self.speaker.start()

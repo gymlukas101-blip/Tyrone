@@ -764,6 +764,18 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ juice_level: sel.value }); applyLook(appState.settings); toast("Saved"); });
           return sel;
         })()),
+        h("div", { class: "field" }, h("span", {}, "Monkey's voice volume"), (() => {
+          const r = h("input", { type: "range", min: "25", max: "200", step: "5", value: String(s.voice_volume ?? 100),
+            title: "100% = as loud as YouTube and music at the same Windows volume" }) as HTMLInputElement;
+          r.addEventListener("change", async () => { appState = await api.save_settings({ voice_volume: Number(r.value) }); toast(`Voice ${r.value}%`); });
+          return r;
+        })()),
+        h("div", { class: "field" }, h("label", {}, (() => {
+          const c = h("input", { type: "checkbox" }) as HTMLInputElement;
+          c.checked = s.voice_match_loudness ?? true;
+          c.addEventListener("change", async () => { appState = await api.save_settings({ voice_match_loudness: c.checked }); toast("Saved"); });
+          return c;
+        })(), " Match the loudness of videos and music")),
         h("div", { class: "field" }, h("span", {}, "Sound effects volume"), (() => {
           const r = h("input", { type: "range", min: "0", max: "100", step: "5", value: String(s.sfx_volume ?? 70) }) as HTMLInputElement;
           r.addEventListener("change", async () => { appState = await api.save_settings({ sfx_volume: Number(r.value) }); applyLook(appState.settings); });

@@ -12,6 +12,7 @@ from typing import Callable
 
 import numpy as np
 
+from .loudness import Leveler
 from .tts import TTS_RATE
 from .visemes import estimate_visemes
 
@@ -32,10 +33,13 @@ class EngineTimeout(RuntimeError):
 class Speaker:
     def __init__(self, engines: list, on_level: Callable[[float], None], on_state: Callable[[bool], None],
                  on_visemes: Callable[[dict], None] | None = None,
-                 on_fallback: Callable[[str, Exception], None] | None = None):
+                 on_fallback: Callable[[str, Exception], None] | None = None,
+                 loudness: Callable[[], tuple[bool, float]] | None = None):
         self.engines = engines            # tried in order (Fish first, system voice fallback)
         self.on_fallback = on_fallback    # told when the preferred voice fails and a fallback is used
         self.on_level = on_level
+        self.loudness = loudness or (lambda: (True, 1.0))   # (match other apps' loudness, voice volume trim)
+        self.leveler = Leveler()
         self.on_visemes = on_visemes
         self._prev_rms = 0.0
         self.on_state = on_state
@@ -182,7 +186,12 @@ class Speaker:
             out[filled:filled + take] = self._buf[:take]
             self._buf = self._buf[take:]
             filled += take
-        outdata[:, 0] = out
+        try:
+            match, trim = self.loudness()
+        except Exception:  # noqa: BLE001
+            match, trim = True, 1.0
+        outdata[:, 0] = self.leveler.process(out, enabled=match, trim=trim) if filled else out
+        # lip sync reads the unboosted signal so the mouth moves the same at any volume
         rms = float(np.sqrt(np.mean(out.astype(np.float32) ** 2))) if filled else 0.0
         self.on_level(min(1.0, rms / 6000.0))
         if self.on_visemes is not None and (filled or self._prev_rms):

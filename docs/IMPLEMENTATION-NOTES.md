@@ -237,3 +237,15 @@ Full suite: 263 passed, 1 skipped.
 - Only **Connect** (`test_outlook`) starts Outlook, and success turns the opt-in on. **Disconnect** turns it off.
 - Real reads attach to a running Outlook first (`GetActiveObject`) and start it only if it is closed. `read_email` also checks availability.
 - Tests: `tests/test_outlook_optin.py`.
+
+## Voice loudness matched to videos and music
+
+The TTS played raw: Fish comes out around -20..-24 LUFS, and the offline and Windows voices vary. YouTube and Spotify normalize to about -14 LUFS, so at the same Windows volume Monkey sounded much quieter than a video.
+- `monkey/audio/loudness.py` `Leveler` runs on each playback block in `Speaker._callback`:
+  - gated speech-level tracking (quick up, slow down), remembered across sentences;
+  - gain from -6 to +18 dB, moving only while he talks (no pumping in pauses);
+  - a tanh soft limiter with a -1 dBFS ceiling.
+- Calibrated on real LibriSpeech speech with an ITU BS.1770 meter: inputs from -30 to -18 LUFS come out at -14.7 to -12.4 LUFS, with about 1% of samples touching the limiter.
+- Lip sync still reads the unboosted signal.
+- Settings → Look & sound: **Monkey's voice volume** (25–200%, on top of the matched level) and **Match the loudness of videos and music** (on by default; off plays the engine's raw level).
+- Tests: `tests/test_loudness.py`.
