@@ -63,6 +63,7 @@ class TaskManager:
         self._threads: dict[str, Future] = {}
         self._lock = threading.Lock()
         self.active_id: str | None = None
+        self._quitting = threading.Event()             # app shutdown: park tasks as PAUSED and let go of the browser
         self.recovered = store.recover_after_restart()
 
     # ---- public API (any thread) ---------------------------------------------------------------------------------
@@ -152,6 +153,7 @@ class TaskManager:
         return self.store.load(task_id)
 
     def shutdown(self) -> None:
+        self._quitting.set()
         for tid in list(self._flags):
             self.pause(tid)
         for th in self._threads.values():
@@ -184,6 +186,21 @@ class TaskManager:
     def _set(self, t: Task, state: S, note: str = "") -> None:
         t.transition(state, note)
         self._save(t)
+        self._cursor_for(t.state)
+
+    def _cursor_for(self, state: S) -> None:
+        """The banana mirrors the task: busy while waiting on the page, a hand when it's your turn, dim when paused."""
+        c = getattr(self.session, "cursor", None) if self.session is not None else None
+        if c is None or not c.enabled:
+            return
+        from .cursor_events import TASK_STATE_CURSOR
+
+        if state in (S.CANCELLED,):
+            c.hide()
+        elif state == S.COMPLETED:
+            c.set_state("success")
+        else:
+            c.set_state(TASK_STATE_CURSOR.get(state.value, "idle"))
 
     def _run(self, task_id: str) -> None:
         t = self.store.load(task_id)
@@ -210,7 +227,7 @@ class TaskManager:
                     self.active_id = None
 
     def _should_stop(self, f: _Flags) -> bool:
-        return f.stop.is_set() or f.pause.is_set() or self.gate.stopped.is_set()
+        return f.stop.is_set() or f.pause.is_set() or self.gate.stopped.is_set() or self._quitting.is_set()
 
     def _ensure_session(self, t: Task) -> BrowserSession:
         if self.session is not None and self.session.alive():
@@ -250,6 +267,8 @@ class TaskManager:
                 return
             if f.pause.is_set():
                 self._set(t, S.PAUSED, "Paused. Press Resume when you're ready.")
+                if self._quitting.is_set():
+                    return                               # Monkey is closing: the task stays PAUSED for next time
                 while f.pause.is_set() and not f.stop.is_set() and not self.gate.stopped.is_set():
                     f.wake.wait(0.5)
                     f.wake.clear()
@@ -322,7 +341,12 @@ class TaskManager:
                         self._needs_user(t, f, obs, "I tried a few times and it didn't work: " + res.detail)
                         retries = 0
                     continue
+                cur = getattr(s, "cursor", None)
+                if cur is not None and cur.enabled:
+                    cur.set_state("busy")                   # waiting for the page to answer the click
                 changed = self._verify_effect(s, obs, step, f)
+                if cur is not None and cur.enabled:
+                    cur.set_state("idle")
                 recent.append(f"{step.action.describe()} → {'page changed' if changed else 'no visible change'}")
                 if changed:
                     retries = 0

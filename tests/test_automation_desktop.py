@@ -91,3 +91,39 @@ def test_observe_only_scope_cannot_type(notepad):
     scope = NS(id="t", mode="observe_window", allowed_domains=[], confirm_medium=False)
     r = s.act(scope, Action("type", text="nope"), edit)
     assert not r.ok and "only look" in r.detail
+
+
+def test_native_cursor_placement_math():
+    from monkey.automation.cursor_native import tip_offset, window_origin
+
+    assert tip_offset((42, 42), 1.5) == (63, 63)
+    assert window_origin(-1000, 200, (42, 42), 1.0) == (-1042, 158)     # a monitor left of the primary
+
+
+@win
+def test_native_banana_overlay_is_aligned_click_through_and_unfocusable():
+    import ctypes
+
+    from monkey.automation.cursor_native import NativeCursor
+    from monkey.automation.desktop import root_at
+
+    nc = NativeCursor(motion="reduced")
+    try:
+        nc.move_to(400, 300)
+        nc.hover("button")
+        nc.flush()
+        left, top, right, bottom = nc.window_rect()
+        assert right - left > 40 and bottom - top > 40
+        assert (left + nc.tip[0], top + nc.tip[1]) == (400, 300)      # the tip pixel is on the action point
+        ex = ctypes.windll.user32.GetWindowLongW(nc.hwnd, -20)
+        for bit in (0x80000, 0x20, 0x8000000, 0x8):                  # LAYERED TRANSPARENT NOACTIVATE TOPMOST
+            assert ex & bit, hex(bit)
+        assert root_at(400 + 6, 300 + 6) != nc.hwnd                 # clicks go to whatever is underneath
+        assert ctypes.windll.user32.GetForegroundWindow() != nc.hwnd
+        nc.press()
+        nc.release()
+        nc.hide()
+        nc.flush()
+        assert not ctypes.windll.user32.IsWindowVisible(nc.hwnd)
+    finally:
+        nc.close()

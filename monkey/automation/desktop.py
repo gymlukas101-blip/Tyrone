@@ -231,7 +231,7 @@ class Control:
 class DesktopSession:
     """One authorized window, read and driven through UI Automation (pywinauto, uia backend)."""
 
-    def __init__(self, hwnd: int, gate: PermissionGate):
+    def __init__(self, hwnd: int, gate: PermissionGate, cursor=None):
         if not IS_WIN:
             raise RuntimeError("Window control works on Windows only")
         make_dpi_aware()
@@ -241,6 +241,7 @@ class DesktopSession:
         if info.sensitive:
             raise PermissionError("Monkey can't look at or control that kind of window (passwords, security, banking)")
         self.hwnd, self.info, self.gate = hwnd, info, gate
+        self.cursor = cursor            # cursor_native.NativeCursor (screen space) or None
         from pywinauto import Desktop
 
         self._win = Desktop(backend="uia").window(handle=hwnd)
@@ -296,17 +297,26 @@ class DesktopSession:
             if root_at(cx, cy) not in (self.hwnd, 0):
                 return ActResult(False, "another window is covering it, so I didn't click", d)
         w = c._wrapper if c is not None else None
+        cur = self.cursor if (self.cursor is not None and c is not None and c.rect.width) else None
         try:
             if action.kind == "click":
+                if cur is not None:
+                    # Points at the control it activates (its centre: also where click_input would click).
+                    cur.move_to((c.rect.left + c.rect.right) // 2, (c.rect.top + c.rect.bottom) // 2)
+                    cur.hover(c.target().role)
                 for how in ("invoke", "toggle", "select", "click_input"):
                     fn = getattr(w, how, None)
                     if fn is None:
                         continue
                     try:
+                        if how == "click_input" and cur is not None:
+                            cur.press()                      # a real OS pointer click: press/ripple match it
                         fn()
                         break
                     except Exception:  # noqa: BLE001 - not supported by this control: try the next way
                         continue
+                if cur is not None:
+                    cur.release()
             elif action.kind == "type":
                 try:
                     w.set_edit_text(action.text)

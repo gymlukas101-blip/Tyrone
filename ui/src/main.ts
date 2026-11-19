@@ -11,6 +11,7 @@ import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
+import { cursorSettings } from "./cursor";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
@@ -990,7 +991,7 @@ function organizeSettings(dlg: HTMLDialogElement) {
   }
   if (brief) brief.id = "set-brief";
   if (memory) memory.id = "set-memory";
-  if (look) { look.id = "set-feel"; look.querySelector("h4")!.textContent = "Look & mic"; }
+  if (look) { look.id = "set-feel"; look.querySelector("h4")!.textContent = "Look & mic"; look.append(cursorSettings(api, appState.settings)); }
   if (mic && look) { for (const el of [...mic.children].slice(1)) look.append(el); mic.remove(); }
   // Updates stay visible (in Look & mic); the image model goes to Advanced
   const imgModel = images?.querySelector("#imageModelRow");

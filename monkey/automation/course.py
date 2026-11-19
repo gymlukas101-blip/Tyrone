@@ -183,6 +183,9 @@ class CourseSkill:
 
 
 _MEDIA_DONE_JS = """() => { const ms = [...document.querySelectorAll('video,audio')];
+  // The page re-rendered and swapped in a fresh (stopped) player: look again instead of waiting it out.
+  if (!window.__mkMedia || !window.__mkMedia.isConnected) {
+    const was = window.__mkMedia; window.__mkMedia = ms[0] || null; if (was && ms[0] && ms[0].paused) return true; }
   const next = [...document.querySelectorAll('button,a,[role=button]')].some(b =>
       /^\\W*(continue|next|next page|proceed)\\W*$/i.test((b.innerText || b.getAttribute('aria-label') || '').trim())
       && !b.disabled && b.getAttribute('aria-disabled') !== 'true');

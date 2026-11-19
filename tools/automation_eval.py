@@ -43,7 +43,7 @@ def user_turn(page) -> str:
     if page.locator("input[type=password]").count():
         page.fill("input[name=user]", "jordan")
         page.fill("input[type=password]", "correct horse")
-        page.click("text=Sign in")
+        page.click("button:has-text('Sign in')")
         return "signed in"
     radios = page.locator("input[type=radio][name=q]")
     if radios.count():
@@ -60,7 +60,7 @@ def user_turn(page) -> str:
 
 
 def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, pause_test: bool = False,
-            restart_test: bool = False, headless: bool = True) -> dict:
+            restart_test: bool = False, headless: bool = True, cursor: bool = False) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="monkey-eval-"))
     course = DemoCourse(media_seconds=media, variants=variants, seed=seed).start()
     gate = PermissionGate()
@@ -68,7 +68,12 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
     events: list = []
 
     def factory(task):
-        return BrowserSession(tmp / "profile", gate, headless=headless, executable_path=browser_path())
+        cur = None
+        if cursor:
+            from monkey.automation.cursor_events import BrowserCursor, CursorSettings
+
+            cur = BrowserCursor(CursorSettings(motion="full"))
+        return BrowserSession(tmp / "profile", gate, headless=headless, executable_path=browser_path(), cursor=cur)
 
     mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]))
     t = mgr.create("Finish all 4 modules of the safety training", course.url, ["127.0.0.1"])
@@ -146,7 +151,7 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
         "actions": final.usage.actions, "model_calls": final.usage.model_calls,
         "user_acts": user_acts, "errors": [e["kind"] for e in final.errors][-8:], "note": final.note,
         "pause_ok": paused_ok and resumed_ok if pause_test else None, "restart_paused": restarted if restart_test else None,
-        "refused": sum(1 for a in store.audit_log(t.id) if a["outcome"] == "refused"),
+        "refused": sum(1 for a in store.audit_log(t.id) if a["outcome"] == "refused"), "cursor": cursor,
     }
     course.stop()
     shutil.rmtree(tmp, ignore_errors=True)
@@ -159,15 +164,18 @@ def main() -> None:
     ap.add_argument("--media", type=float, default=1.5)
     ap.add_argument("--json", default="")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--cursor", choices=("off", "on", "alternate"), default="off")
     args = ap.parse_args()
     results = []
     for i in range(args.runs):
         v = VARIANT_MIX[i % len(VARIANT_MIX)]
-        r = run_one(v, args.media, seed=i, pause_test=(i % 4 == 1), restart_test=(i % 6 == 5), headless=not args.headed)
+        cur = args.cursor == "on" or (args.cursor == "alternate" and i >= len(VARIANT_MIX))
+        r = run_one(v, args.media, seed=i, pause_test=(i % 4 == 1), restart_test=(i % 6 == 5), headless=not args.headed,
+                    cursor=cur)
         results.append(r)
         print(json.dumps({k: r[k] for k in ("variants", "state", "server_complete", "verified_success",
                                              "unauthorized", "seconds", "actions", "pause_ok", "restart_paused",
-                                             "refused", "errors")}), flush=True)
+                                             "refused", "errors", "cursor")}), flush=True)
     n = len(results)
     summary = {
         "runs": n, "verified_success": sum(r["verified_success"] for r in results),

@@ -45,8 +45,11 @@ class AutomationService:
 
     def _session(self, task):
         from .browser import BrowserSession, default_profile_dir
+        from .cursor_events import BrowserCursor, CursorSettings
 
-        return BrowserSession(default_profile_dir(self.app.cfg.data_dir), self.gate, headless=False)
+        cs = CursorSettings.from_app(self.app.cfg.settings)
+        cursor = BrowserCursor(cs, on_event=lambda e: self.app.ui.emit("cursor", e)) if cs.mode != "off" else None
+        return BrowserSession(default_profile_dir(self.app.cfg.data_dir), self.gate, headless=False, cursor=cursor)
 
     def _emit(self, name: str, p: dict) -> None:
         self.app.ui.emit(name, p)

@@ -99,6 +99,13 @@ class Settings:
     overlay_enabled: bool = True      # the small always-on-top companion window (when computer access is on)
     overlay_mode: str = "compact"     # compact | expanded | minimized
     overlay_geom: dict = field(default_factory=dict)    # {"x", "y", "w", "h"} remembered position
+    # Animated banana cursor (feedback while Monkey controls something; never replaces the Windows mouse)
+    cursor_mode: str = "control"      # off | control
+    cursor_scale: float = 1.0         # 0.75 - 1.6
+    cursor_glow: float = 0.7          # 0 - 1
+    cursor_motion: str = "auto"       # auto (follows Windows animation settings) | full | reduced
+    cursor_click_fx: bool = True
+    cursor_busy_fx: bool = True
     # App
     start_with_windows: bool = True
     first_run_complete: bool = False

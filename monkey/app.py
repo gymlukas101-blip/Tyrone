@@ -2117,7 +2117,7 @@ def selftest() -> int:
 
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")
-        for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray",
+        for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray", "playwright.sync_api",
                     "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack", "psutil", "send2trash"):
             try:
                 __import__(mod)

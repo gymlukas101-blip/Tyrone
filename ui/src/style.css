@@ -475,3 +475,17 @@ body.overlay #app { display: block; height: 100vh; }
 #ov[data-mode="minimized"] .ov-panel { display: none; }
 #ov[data-mode="expanded"] .ov-avatar { width: 220px; height: 220px; }
 @media (prefers-reduced-motion: reduce) { #ov .ov-ring[data-on="1"] { animation: none; } }
+
+/* ---------------- banana cursor settings + preview */
+.cursorsettings { display: grid; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.cursorsettings h5 { margin: 0; font-size: 15px; }
+.cursorstage { position: relative; height: 150px; border-radius: 12px; background: #22262c; overflow: hidden;
+  display: flex; gap: 22px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px; }
+.cursorstage .cs-layer { position: absolute; inset: 0; pointer-events: none; }
+.cs-btn { padding: 8px 14px; border-radius: 8px; background: #2f7d46; color: #fff; font-weight: 700; transition: transform .1s; }
+.cs-btn.pressed { transform: translateY(2px); filter: brightness(1.15); }
+.cs-link { color: #8fd3ff; text-decoration: underline; }
+.cs-text { color: #9aa3ad; }
+.cs-drop { border: 2px dashed #6b7480; color: #9aa3ad; border-radius: 8px; padding: 8px 12px; }
+.cs-ctl { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-ctl .ghost.mini { margin-left: 0; }

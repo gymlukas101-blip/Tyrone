@@ -257,6 +257,11 @@ window.__rebind();"""
                         return self._send(503, "<h1>503 Service temporarily unavailable</h1><p>Try again.</p>")
                 if path == "/":
                     return self._send(200, course.home())
+                if path == "/cursor-lab":
+                    return self._send(200, CURSOR_LAB)
+                if path == "/cursor-lab/slow":
+                    time.sleep(1.2)                                # a page that takes a while to answer
+                    return self._send(200, CURSOR_LAB.replace("<h1>Cursor lab</h1>", "<h1>Cursor lab: loaded</h1>"))
                 if path == "/complete":
                     if not course.all_complete():
                         return self._send(302, "", headers={"Location": "/"})
@@ -328,3 +333,26 @@ window.__rebind();"""
     @property
     def expired_once_active(self) -> bool:
         return "expire" in self.variants and self.expired_once
+
+
+CURSOR_LAB = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Cursor lab · Demo U</title>
+<style>body{font:15px system-ui;margin:24px;background:#f4f1e8}section{display:flex;gap:18px;align-items:center;margin:18px 0}
+#drag{width:70px;height:50px;background:#ffd60a;border:2px solid #4d2b0f;border-radius:8px}
+#drop{width:160px;height:70px;border:2px dashed #888;border-radius:8px}.fake{padding:8px 14px;background:#2a7;color:#fff;border-radius:8px}
+</style></head><body><h1>Cursor lab</h1>
+<p>Every click on this page is counted, with where it landed. Nothing leaves this computer.</p>
+<section><button id="b1">Save draft</button><a id="l1" href="#section-2">Read more</a>
+<input id="t1" aria-label="Your name" placeholder="Your name"><label><input type="checkbox" id="c1"> Remind me</label>
+<input type="range" id="r1" aria-label="Volume" min="0" max="10" value="3"></section>
+<section><div class="fake" id="f1">Looks like a button</div><span>plain text</span>
+<a id="slow" href="/cursor-lab/slow">Slow page</a></section>
+<section><div id="drag" draggable="true" aria-label="Banana box" role="button">drag me</div><div id="drop">drop here</div></section>
+<section style="margin-top:900px" id="section-2"><button id="b2">Far down</button></section>
+<script>
+window.__clicks = []; window.__counts = {};
+document.addEventListener("click", e => { const id = (e.target.closest("[id]") || {}).id || "";
+  window.__clicks.push({id, x: e.clientX, y: e.clientY, trusted: e.isTrusted}); window.__counts[id] = (window.__counts[id] || 0) + 1; }, true);
+const drop = document.getElementById("drop");
+drop.addEventListener("dragover", e => e.preventDefault());
+drop.addEventListener("drop", e => { e.preventDefault(); drop.textContent = "dropped!"; });
+</script></body></html>"""

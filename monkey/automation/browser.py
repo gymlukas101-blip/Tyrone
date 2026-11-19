@@ -138,7 +138,8 @@ class BrowserSession:
     """Owns one Playwright persistent context. All calls must come from the thread that called start()."""
 
     def __init__(self, profile_dir: Path | str, gate: PermissionGate, *, headless: bool = False,
-                 channel: str | None = None, executable_path: str | None = None, allowed_domains=None):
+                 channel: str | None = None, executable_path: str | None = None, allowed_domains=None,
+                 cursor=None):
         self.profile_dir = str(profile_dir)
         self.gate = gate
         self.headless = headless
@@ -152,6 +153,7 @@ class BrowserSession:
         self.inbox: "queue.Queue[Callable]" = queue.Queue()   # work that must run on the browser thread
         self._owner: int | None = None
         self.last_obs: Observation | None = None
+        self.cursor = cursor                  # cursor_events.BrowserCursor (feedback only) or None
 
     # ---- lifecycle ---------------------------------------------------------------------------------------------
     def start(self) -> "BrowserSession":
@@ -168,10 +170,14 @@ class BrowserSession:
             kw["channel"] = self.channel
         self.context = self._pw.chromium.launch_persistent_context(self.profile_dir, **kw)
         self.context.route("**/*", self._route)
+        if self.cursor is not None:
+            self.cursor.install(self.context)
         self.context.on("page", self._on_page)
         for p in self.context.pages:
             self._on_page(p)
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        if self.cursor is not None:
+            self.cursor.page = self.page
         return self
 
     def alive(self) -> bool:
@@ -201,6 +207,8 @@ class BrowserSession:
         if self.page is not None and p is not self.page:
             self.page = p                    # a page the site opened becomes the active tab
             self.events.append({"type": "tab_opened"})
+            if self.cursor is not None:
+                self.cursor.page = p
 
     def _route(self, route) -> None:
         req = route.request
@@ -352,6 +360,8 @@ class BrowserSession:
         page = self.page
         k = action.kind
         if k == "navigate":
+            if self.cursor is not None:
+                self.cursor.set_state("busy")
             if action.url in ("back", "forward", "reload"):
                 {"back": page.go_back, "forward": page.go_forward, "reload": page.reload}[action.url](
                     wait_until="domcontentloaded", timeout=20_000)
@@ -361,9 +371,22 @@ class BrowserSession:
         elif k in ("click", "play"):
             if el is None:
                 raise StaleRef("nothing to click")
-            self.locate(el).click(timeout=5_000)
+            loc = self.locate(el)
+            if self.cursor is not None and self.cursor.enabled:
+                self._cursor_click(loc, el)
+            else:
+                loc.click(timeout=5_000)
         elif k == "type":
-            self.locate(el).fill(action.text, timeout=5_000)
+            loc = self.locate(el)
+            if self.cursor is not None and self.cursor.enabled:
+                box = loc.bounding_box()
+                if box:
+                    self.cursor.move_to(box["x"] + min(14, box["width"] / 2), box["y"] + box["height"] / 2)
+                    self.cursor.hover(el.role)
+                self.cursor.set_state("typing")
+            loc.fill(action.text, timeout=5_000)
+            if self.cursor is not None:
+                self.cursor.set_state("idle")
         elif k == "select":
             self.locate(el).select_option(label=action.text, timeout=5_000)
         elif k == "press":
@@ -374,6 +397,23 @@ class BrowserSession:
             pass
         else:
             raise ValueError(f"unknown action {k}")
+
+    def _cursor_click(self, loc, el: Element) -> None:
+        """Click with the banana: the real click lands on exactly the viewport point the tip is drawn at."""
+        loc.click(trial=True, timeout=5_000)      # Playwright's checks (visible, stable, enabled, hit) + scroll, no click
+        box = loc.bounding_box()
+        if not box:
+            loc.click(timeout=5_000)
+            return
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        c = self.cursor
+        c.move_to(x, y)
+        c.hover(el.role)
+        c.press()
+        try:
+            self.page.mouse.click(x, y)
+        finally:
+            c.release()
 
     def target_at(self, x: int, y: int) -> Target:
         info = self.page.evaluate(_POINT_JS, [x, y]) or {}
