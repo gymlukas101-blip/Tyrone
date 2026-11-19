@@ -167,7 +167,7 @@ async function act(pathname, q) {
 
 (async () => {
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, timezoneId: "America/Chicago", locale: "en-US", permissions: ["clipboard-read", "clipboard-write"] });
   page = await ctx.newPage();
   page.__errs = [];
   page.on("pageerror", (e) => page.__errs.push(String(e).slice(0, 200)));
