@@ -400,7 +400,7 @@ section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f)
 #cards .card.folded > :not(h3):not(.close) { display: none; }
 #cards .card.folded { padding-bottom: 0; }
 #cards .card.folded h3 { cursor: pointer; margin-bottom: 0; border-radius: 15px; border-bottom: none; }
-#cards .card.folded h3::after { content: "  ▸ open"; font-size: 12px; opacity: .8; }
+
 /* checkbox sits right next to its words */
 .settings .field > label { display: inline-flex; align-items: center; gap: 8px; justify-self: start; text-align: left; }
 .rangewrap { display: inline-flex; align-items: center; gap: 8px; }
@@ -409,5 +409,5 @@ section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f)
 .briefsec .items li { display: block; text-align: left; }
 
 button:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
-#cards .card.folded h3::after { content: "  ▸ open"; font-size: 13px; font-weight: 700; opacity: .9; }
+#cards .card.folded h3::after { content: "▸ open"; margin-left: 12px; font-size: 13px; font-weight: 700; opacity: .9; }
 #cards { max-height: 55%; }

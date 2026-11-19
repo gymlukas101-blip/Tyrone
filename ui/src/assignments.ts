@@ -169,7 +169,7 @@ function draw() {
             .filter(Boolean).join(" · ")))),
     h("div", { class: "tabs" },
       h("button", { type: "button", class: tab === "todo" ? "on" : "", onclick: () => { current!.tab = "todo"; draw(); } },
-        `To do (${board.todo.length})`),
+        `All to do (${board.todo.length})`),
       h("button", { type: "button", class: tab === "done" ? "on" : "", onclick: () => { current!.tab = "done"; draw(); } },
         `Done (${board.done.length})`)),
     list.length

@@ -1234,11 +1234,20 @@ function memoryUsed(items: { kind: string; ref: string; date: string; source: st
   // Internal notes (model policy, site shortcuts) aren't "memories" a person cares about.
   items = items.filter((i) => tech || i.kind !== "fact" || i.source in FRIENDLY_SOURCE);
   if (!items.length) return;
+  // One chip per answer: merge with a chip that's already right above (recall + search both report memories).
+  const prev = log.lastElementChild as HTMLElement | null;
+  if (prev?.classList.contains("memchip")) {
+    const seen = new Set<string>(JSON.parse(prev.dataset.refs ?? "[]"));
+    items = [...JSON.parse(prev.dataset.items ?? "[]"), ...items.filter((i) => !seen.has(i.ref))];
+    prev.remove();
+  }
   const label = items.map((i) => i.text ? `“${i.text}”` :
     `${i.kind === "fact" ? (tech ? i.source : FRIENDLY_SOURCE[i.source]) : i.kind === "episode" ? "an earlier chat" : "this conversation"} · ${i.date}`);
   const chip = h("details", { class: "memchip" }, h("summary", {}, `🧠 used ${items.length} memor${items.length === 1 ? "y" : "ies"}`),
     h("ul", {}, ...label.map((t) => h("li", {}, t))),
-    h("button", { class: "ghost mini", type: "button", onclick: () => void openMemory() }, "See or fix what Monkey knows"));
+    h("button", { class: "ghost mini", type: "button", onclick: () => void openMemory() }, "See or fix what Monkey knows")) as HTMLElement;
+  chip.dataset.items = JSON.stringify(items);
+  chip.dataset.refs = JSON.stringify(items.map((i) => i.ref));
   log.append(chip);
   log.scrollTop = log.scrollHeight;
 }
