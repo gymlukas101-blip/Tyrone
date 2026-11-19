@@ -548,7 +548,7 @@ class MonkeyApp:
             text = self.stt().transcribe(audio) if self.stt else ""
         except Exception as exc:  # noqa: BLE001
             log.exception("speech recognition failed")
-            self._emit("warning", {"message": f"Speech recognition failed ({type(exc).__name__}). Try again."})
+            self._emit("warning", {"message": explain_stt_error(exc)})
             text = ""
         text = conversation.strip_wake(text or "")
         self.ui.emit("heard", {"text": text})
@@ -709,6 +709,21 @@ class MonkeyApp:
         except (OSError, ValueError):
             return None
         return None if d.get("seen") else d
+
+
+def explain_stt_error(exc: Exception) -> str:
+    """Plain words for a failed transcription (the bare exception name told nobody anything)."""
+    msg = str(exc)
+    low = msg.lower()
+    if "cublas" in low or "cudnn" in low or "cuda" in low:
+        return "Speech recognition hit a graphics-card problem. Monkey switched to the processor; say it again."
+    if "no such file" in low or "model.bin" in low or "unable to open" in low:
+        return ("Speech recognition's model files are missing or damaged. Restart Monkey with internet on so he can "
+                "download them again (about 250 MB, once).")
+    if "memory" in low:
+        return "Speech recognition ran out of memory. Close some apps and try again."
+    return f"Speech recognition failed ({type(exc).__name__}: {msg[:120]}). Try again; if it keeps happening, " \
+           "run Settings → Check everything and send the report."
 
 
 def explain_download_error(exc: Exception) -> str:

@@ -160,6 +160,17 @@ def _listening_checks(app) -> list[Check]:
         out.append(Check("Listening", "Speech detection", OK if lst.vad is not None else WARN,
                          "smart speech detection on" if lst.vad is not None else "basic detection only (may cut you off more often)",
                          "" if lst.vad is not None else "Reinstall Monkey from the latest release"))
+    # A real transcription: the mic, wake word and listener all looked fine while every utterance failed (a GPU
+    # picked by faster-whisper without its CUDA libraries).
+    stt = getattr(app, "stt", None)
+    try:
+        eng = stt() if callable(stt) else None
+    except Exception:  # noqa: BLE001
+        eng = None
+    if eng is not None and hasattr(eng, "self_test"):
+        ok, detail = eng.self_test()
+        out.append(Check("Listening", "Speech recognition", OK if ok else FAIL, _scrub(detail),
+                         "" if ok else "Restart Monkey with internet on; if it still fails, send this report"))
     return out
 
 
