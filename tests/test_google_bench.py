@@ -31,32 +31,74 @@ def test_error_messages_say_what_to_do():
 
 
 class FakeFlow:
+    """Behaves like InstalledAppFlow.run_local_server: opens the browser via webbrowser.get(browser).open(url)."""
     calls = []
+    gate = None
 
     @classmethod
     def from_client_config(cls, info, scopes):
         return cls()
 
     def run_local_server(self, **kw):
-        FakeFlow.calls.append(kw)
         import webbrowser
 
-        webbrowser.get().open("https://accounts.google.com/o/oauth2/auth?x=1")   # what the real flow does
+        FakeFlow.calls.append(kw)
+        webbrowser.get(kw.get("browser")).open("https://accounts.google.com/o/oauth2/auth?x=1", new=1, autoraise=True)
+        if FakeFlow.gate is not None:
+            FakeFlow.gate.wait(2)                                      # "waiting for the user in the browser"
         return NS(token="t", to_json=lambda: '{"token": "t"}')
 
 
-def test_sign_in_reports_url_and_saves_token(monkeypatch):
+def test_sign_in_opens_browser_once_without_touching_webbrowser(monkeypatch):
+    """Regression (v0.3.33): patching webbrowser.get made webbrowser.open recurse, so nothing ever opened."""
     flowmod = pytest.importorskip("google_auth_oauthlib.flow")      # desktop extra: installed in the Windows job
     import webbrowser
 
+    from monkey import links
+
     monkeypatch.setattr(flowmod, "InstalledAppFlow", FakeFlow)
-    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: True)
+    launched = []
+    monkeypatch.setattr(links, "launch_url", lambda u: launched.append(u) or True)
+    real_get, real_open = webbrowser.get, webbrowser.open
     keys.set("google_client", DESKTOP)
     urls = []
-    G.GoogleAuth().sign_in(on_url=urls.append)
-    assert urls and urls[0].startswith("https://accounts.google.com")
-    assert FakeFlow.calls[-1]["timeout_seconds"] == 300 and keys.get("google_token") == '{"token": "t"}'
-    assert webbrowser.get.__name__ != "<lambda>"                     # the shim is removed afterwards
+    G.GoogleAuth().sign_in(on_url=urls.append)                       # would raise/hang on recursion before
+    assert launched == ["https://accounts.google.com/o/oauth2/auth?x=1"] and urls == launched
+    assert FakeFlow.calls[-1]["browser"] == G.SIGNIN_BROWSER and FakeFlow.calls[-1]["timeout_seconds"] == 300
+    assert webbrowser.get is real_get and webbrowser.open is real_open
+    assert keys.get("google_token") == '{"token": "t"}'
+
+
+def test_other_links_still_open_while_sign_in_waits(monkeypatch, tmp_path):
+    """The 'Open Google sign-in' link (Api.open_url -> MonkeyApp._open_url) must work during the wait."""
+    import threading
+
+    flowmod = pytest.importorskip("google_auth_oauthlib.flow")
+    from monkey import links
+
+    monkeypatch.setattr(flowmod, "InstalledAppFlow", FakeFlow)
+    launched = []
+    monkeypatch.setattr(links, "launch_url", lambda u: launched.append(u) or True)
+    keys.set("google_client", DESKTOP)
+    FakeFlow.gate = threading.Event()
+    t = threading.Thread(target=lambda: G.GoogleAuth().sign_in(on_url=lambda u: None), daemon=True)
+    t.start()
+    time.sleep(0.2)
+    app_mod.MonkeyApp._open_url("https://accounts.google.com/o/oauth2/auth?x=1")   # the link in Settings
+    FakeFlow.gate.set()
+    t.join(3)
+    FakeFlow.gate = None
+    assert launched.count("https://accounts.google.com/o/oauth2/auth?x=1") == 2      # auto-open + the link
+
+
+def test_launch_url_only_http_and_uses_startfile_on_windows(monkeypatch):
+    from monkey import links
+
+    assert links.launch_url("javascript:alert(1)") is False and links.launch_url("file:///C:/x") is False
+    called = []
+    monkeypatch.setattr(links.sys, "platform", "win32")
+    monkeypatch.setattr(links.os, "startfile", lambda u: called.append(u), raising=False)
+    assert links.launch_url("https://example.com") is True and called == ["https://example.com"]
 
 
 @pytest.fixture

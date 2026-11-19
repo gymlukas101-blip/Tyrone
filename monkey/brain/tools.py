@@ -336,7 +336,7 @@ class ToolRunner:
 
     def t_read_email(self, account: str, email_id: str):
         prov = self.s.mail.get(account)
-        if prov is None:
+        if prov is None or not prov.available():
             return f"{account} isn't connected."
         e = prov.get(email_id)
         self.s.email_cache[e.id] = e

@@ -223,3 +223,17 @@ There was no cross-session recall, no provenance, and no correct or forget tools
 - Playwright (demo build): with Settings open, a sign-in error toast is **inside the dialog and on top** (`elementFromPoint` hit), the status line shows the reason, and the benchmark card renders.
 
 Full suite: 263 passed, 1 skipped.
+
+## Fix: Google sign-in still opened nothing (v0.3.33 regression) + Outlook kept launching
+
+**Google.** To capture the sign-in URL, v0.3.33 replaced the global `webbrowser.get` with a shim whose `open()` called `webbrowser.open()`. That function looks browsers up through the same patched `get`, so it recursed until a `RecursionError`, which was swallowed. The shim stayed installed for the whole 5-minute wait, so the "Open Google sign-in" link (`MonkeyApp._open_url` → `webbrowser.open`) failed the same way. The old test faked `webbrowser.open`, so the recursion never ran.
+- Now: a named controller (`webbrowser.register("monkey-google-signin", …)`) is passed as `run_local_server(browser=…)`, the library's supported hook. Nothing global is patched.
+- `monkey/links.py` `launch_url` (http/https only; `os.startfile` on Windows, `open`/`xdg-open` elsewhere, the stdlib default last) is used by sign-in and by every link and website the app opens.
+- The status line adds a **Copy link** button for when no browser opens.
+- Tests drive the real stdlib `webbrowser` and fail on the v0.3.33 code.
+
+**Outlook.** `OutlookProvider.available()` called `Dispatch("Outlook.Application")`, which starts Outlook. It ran on every UI state refresh, every "all calendars/emails" read and every brief check, and the `use_outlook` setting gated nothing.
+- Now `available()` is a registry lookup (`HKCR\Outlook.Application\CLSID`) plus a new opt-in, `outlook_connected` (default off).
+- Only **Connect** (`test_outlook`) starts Outlook, and success turns the opt-in on. **Disconnect** turns it off.
+- Real reads attach to a running Outlook first (`GetActiveObject`) and start it only if it is closed. `read_email` also checks availability.
+- Tests: `tests/test_outlook_optin.py`.

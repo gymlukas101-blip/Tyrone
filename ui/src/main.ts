@@ -663,7 +663,10 @@ async function openSettings() {
         h("div", { class: "field" }, status(!!appState.connections.outlook), h("span", {}, "wisc.edu Outlook"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
-          } }, "Test connection")),
+          } }, appState.connections.outlook ? "Test connection" : "Connect"),
+          appState.connections.outlook && h("button", { class: "ghost", type: "button", onclick: async () => {
+            await api.disconnect_outlook(); toast("Outlook disconnected: Monkey won't open it"); openSettings();
+          } }, "Disconnect")),
         (() => {
           const ta = h("textarea", { rows: 2, placeholder: appState.connections.calendar_ics ? "Calendar link saved (paste to replace)" : "https://calendar.google.com/calendar/ical/…/private-…/basic.ics" }) as HTMLTextAreaElement;
           return h("div", {},
@@ -839,7 +842,12 @@ function googleEvent(p: any) {
   const st = document.getElementById("googleStatus");
   if (p.stage === "opening") {
     if (st) st.replaceChildren("Finish signing in in your browser. Nothing opened? ",
-      extLink(p.url, "Open Google sign-in"));
+      extLink(p.url, "Open Google sign-in"), " or ",
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        try { await navigator.clipboard.writeText(p.url); toast("Link copied: paste it into your browser"); }
+        catch { toast("⚠ Couldn't copy; use the Open link"); }
+      } }, "Copy link"),
+      " (Monkey waits up to 5 minutes).");
   } else if (p.stage === "done") {
     if (st) st.textContent = "✓ Google connected";
     toast("✓ Google connected");

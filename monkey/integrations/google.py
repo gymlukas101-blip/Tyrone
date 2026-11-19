@@ -60,6 +60,9 @@ def explain_sign_in_error(exc: Exception) -> str:
     return f"Google sign-in failed ({text[:160]})."
 
 
+SIGNIN_BROWSER = "monkey-google-signin"
+
+
 class GoogleAuth:
     """Holds credentials; runs the browser sign-in flow on demand."""
 
@@ -72,33 +75,33 @@ class GoogleAuth:
 
     def sign_in(self, on_url=None, timeout_s: int = 300) -> None:
         """Browser sign-in. on_url(url) gets the Google sign-in link as soon as it exists, so the app can show a
-        clickable link if the browser doesn't come up (or opens behind Monkey)."""
+        clickable link if the browser doesn't come up (or opens behind Monkey).
+
+        The library opens the browser via webbrowser.get(<name>).open(url); we register our own named controller
+        for that instead of patching webbrowser globally (patching made webbrowser.open recurse into itself, so
+        nothing opened, including every other link in the app while the sign-in was waiting)."""
         import webbrowser
 
         from google_auth_oauthlib.flow import InstalledAppFlow
 
+        from ..links import launch_url
+
         info = validate_client(keys.get("google_client") or "")
         flow = InstalledAppFlow.from_client_config(info, SCOPES)
 
-        class _Opener:
+        class _SignInBrowser(webbrowser.BaseBrowser):
             def open(self, url, new=0, autoraise=True):
                 if on_url is not None:
                     on_url(url)
-                try:
-                    return webbrowser.open(url, new=new, autoraise=autoraise)
-                except Exception:  # noqa: BLE001 - the link in the app still works
-                    return False
+                return launch_url(url)          # never webbrowser.open(): no way to loop back here
 
-        real_get = webbrowser.get
-        webbrowser.get = lambda using=None: _Opener()        # run_local_server opens via webbrowser.get().open()
+        webbrowser.register(SIGNIN_BROWSER, None, _SignInBrowser(SIGNIN_BROWSER))
         try:
-            creds = flow.run_local_server(port=0, open_browser=True, timeout_seconds=timeout_s,
+            creds = flow.run_local_server(port=0, open_browser=True, browser=SIGNIN_BROWSER, timeout_seconds=timeout_s,
                                           authorization_prompt_message="",
                                           success_message="Monkey is connected to Google. You can close this tab.")
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(explain_sign_in_error(exc)) from exc
-        finally:
-            webbrowser.get = real_get
         if creds is None or not getattr(creds, "token", None):
             raise RuntimeError("Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser.")
         keys.set("google_token", creds.to_json())

@@ -71,7 +71,8 @@ class Settings:
     prototype_notes: dict = field(default_factory=dict)
     # Integrations
     use_gmail: bool = True
-    use_outlook: bool = True
+    use_outlook: bool = True          # legacy, ignored (it never gated anything)
+    outlook_connected: bool = False   # opt-in: Monkey touches Outlook only after you click Connect
     canvas_ics_url: str = ""
     canvas_base_url: str = "https://canvas.wisc.edu"
     canvas_token_expires: str = ""    # YYYY-MM-DD; UW tokens are short-lived, Monkey warns before expiry

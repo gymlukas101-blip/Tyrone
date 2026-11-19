@@ -47,6 +47,7 @@ export interface Api {
   routing_benchmark(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
   google_sign_out(): Promise<void>;
   test_outlook(): Promise<{ ok: boolean; error?: string }>;
+  disconnect_outlook(): Promise<{ ok: boolean }>;
   learn_style(): Promise<{ ok: boolean; error?: string; preview?: string }>;
   voice_design(instruction: string): Promise<{ ok: boolean; error?: string; candidates?: string[] }>;
   choose_voice(index: number): Promise<{ ok: boolean; error?: string; voice_id?: string }>;
@@ -259,6 +260,7 @@ function mockApi(): Api {
     },
     async google_sign_out() {},
     async test_outlook() { return { ok: false, error: "Demo mode" }; },
+    async disconnect_outlook() { return { ok: true }; },
     async learn_style() { return { ok: false, error: "Demo mode" }; },
     async voice_design() { return { ok: false, error: "Demo mode" }; },
     async choose_voice() { return { ok: false, error: "Demo mode" }; },

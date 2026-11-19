@@ -100,7 +100,7 @@ class MonkeyApp:
         self.google = GoogleAuth()
         self.gmail = GmailProvider(self.google)
         self.gcal = GoogleCalendarProvider(self.google)
-        self.outlook = OutlookProvider()
+        self.outlook = OutlookProvider(enabled=lambda: self.cfg.settings.outlook_connected)
         self.canvas = CanvasCalendar(lambda: self.cfg.settings.canvas_ics_url)
         self.ics_calendar = ICSCalendar(lambda: keys.get("calendar_ics"))   # private iCal links (no OAuth)
         self.canvas_api = CanvasAPI(lambda: self.cfg.settings.canvas_base_url, lambda: keys.get("canvas_token"))
@@ -673,8 +673,9 @@ class MonkeyApp:
 
     @staticmethod
     def _open_url(url: str) -> None:
-        if url.startswith(("http://", "https://")):
-            webbrowser.open(url)
+        from .links import launch_url
+
+        launch_url(url)
 
 
 def _thumb_data_uri(path: Path, size: int = 1024) -> str:
@@ -1270,14 +1271,27 @@ class Api:
         self._app.google.sign_out()
 
     def test_outlook(self):
-        o = self._app.outlook
+        """The Connect button: the only place Monkey starts Outlook on its own. Success turns Outlook on."""
+        from .integrations.outlook_com import installed
+
+        o, st = self._app.outlook, self._app.cfg.settings
         if sys.platform != "win32":
             return {"ok": False, "error": "Outlook only works on Windows"}
+        if not installed():
+            return {"ok": False, "error": "Classic Outlook isn't installed (the \"new Outlook\" can't be read by apps). "
+                                         "Install Microsoft 365 Apps from UW's Office 365 page, or use a calendar link."}
         try:
             got = o.list_recent(max_results=1)
-            return {"ok": True, "count": len(got)}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"{exc}. Make sure classic Outlook is installed and signed in to wisc.edu."}
+        st.outlook_connected = True
+        self._app.cfg.save()
+        return {"ok": True, "count": len(got)}
+
+    def disconnect_outlook(self):
+        self._app.cfg.settings.outlook_connected = False
+        self._app.cfg.save()
+        return {"ok": True}
 
     def learn_style(self):
         from .integrations.style import learn_style

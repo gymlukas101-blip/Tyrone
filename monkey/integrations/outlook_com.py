@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -48,30 +49,57 @@ def _smtp(item) -> str:
     return getattr(item, "SenderEmailAddress", "") or ""
 
 
+def installed() -> bool:
+    """Is a COM-capable (classic) Outlook registered? Pure registry read; never launches anything."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Outlook.Application\CLSID"):
+            return True
+    except OSError:
+        return False
+
+
+def installed_version() -> str:
+    """'16' for Outlook 2016/2019/2021/Microsoft 365 (they share the number), '' if unknown."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Outlook.Application\CurVer") as k:
+            return str(winreg.QueryValue(k, None)).rsplit(".", 1)[-1]
+    except OSError:
+        return ""
+
+
 class OutlookProvider:
     """Implements both MailProvider and CalendarProvider."""
 
     name = "outlook"
 
-    def __init__(self):
+    def __init__(self, enabled: Callable[[], bool] | None = None):
         self._quoted_tail: dict[str, str] = {}
         self._lock = threading.Lock()
+        self._enabled = enabled or (lambda: True)
 
     # ---- availability --------------------------------------------------
+    # available() must NEVER start Outlook: it runs on every UI refresh and every "all calendars" read. It only checks
+    # that you opted in (Settings -> Connect) and that classic Outlook is registered on this PC (a registry lookup).
     def available(self) -> bool:
-        if sys.platform != "win32":
-            return False
-        try:
-            with _com():
-                self._app()
-            return True
-        except Exception:  # noqa: BLE001
-            return False
+        return sys.platform == "win32" and bool(self._enabled()) and installed()
 
     def _app(self):
+        """Attach to the Outlook you already have open; start it in the background only if it isn't running
+        (reached only from a real read/draft after you connected Outlook)."""
         import win32com.client  # type: ignore
 
-        return win32com.client.Dispatch("Outlook.Application")
+        try:
+            return win32com.client.GetActiveObject("Outlook.Application")
+        except Exception:  # noqa: BLE001  (not running)
+            return win32com.client.Dispatch("Outlook.Application")
 
     def _ns(self):
         return self._app().GetNamespace("MAPI")
