@@ -94,6 +94,22 @@ def schedule_from_notes(text: str) -> dict[str, dict]:
     return dict(sorted(out.items(), key=lambda kv: DAYS.index(kv[0])))
 
 
+def classes_on(text: str, day: date) -> list[str]:
+    """Every class your notes list for that weekday, as "11:00 AM COMP SCI 300" lines (for the brief's Today when no
+    calendar is connected; testers saw just "First class" though Monkey knew their classes)."""
+    want = DAYS[day.weekday()]
+    out: list[tuple[str, str]] = []
+    for line in (text or "").splitlines():
+        found = schedule_from_notes(line)
+        if want in found:
+            out.append((found[want]["time"], found[want]["title"]))
+    lines = []
+    for hhmm, title in sorted(set(out)):
+        t = _hhmm(hhmm)
+        lines.append(f"{datetime.combine(day, t):%I:%M %p}".lstrip("0") + f" {title}")
+    return lines
+
+
 def candidate_schedule(events: list, now: datetime) -> dict[str, dict]:
     """Earliest recurring timed event per weekday over the next 2 weeks, as candidates for the user to confirm.
 
@@ -181,6 +197,7 @@ class Brief:
 class Sources:
     """Everything the brief reads. Each returns data or raises; None means 'not connected'."""
     events_today: Callable[[date], list] | None = None          # calendar events for that day (google/outlook)
+    class_notes: Callable[[], str] | None = None                 # your classes.md (class times written in your notes)
     assignments: Callable[[], dict] | None = None               # AssignmentBoard.load()
     emails: Callable[[], list] | None = None                    # recent unread emails
     weather: Callable[[], dict] | None = None
@@ -204,6 +221,17 @@ def _due(a: dict) -> datetime | None:
         return None
 
 
+def _notes_today(src, day: date, fc) -> list[str]:
+    """Today's classes from your notes, else the first-class time from your confirmed schedule."""
+    if getattr(src, "class_notes", None) is not None:
+        st, text = _safe(src.class_notes)
+        if st == "ok":
+            got = classes_on(text or "", day)
+            if got:
+                return [g + " (from your notes)" for g in got]
+    return [f"{fc:%I:%M %p}".lstrip("0") + " First class (from your class times)"] if fc else []
+
+
 def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
     now = now.astimezone(TZ)
     today = now.date()
@@ -216,12 +244,12 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         timed = sorted([e for e in (evs or []) if not getattr(e, "all_day", False) and e.start], key=lambda e: e.start)
         items = [f"{e.start.astimezone(TZ):%I:%M %p}".lstrip("0") + f" {e.title}" + (f" ({e.location})" if e.location else "")
                  for e in timed]
-        if not items and fc:                           # don't say "nothing today" next to "first class at 11"
-            items = [f"{fc:%I:%M %p}".lstrip("0") + " First class (from your class times)"]
+        if not items:
+            items = _notes_today(src, today, fc)       # don't say "nothing today" next to "first class at 11"
         sections.append(Section("Today", "ok" if items else "empty", items,
                                 "" if items else "Nothing on your calendar today."))
     else:                                             # honest status, but still show what the schedule says
-        sections.append(Section("Today", st, [f"{fc:%I:%M %p}".lstrip("0") + " First class (from your class times)"] if fc else [],
+        sections.append(Section("Today", st, _notes_today(src, today, fc),
                                 "Calendar not connected." if st == "not_connected" else f"Calendar unavailable ({evs})."))
     if not schedule.verified:
         sections[-1].note = (sections[-1].note + " " if sections[-1].note else "") + \

@@ -199,3 +199,25 @@ def test_memory_search_skips_internal_notes_and_the_question_itself(tmp_path):
     out = runner.t_search_memory("about me Sam")
     assert "Roommate is Sam" in out or "No matching" in out
     assert "Haiku" not in out and "what do you know about me" not in out
+
+
+# ---------------------------------------------------------------- verification round 4
+def test_short_key_is_only_a_hint_claude_decides(mk, monkeypatch):
+    """A hard length block locked a tester out; the server check is the only gate."""
+    a, api, _ = mk
+    monkeypatch.setattr(a, "verify_anthropic", lambda: {"ok": True})
+    r = api.save_key("anthropic", "sk-ant-api03-ShortButValidKey123")
+    assert r["ok"] and keys.get("anthropic") == "sk-ant-api03-ShortButValidKey123"
+
+
+def test_brief_today_lists_classes_from_notes():
+    from tests.test_morning import SCHED, at, sources
+
+    from monkey.routines.morning import build
+
+    src = sources(None)
+    src.class_notes = lambda: "- COMP SCI 300 — Tue/Thu 11:00\n- PSYCH 202 — Tue/Thu 2:30\n- MATH 222 — Mon/Wed/Fri 9:55"
+    b = build(at(2026, 11, 19, 7, 0), SCHED, src, "morning").to_dict()        # a Thursday
+    today = next(x for x in b["sections"] if x["title"] == "Today")
+    assert today["items"][0].startswith("11:00 AM COMP SCI 300") and "PSYCH 202" in today["items"][1]
+    assert not any("MATH" in i for i in today["items"])

@@ -339,6 +339,7 @@ class MonkeyApp:
             weather=self.services.weather,
             sleep=sleep if self.garmin.connected() else None,
             canvas_token=self.canvas_token_status,
+            class_notes=lambda: self.memory.read("classes.md") or "",
         )
 
     # ------------------------------------------------------------------ conversation history (episodes)

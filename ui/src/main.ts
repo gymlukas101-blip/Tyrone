@@ -582,14 +582,16 @@ async function openSettings(section?: string) {
       appState.keys[name] ? `✓ Saved and working${hint ? ` (ends in ${hint})` : ""}. Stays saved after restarts and updates.` : "");
     const save = async () => {
       if (!inp.value.trim()) return;
-      if (name === "anthropic" && inp.value.trim().length < 60) {
-        note.className = "keynote bad";
-        note.textContent = "⚠ That looks shorter than a Claude key (they're about 100 characters and start with sk-ant-). Did you copy all of it?";
-        inp.select();
-        return;
-      }
+      // Length is only a hint (a hard block locked out a tester whose key was shorter than usual): Claude decides.
+      const short = name === "anthropic" && inp.value.trim().length < 60;
+      note.className = "keynote"; note.textContent = "Checking the key with Claude…";
       const r = await api.save_key(name, inp.value.trim());
-      if (!r.ok) { keyWarnings[name] = r.error ?? "it wasn't accepted"; note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; inp.select(); return; }
+      if (!r.ok) {
+        keyWarnings[name] = r.error ?? "it wasn't accepted";
+        note.className = "keynote bad";
+        note.textContent = `⚠ Not saved: ${r.error}${short ? ` It also looks short (${inp.value.trim().length} characters; Claude keys are usually about 100), so check you copied all of it.` : ""}`;
+        inp.select(); return;
+      }
       inp.value = "";
       if (r.warning) { keyWarnings[name] = r.warning; toast(`⚠ ${label}: ${r.warning}`, 9000); }
       else {
@@ -1228,7 +1230,7 @@ function briefSettings(s: Record<string, any>) {
     h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
     appState.keys.canvas_token ? h("div", { class: "field" }, h("span", {}, "Canvas access token expires"), expires) : "",
     h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"), taskToggle, taskState),
-    h("p", { class: "help" }, "Windows wakes your PC a little early to build it (silently, no notifications)."),
+    h("p", { class: "help" }, "Windows wakes your PC a little early on school days to build it (silently, no notifications, nothing sent anywhere). Turn it off anytime."),
     taskHint,
     appState.settings.show_tech_details ? h("details", {}, h("summary", {}, "Technical details (Windows Task Scheduler)"),
       h("button", { class: "ghost", type: "button", onclick: async () => {
