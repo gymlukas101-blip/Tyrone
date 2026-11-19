@@ -155,10 +155,10 @@ class ScriptedBrain:
             return "get_assignments", {"include_done": False}
         if re.search(r"\b(email|inbox|mail|unread)", t) and want("get_emails"):
             return "get_emails", {"account": "all", "unread_only": "unread" in t, "max_results": 10, "query": ""}
-        if re.search(r"\b(calendar|schedule|class|classes|today|tomorrow|week|free)\b", t) and want("get_calendar"):
-            return "get_calendar", {"days_ahead": 7 if "week" in t else 1}
         if re.search(r"\b(weather|rain|cold|jacket|umbrella)", t) and want("get_weather"):
             return "get_weather", {}
+        if re.search(r"\b(calendar|schedule|class|classes|today|tomorrow|week|free)\b", t) and want("get_calendar"):
+            return "get_calendar", {"days_ahead": 7 if "week" in t else 1}
         if re.search(r"\b(sleep|slept|heart|health|garmin)", t) and want("get_health"):
             return "get_health", {"day": "today"}
         if re.search(r"\b(picture|image|draw|generate)", t) and want("generate_image"):
@@ -242,7 +242,7 @@ class ScriptedBrain:
         tool, args = self.plan(text, _tool_names(params))
         if tool:
             self.last_tool = tool
-            lead = {"draft_email": "On it, drafting that now.", "get_assignments": "Let me check Canvas."}.get(tool, "")
+            lead = {"draft_email": "On it, drafting that now. ", "get_assignments": "Let me check Canvas. "}.get(tool, "")
             blocks = ([NS(type="text", text=lead)] if lead else []) + \
                      [NS(type="tool_use", name=tool, input=args, id="toolu_" + uuid.uuid4().hex[:10])]
             return blocks, "tool_use"
