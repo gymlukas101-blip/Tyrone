@@ -511,6 +511,12 @@ def build_app(data: Path, profile: str, bridge: Bridge):
         a.cfg.update(first_run_complete=True, user_name="Jordan",
                      canvas_ics_url="https://canvas.playtest.edu/feeds/calendars/user_playtest.ics")
         ensure_client()
+        # "A friend set it up yesterday" includes importing Jordan's notes pack.
+        from monkey.memory.importer import apply_import, plan_import
+        root = Path(a.memory.memory_root)
+        apply_import(root, plan_import(root, {p.name: p.read_text() for p in (FIX / "pack").glob("*.md")}))
+        if a.history is not None:
+            a.history.index_facts(root, force=True)
     return a, spoken
 
 
