@@ -1140,7 +1140,7 @@ async function showMorningBrief(refresh = false) {
 }
 
 function briefCard(b: Brief, wasFolded = false) {
-  const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (late start)" : "☀️ Morning brief";
+  const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (made after your first class started)" : "☀️ Morning brief";
   const others = [...cards.querySelectorAll<HTMLElement>(".card")].filter((c) => !c.classList.contains("folded"));
   const c = card(title,
     b.kind === "draft" ? h("p", { class: "help" }, "Tell Monkey when your first class is each day and he'll have this ready 90 minutes before. ",
@@ -1207,20 +1207,38 @@ function briefSettings(s: Record<string, any>) {
   void refresh();
   const detect = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.brief_candidates();
-    if (!r.ok) { taskHint.textContent = `⚠ ${r.error}`; return toast(`⚠ ${r.error}`); }
+    if (!r.ok) { gridHint.className = "help keynote bad"; gridHint.textContent = `⚠ ${r.error} You can also just type the times above.`; return; }
     const c = r.candidates ?? {};
     for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
-    taskHint.textContent = "";
+    taskHint.textContent = ""; gridHint.className = "help"; gridHint.textContent = "";
     toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from ${r.source || "your calendar"}. Check them, then click Confirm schedule.` : "Couldn't find your classes. Type the first class time for each day instead.");
   } }, "Fill in from my calendar or notes");
+  const gridHint = h("p", { class: "help" });
+  const clock = (v: string) => { const [hh, mm] = v.split(":").map(Number); return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "AM" : "PM"}`; };
+  let oddOk = "";                                   // the exact schedule the user already said "yes, really" to
   const confirmBtn = h("button", { class: "primary", type: "button", onclick: async () => {
     const byDay: Record<string, string> = {};
     for (const [d, inp] of Object.entries(inputs)) if (inp.value) byDay[d] = inp.value;
-    if (!Object.keys(byDay).length) { needSchedule("Type the start time of your first class on at least one day first (or click Detect from calendar)."); return; }
+    if (!Object.keys(byDay).length) { needSchedule("Type the start time of your first class on at least one day first (or click Fill in from my calendar or notes)."); return; }
+    // A tired typo (01:00 for 11:00) would quietly build that day's brief around midnight: ask once.
+    const odd = Object.entries(byDay).filter(([, v]) => { const hh = Number(v.split(":")[0]); return hh < 7 || hh >= 21; });
+    const sig = JSON.stringify(byDay);
+    if (odd.length && oddOk !== sig) {
+      oddOk = sig;
+      gridHint.className = "help keynote bad";
+      gridHint.textContent = `⚠ ${odd.map(([d, v]) => `${DAY_LABEL[d]} ${clock(v)}`).join(", ")}: is that right? Classes are rarely that early or late. Fix the box, or click Confirm schedule again to keep it.`;
+      for (const [d] of odd) { inputs[d].classList.add("attention"); setTimeout(() => inputs[d].classList.remove("attention"), 2500); }
+      inputs[odd[0][0]].focus();
+      return;
+    }
+    gridHint.className = "help"; gridHint.textContent = "";
     const st = await api.brief_confirm(byDay, "confirmed in app");
     appState = await api.get_state();
     toast(st.verified ? "✓ Schedule saved" : "Schedule cleared");
-    if (st.verified) taskHint.textContent = "";
+    if (st.verified) {
+      taskHint.textContent = "";
+      gridHint.textContent = "Saved: " + Object.entries(byDay).map(([d, v]) => `${DAY_LABEL[d]} ${clock(v)}`).join(" · ");
+    }
     void refresh();
   } }, "Confirm schedule");
   const speak = h("input", { type: "checkbox", checked: !!s.brief_speak_on_open }) as HTMLInputElement;
@@ -1229,7 +1247,7 @@ function briefSettings(s: Record<string, any>) {
   expires.addEventListener("change", async () => { appState = await api.save_settings({ canvas_token_expires: expires.value }); void refresh(); });
   return h("section", {}, h("h4", {}, "Morning brief"),
     h("p", { class: "help" }, "On school days Monkey prepares a brief 90 minutes before your earliest confirmed class (Chicago time, weekends off): today's classes, what's due in 72 hours ranked by grade impact, unread email, weather and the one thing to do first. It shows in the app; nothing is sent anywhere."),
-    grid, h("div", { class: "field" }, detect, confirmBtn), status,
+    grid, h("div", { class: "field" }, detect, confirmBtn), gridHint, status,
     h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
     appState.keys.canvas_token ? h("div", { class: "field" }, h("span", {}, "Canvas access token expires"), expires) : "",
     h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"), taskToggle, taskState),
@@ -1405,8 +1423,13 @@ function moveToNewPc(): HTMLElement {
   withKeys.checked = true;
   const out = h("div", { class: "meta", id: "transferStatus" });
   const exportBtn = h("button", { class: "primary", type: "button", onclick: async () => {
-    if (pw.value.length < 8) { toast("⚠ Use a password of at least 8 characters"); return; }
-    if (pw.value !== pw2.value) { toast("⚠ The two passwords don't match. Type them again so you can open the file later."); return; }
+    const bad = (msg: string, box: HTMLInputElement) => {
+      out.className = "meta keynote bad"; out.textContent = `⚠ ${msg}`;
+      box.classList.add("attention"); setTimeout(() => box.classList.remove("attention"), 2500); box.focus();
+    };
+    if (pw.value.length < 8) return bad("Type a password of at least 8 characters first (write it down: you'll need it on the new PC).", pw);
+    if (pw.value !== pw2.value) return bad("The two passwords don't match. Type them again so you can open the file later.", pw2);
+    out.className = "meta";
     out.textContent = "Packing everything up…";
     const r = await api.export_memory(pw.value, withKeys.checked);
     if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
@@ -1458,6 +1481,8 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
+  ($("#spend") as HTMLElement).onclick = () => toast(`That's what Monkey's AI cost this month: $${appState.month_usd.toFixed(2)} of your $${appState.budget_usd.toFixed(0)} limit. ` +
+    "It's billed to whoever owns the Claude key (prepaid credit at console.anthropic.com), never a card in Monkey. Change the limit in Settings → Advanced.", 8000);
   await restoreTranscript();
   if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();

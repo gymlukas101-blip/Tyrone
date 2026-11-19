@@ -62,7 +62,7 @@ body:not(.tech) #routeChip { display: none; }
 header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .brand { font-weight: 800; letter-spacing: .25em; }
 .spacer { flex: 1; }
-#spend { font-size: 12px; color: var(--muted); }
+#spend { font-size: 12px; color: var(--muted); cursor: help; }
 .icon { background: transparent; border: 1px solid var(--line); border-radius: 8px; width: 32px; height: 32px; }
 #cards { padding: 0 14px; display: flex; flex-direction: column; gap: 10px; max-height: 68%; overflow: auto; flex: none; }
 #cards:not(:empty) { padding-top: 12px; }

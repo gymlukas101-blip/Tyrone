@@ -111,3 +111,24 @@ Rig limits: no microphone or speakers, no real Claude (a scripted stand-in calls
   - The brief's Today lists your classes from your notes.
   - Remembered facts are written about you ("Their roommate is Sam"), not in your words.
 - The rig's "already set up" profile now includes the imported notes pack, as the task says.
+
+## Verification rounds 5–6: 4 fresh testers (anxious, literal reader, night owl, skimmer)
+- **Task success:** 11 of 11 (T1, T2, T3, T4, S1, S4, S5, S6, S7).
+- **Ease (1–7):** median 6.
+- **Would recommend:** 6, 7, 7 and 8 out of 10.
+- T1 passes again: the half-pasted key gets "looks short (21 characters)", and the full key saves and works.
+- **Severity 3 (night owl):** a typo'd 01:00 class time was saved silently, so that day's brief would be built around midnight. Now times before 7 AM or after 9 PM get an inline "is that right?" and need a second click, and the saved days are listed back.
+- **Fixed polish:**
+  - Typing closes a mic left open by a click ("Ears up…" stuck).
+  - Memory chips show the fact text.
+  - Forget refreshes the count.
+  - Optional voice extras aren't counted as warnings.
+  - The $ pill explains who pays and where the limit is.
+  - Export password problems show next to the box.
+  - The calendar-detect message sits under its button.
+  - "Today (late start)" is renamed.
+- **Stand-in brain limits, not app bugs:**
+  - It answered "who's my math prof" from the calendar when the class note was in the retrieved memories.
+  - "Got it." to how-to questions.
+  - Compound questions answered by halves.
+- **Still open, by design:** Google needs the one-time setup file, because a personal-project OAuth app has no shared client.
