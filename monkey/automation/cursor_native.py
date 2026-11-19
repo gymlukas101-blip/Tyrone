@@ -142,6 +142,19 @@ class NativeCursor:
                         ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
                         ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR), ("hIconSm", wintypes.HICON)]
 
+        # Declare 64-bit signatures: without them ctypes truncates handles to 32 bits (access violations on x64).
+        kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        user32.RegisterClassExW.argtypes = [ctypes.POINTER(WNDCLASSEXW)]
+        user32.RegisterClassExW.restype = wintypes.ATOM
+        user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+                                           ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.HWND,
+                                           wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID]
+        for fn, args in ((user32.ShowWindow, [wintypes.HWND, ctypes.c_int]), (user32.DestroyWindow, [wintypes.HWND]),
+                         (user32.SetWindowDisplayAffinity, [wintypes.HWND, wintypes.DWORD]),
+                         (user32.PeekMessageW, [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT,
+                                                wintypes.UINT])):
+            fn.argtypes = args
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSEXW(ctypes.sizeof(WNDCLASSEXW), 0, self._wndproc, 0, 0, hinst, None, None, None, None,
                          "MonkeyBananaCursor", None)
@@ -255,6 +268,15 @@ class NativeCursor:
         import numpy as np
 
         user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+        user32.GetDC.restype = wintypes.HDC
+        user32.GetDC.argtypes = [wintypes.HWND]
+        user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+        gdi32.CreateCompatibleDC.restype = wintypes.HDC
+        gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+        gdi32.SelectObject.restype = wintypes.HGDIOBJ
+        gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+        gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+        gdi32.DeleteDC.argtypes = [wintypes.HDC]
         arr = np.asarray(img, dtype=np.uint16)
         a = arr[..., 3:4]
         pm = np.concatenate([(arr[..., :3] * a // 255), a], axis=2).astype(np.uint8)[..., [2, 1, 0, 3]]
@@ -272,16 +294,22 @@ class NativeCursor:
         bmi = BMI(ctypes.sizeof(BMI), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
         bits = ctypes.c_void_p()
         gdi32.CreateDIBSection.restype = wintypes.HBITMAP
-        bmp = gdi32.CreateDIBSection(mem, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+        gdi32.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(ctypes.c_void_p),
+                                           wintypes.HANDLE, wintypes.DWORD]
+        bmp = gdi32.CreateDIBSection(mem, ctypes.addressof(bmi), 0, ctypes.byref(bits), None, 0)
         ctypes.memmove(bits, pm.tobytes(), w * h * 4)
         old = gdi32.SelectObject(mem, bmp)
 
         class BLEND(ctypes.Structure):
             _fields_ = [("op", ctypes.c_byte), ("flags", ctypes.c_byte), ("alpha", ctypes.c_ubyte), ("fmt", ctypes.c_byte)]
 
+        user32.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                               ctypes.POINTER(wintypes.SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                               wintypes.COLORREF, ctypes.c_void_p, wintypes.DWORD]
         pt, sz, src = wintypes.POINT(left, top), wintypes.SIZE(w, h), wintypes.POINT(0, 0)
+        blend = BLEND(0, 0, 255, 1)                                                    # AC_SRC_ALPHA
         user32.UpdateLayeredWindow(self.hwnd, screen, ctypes.byref(pt), ctypes.byref(sz), mem, ctypes.byref(src), 0,
-                                   ctypes.byref(BLEND(0, 0, 255, 1)), 2)       # AC_SRC_ALPHA, ULW_ALPHA
+                                   ctypes.addressof(blend), 2)                                       # ULW_ALPHA
         gdi32.SelectObject(mem, old)
         gdi32.DeleteObject(bmp)
         gdi32.DeleteDC(mem)
