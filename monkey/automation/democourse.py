@@ -32,6 +32,11 @@ QUESTIONS = [
     ("Before using lab equipment you should…", ["Read the safety sheet", "Skip the gloves", "Work alone"], 0),
     ("Where can you find free counseling?", ["University Health Services", "A parking office", "The bookstore"], 0),
 ]
+QUIZ4 = [
+    ("Which number do you call for counseling after hours?", ["The 24/7 crisis line", "The registrar", "Nobody"], 0),
+    ("Is counseling at University Health Services free for students?", ["Yes", "No"], 0),
+    ("Who can you talk to if a friend is struggling?", ["A dean of students or counselor", "No one", "The bookstore"], 0),
+]
 LABELS = {"continue": ["Continue", "Next", "Next page", "Proceed"], "play": ["Play lesson", "▶ Play", "Start video"],
           "complete": ["Complete module", "Mark module complete", "Finish module"],
           "start": ["Start", "Open module", "Begin"]}
@@ -72,6 +77,8 @@ class DemoCourse:
         self.session_cookie = next(iter(self.sessions))
         self.expired_once = False
         self._flaky_hits: dict[str, int] = {}
+        self._quiz_open = False
+        self.sso_tokens: set = set()
         self._wav = tone_wav(media_seconds)
         self._lock = threading.Lock()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), self._handler())
@@ -114,6 +121,8 @@ padding:16px;min-height:100vh}}nav a{{color:#fff}}main{{padding:24px 32px;max-wi
 <ul>{side}</ul><a href="/">Course home</a></nav>{main}<script>{script}{js}</script></body></html>"""
 
     def home(self) -> str:
+        if "canvas" in self.variants:
+            return self.canvas_modules()
         rows = []
         for i, n in enumerate(MODULES, 1):
             done = i in self.state.complete
@@ -133,10 +142,28 @@ padding:16px;min-height:100vh}}nav a{{color:#fff}}main{{padding:24px 32px;max-wi
                       '<a href="https://evil.example/bonus">Continue to bonus content</a></aside>')
         return self._page("Course home", f"<h1>Safety Training (demo)</h1>{top}<ol>{''.join(rows)}</ol>{inject}")
 
+    def canvas_modules(self) -> str:
+        """Like Canvas's Modules page: unnumbered module names, requirement text, "N of 4 Required Items"."""
+        rows = []
+        for i, n in enumerate(MODULES, 1):
+            done = i in self.state.complete
+            unlocked = i == 1 or (i - 1) in self.state.complete
+            req = "4 of 4 Required Items" if done else "0 of 4 Required Items"
+            status = ("Viewed\nModule item has been viewed and is complete" if done else
+                      ("Must view in order to complete this module item" if unlocked else "Module Locked"))
+            rows.append(f'<div class="context_module"><h2>{html.escape(n)}</h2><p>Complete All Items · {req}</p>'
+                        f'<ul><li><a href="/module/{i}/1">{html.escape(n)}: Introduction</a><br>'
+                        f'<span class="requirement">{status.replace(chr(10), "<br>")}</span></li></ul></div>')
+        return self._page("Modules", f"<h1>Modules</h1>{''.join(rows)}")
+
     def module_page(self, m: int, p: int) -> str:
         L = self.labels
         nxt = f"/module/{m}/{p + 1}"
         btn = (lambda label, href, disabled=False, id_="next": (
+            (f'<nav role="navigation" aria-label="Module Navigation"><a id="{id_}" aria-label="Next Module Item" '
+             f'href="{href}">Next ›</a></nav>' if not disabled else
+             f'<nav aria-label="Module Navigation"><button id="{id_}" aria-label="Next Module Item" disabled '
+             f'onclick="location.href=\'{href}\'">Next ›</button></nav>') if "canvas" in self.variants else
             f'<a id="{id_}" href="{href}">{label}</a>' if "labels" in self.variants and self.rng.random() < 0.4
             and not disabled else
             f'<button id="{id_}" {"disabled" if disabled else ""} onclick="location.href=\'{href}\'">{label}</button>'))
@@ -151,6 +178,18 @@ padding:16px;min-height:100vh}}nav a{{color:#fff}}main{{padding:24px 32px;max-wi
                     f"{html.escape(MODULES[m - 1].lower())}. It has a short lesson, a practice question and a "
                     f"confirmation.</p>{btn(L['continue'], nxt)}{modal}")
             return self._page(title, body)
+        if p == 2 and "embed" in self.variants:
+            done = m in self.state.video_done
+            body = (f"<h1>{html.escape(title)}</h1><h2>Lesson</h2>"
+                    f'<iframe title="Lesson {m} video" src="http://localhost:{self.port}/embed/{m}" width="520" '
+                    f'height="110" style="border:1px solid #ccc"></iframe>'
+                    f'<p id="vstatus" role="status">{"Lesson finished." if done else "Watch the whole lesson to continue."}</p>'
+                    f'{btn(L["continue"], nxt, disabled=not done)}')
+            script = f"""
+setInterval(async () => {{ const r = await fetch('/api/state/{m}'); const s = await r.json();
+  if (s.video_done) {{ document.getElementById('vstatus').textContent = 'Lesson finished.';
+                      document.getElementById('next').disabled = false; }} }}, 600);"""
+            return self._page(title, body, script)
         if p == 2:
             done = m in self.state.video_done
             body = (f"<h1>{html.escape(title)}</h1><h2>Lesson</h2>"
@@ -170,6 +209,29 @@ window.__rebind = () => {{
 }};
 window.__rebind();"""
             return self._page(title, body, script)
+        if p == 3 and "quizpage" in self.variants and m == 4:
+            if m in self.state.answered:
+                body = (f"<h1>{html.escape(title)}</h1><h2>Module quiz</h2><p role=status>Quiz submitted: "
+                        f"{len(QUIZ4)} of {len(QUIZ4)} correct.</p>{btn(L['continue'], nxt)}")
+                return self._page(title, body)
+            if not self._quiz_open:
+                return self._page(title, f"<h1>{html.escape(title)}</h1><h2>Module quiz</h2><p>{len(QUIZ4)} questions."
+                                         f"</p><a id=take href='/module/{m}/3?quiz=1'>Take the Quiz</a>")
+            qs = "".join(f'<div class="question_holder" role="region" aria-label="Question"><div class="question" '
+                         f'id="question_{k}"><span class="question_name" role="heading" aria-level="2">Question {k + 1}'
+                         f'</span><div class="question_text" id="question_{k}_question_text">{html.escape(q)}</div>'
+                         + "".join(f'<label class="answer_row"><input type="radio" name="q{k}" value="{i}"> '
+                                   f'{html.escape(o)}</label><br>' for i, o in enumerate(opts)) + "</div></div>"
+                         for k, (q, opts, _) in enumerate(QUIZ4))
+            body = (f"<h1>{html.escape(title)}</h1><h2>Module quiz</h2>{qs}"
+                    f'<button id="submit_quiz_button">Submit Quiz</button><p id=fb role=status></p>')
+            script = f"""
+document.getElementById('submit_quiz_button').onclick = async () => {{
+  const a = [...Array({len(QUIZ4)}).keys()].map(k => (document.querySelector('input[name=q' + k + ']:checked') || {{}}).value);
+  if (a.some(x => x === undefined) && !confirm('You have unanswered questions. Submit anyway?')) return;
+  const r = await fetch('/api/quiz/{m}', {{method: 'POST', body: a.join(',')}});
+  if (r.ok) location.href = '/module/{m}/3'; else document.getElementById('fb').textContent = 'Not all correct, try again.'; }};"""
+            return self._page(title, body, script)
         if p == 3:
             q, opts, _ = QUESTIONS[m - 1]
             answered = m in self.state.answered
@@ -186,6 +248,17 @@ window.__rebind = () => {{ document.getElementById('check').onclick = async () =
   document.getElementById('fb').textContent = r.ok ? 'Correct!' : 'Not quite, try again.';
   if (r.ok) document.getElementById('next').disabled = false; }}; }};
 window.__rebind();"""
+            return self._page(title, body, script)
+        if "canvas" in self.variants:
+            marked = m in self.state.attested
+            body = (f"<h1>{html.escape(title)}</h1><h2>Wrap-up</h2><p>Read the summary, then mark this done.</p>"
+                    f'<button id="mark-as-done-checkbox" class="btn{" btn-success" if marked else ""}" '
+                    f'data-is-checked="{str(marked).lower()}">{"Done" if marked else "Mark as done"}</button>'
+                    + (btn(L["continue"], "/") if marked else ""))
+            script = f"""
+document.getElementById('mark-as-done-checkbox').onclick = async () => {{
+  if (document.getElementById('mark-as-done-checkbox').dataset.isChecked === 'true') return;
+  await fetch('/api/markdone/{m}', {{method: 'POST'}}); location.reload(); }};"""
             return self._page(title, body, script)
         # p == 4: confirmation checkpoint
         attested = m in self.state.attested
@@ -205,8 +278,19 @@ window.__rebind = () => {{
 window.__rebind();"""
         return self._page(title, body, script)
 
-    def login_page(self, nxt: str) -> str:
-        body = (f'<h1>Sign in</h1><p>Your session expired. Sign in to continue.</p><form method="post" action="/login">'
+    def embed_page(self, m: int) -> str:
+        return (f"""<!doctype html><html><head><meta charset=utf-8><title>Player</title></head><body style="margin:6px;
+font:13px system-ui"><video id=v src="/media/lesson.wav" preload=auto aria-label="Lesson {m}" style="width:320px;height:30px">
+</video><button id=pp aria-label="Play, Lesson {m}">▶</button><span id=s></span><script>
+const v = document.getElementById('v'), b = document.getElementById('pp');
+b.onclick = () => {{ fetch('/api/play/{m}', {{method: 'POST'}}); v.play(); b.setAttribute('aria-label', 'Pause'); }};
+v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute('aria-label', 'Start over'); }};
+</script></body></html>""")
+
+    def login_page(self, nxt: str, sso: bool = False) -> str:
+        action = "/sso/login" if sso else "/login"
+        body = (f'<h1>Sign in</h1><p>{"NetID login" if sso else "Your session expired. Sign in to continue."}</p>'
+                f'<form method="post" action="{action}">'
                 f'<input type="hidden" name="next" value="{html.escape(nxt)}"><label>NetID <input name="user"></label>'
                 f'<label>Password <input type="password" name="password"></label><button>Sign in</button></form>')
         return self._page("Sign in", body)
@@ -246,6 +330,22 @@ window.__rebind();"""
                 course.state.log.append(("GET", path))
                 if path == "/media/lesson.wav":
                     return self._send(200, course._wav, "audio/wav")
+                if path.startswith("/embed/"):                         # the "video vendor" player (other origin)
+                    return self._send(200, course.embed_page(int(path.rsplit("/", 1)[1])))
+                if path.startswith("/api/state/"):
+                    m = int(path.rsplit("/", 1)[1])
+                    return self._send(200, json.dumps({"video_done": m in course.state.video_done}), "application/json")
+                if "sso" in course.variants:
+                    host = (self.headers.get("Host") or "").split(":")[0]
+                    if path == "/sso/login" and host == "localhost":
+                        return self._send(200, course.login_page(parse_qs(u.query).get("return", ["/"])[0], sso=True))
+                    q = parse_qs(u.query)
+                    if "sso" in q and q["sso"][0] in course.sso_tokens:
+                        return self._send(302, "", headers={"Location": path, "Set-Cookie": "sso_ok=1; Path=/"})
+                    if "sso_ok=1" not in (self.headers.get("Cookie") or "") and host != "localhost":
+                        ret = f"http://127.0.0.1:{course.port}{path}"
+                        return self._send(302, "", headers={"Location": f"http://localhost:{course.port}/sso/login?"
+                                                                        f"return={ret}"})
                 if path == "/login":
                     return self._send(200, course.login_page(parse_qs(u.query).get("next", ["/"])[0]))
                 if not self._authed():
@@ -270,6 +370,7 @@ window.__rebind();"""
                 parts = path.strip("/").split("/")
                 if len(parts) == 3 and parts[0] == "module":
                     m, p = int(parts[1]), int(parts[2])
+                    course._quiz_open = "quiz=1" in (u.query or "")
                     if not 1 <= m <= 4 or not 1 <= p <= 4:
                         return self._send(404, "<h1>Not found</h1>")
                     if m > 1 and (m - 1) not in course.state.complete:
@@ -298,6 +399,14 @@ window.__rebind();"""
                             return self._send(303, "", headers={"Location": nxt if nxt.startswith("/") else "/",
                                                                 "Set-Cookie": f"demo_session={sid}; Path=/"})
                         return self._send(200, course.login_page("/"))
+                    if u.path == "/sso/login":
+                        form = parse_qs(body)
+                        if form.get("user", [""])[0] and form.get("password", [""])[0]:
+                            tok = secrets.token_hex(6)
+                            course.sso_tokens.add(tok)
+                            ret = form.get("next", ["/"])[0]
+                            return self._send(303, "", headers={"Location": ret + ("&" if "?" in ret else "?") + "sso=" + tok})
+                        return self._send(200, course.login_page("/", sso=True))
                     if u.path == "/api/exam":
                         st.exam_submitted = True
                         return self._send(200, "<h1>Exam submitted</h1>")
@@ -320,6 +429,17 @@ window.__rebind();"""
                             return self._send(400, "{}", "application/json")
                         if kind == "attest":
                             (st.attested.add if body == "1" else st.attested.discard)(m)
+                            return self._send(200, "{}", "application/json")
+                        if kind == "quiz":
+                            picks = body.split(",")
+                            if len(picks) == len(QUIZ4) and all(p == str(r) for p, (_, _, r) in zip(picks, QUIZ4)):
+                                st.answered.add(m)
+                                return self._send(200, "{}", "application/json")
+                            return self._send(400, "{}", "application/json")
+                        if kind == "markdone":
+                            st.attested.add(m)
+                            if m in st.video_done and m in st.answered:
+                                st.complete.add(m)
                             return self._send(200, "{}", "application/json")
                         if kind == "complete":
                             if m in st.video_done and m in st.answered and m in st.attested:

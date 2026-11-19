@@ -39,3 +39,14 @@ def test_you_say_it_he_clicks_it_with_monkeys_pick_tag():
     assert r["your_choice_clicks"] == 20                  # 4 × (wrong pick, check, right pick, check, confirm)
     assert len(r["marks"]) >= 4 and all("Monkey's pick" in m["text"] for m in r["marks"])
     assert not r["exam_submitted"] and not r["unauthorized"]
+
+
+
+def test_real_platform_shapes_sign_in_canvas_player_iframe_quiz():
+    """School sign-in redirect (allow + you sign in), Canvas-style labels/requirements, a cross-origin video player,
+    "Take the Quiz" → 3 questions on one page → "submit", Mark as done; answered through Monkey."""
+    r = run_one({"canvas", "embed", "quizpage", "sso"}, media=1.0, seed=7, timeout=240, relay=True, cursor=True)
+    assert r["verified_success"], r
+    assert any(a.startswith("allowed localhost") for a in r["user_acts"])
+    assert any(a.startswith("said start") for a in r["user_acts"]) and any(a.startswith("said submit") for a in r["user_acts"])
+    assert not r["unauthorized"]

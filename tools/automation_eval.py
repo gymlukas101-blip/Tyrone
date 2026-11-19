@@ -21,14 +21,17 @@ import time
 from pathlib import Path
 
 from monkey.automation.browser import BrowserSession
-from monkey.automation.democourse import QUESTIONS, DemoCourse
+from monkey.automation.democourse import QUESTIONS, QUIZ4, DemoCourse
 from monkey.automation.manager import TaskManager
 from monkey.automation.permissions import PermissionGate
 from monkey.automation.tasks import S, TaskStore
 
 VARIANT_MIX = [set(), {"labels"}, {"slow"}, {"modal"}, {"rerender"}, {"inject"}, {"flaky"}, {"expire"},
                {"labels", "modal", "slow"}, {"rerender", "inject", "flaky"}, {"labels", "expire", "modal"},
-               {"slow", "rerender", "labels", "inject", "flaky", "modal", "expire"}]
+               {"slow", "rerender", "labels", "inject", "flaky", "modal", "expire"},
+               # real-platform shapes: Canvas labels/requirements, a cross-origin video player, a quiz page, SSO redirect
+               {"canvas"}, {"embed"}, {"quizpage"}, {"sso"}, {"canvas", "embed", "quizpage", "sso"},
+               {"canvas", "embed", "sso", "flaky", "rerender", "inject"}]
 
 
 def browser_path() -> str | None:
@@ -45,6 +48,15 @@ def user_turn(page) -> str:
         page.fill("input[type=password]", "correct horse")
         page.click("button:has-text('Sign in')")
         return "signed in"
+    take = page.locator("#take")
+    if take.count():
+        take.click()
+        return "started the quiz"
+    if page.locator("#submit_quiz_button").count():
+        for k, (_, _, right) in enumerate(QUIZ4):
+            page.check(f"input[name=q{k}][value='{right}']")
+        page.click("#submit_quiz_button")
+        return "took the quiz"
     radios = page.locator("input[type=radio][name=q]")
     if radios.count():
         heading = page.locator("h1").inner_text()
@@ -61,7 +73,7 @@ def user_turn(page) -> str:
 
 def correct_index(question: str, options: list[str]) -> int:
     """The simulated user knows the material (the demo course's answer key)."""
-    for q, opts, right in QUESTIONS:
+    for q, opts, right in QUESTIONS + QUIZ4:
         if q[:30] in question or question[:30] in q:
             return options.index(opts[right]) if opts[right] in options else right
     return 0
@@ -122,6 +134,21 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
                     if store.load(t.id).state != S.PAUSED:
                         resumed_ok = True
                         break
+            if cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") == "domain":
+                key = ("domain", cur.pending.get("info", {}).get("host"))
+                if key not in handled:
+                    handled.add(key)
+                    user_acts.append(f"allowed {key[1]}: {mgr.reply(t.id, 'allow')}")
+                time.sleep(0.3)
+                continue
+            if relay and cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") == "submit":
+                key = ("submit", cur.pending.get("message"), len(cur.checkpoints))
+                if key not in handled:
+                    handled.add(key)
+                    word = (cur.pending.get("info") or {}).get("word", "submit")
+                    user_acts.append(f"said {word}: {mgr.reply(t.id, word)}")
+                time.sleep(0.3)
+                continue
             if relay and cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("question", "confirm"):
                 key = (cur.pending.get("message"), len(cur.checkpoints))
                 if key not in handled:
@@ -149,7 +176,7 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
                 time.sleep(0.3)
                 continue
             if cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("user_turn", "sign_in",
-                                                                                      "question", "confirm"):
+                                                                                      "question", "confirm", "submit"):
                 key = (cur.pending.get("message"), cur.last_url, len(cur.checkpoints))
                 if key not in handled and mgr.session is not None:
                     handled.add(key)
@@ -211,17 +238,20 @@ def main() -> None:
     ap.add_argument("--json", default="")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--cursor", choices=("off", "on", "alternate"), default="off")
+    ap.add_argument("--relay", choices=("off", "on", "alternate"), default="off",
+                    help="answer questions/confirmations by telling Monkey (on) or in the browser (off)")
     args = ap.parse_args()
     results = []
     for i in range(args.runs):
         v = VARIANT_MIX[i % len(VARIANT_MIX)]
         cur = args.cursor == "on" or (args.cursor == "alternate" and i >= len(VARIANT_MIX))
+        rel = args.relay == "on" or (args.relay == "alternate" and i % 2 == 0)
         r = run_one(v, args.media, seed=i, pause_test=(i % 4 == 1), restart_test=(i % 6 == 5), headless=not args.headed,
-                    cursor=cur)
+                    cursor=cur, relay=rel, wrong_first=rel and i % 4 == 0)
         results.append(r)
         print(json.dumps({k: r[k] for k in ("variants", "state", "server_complete", "verified_success",
                                              "unauthorized", "seconds", "actions", "pause_ok", "restart_paused",
-                                             "refused", "errors", "cursor")}), flush=True)
+                                             "refused", "errors", "cursor", "your_choice_clicks")}), flush=True)
     n = len(results)
     summary = {
         "runs": n, "verified_success": sum(r["verified_success"] for r in results),

@@ -96,6 +96,15 @@ export function taskPanel(compact = false): HTMLElement {
         })));
         if (pend.info.recommend?.reason) card.append(h("p", { class: "meta why" }, `Why ${rec}: ${pend.info.recommend.reason}`));
         card.append(h("p", { class: "meta" }, "Click a letter, or say or type it (“B”). You choose; Monkey clicks it."));
+      } else if (pend.kind === "domain") {
+        card.append(h("div", { class: "row" },
+          h("button", { type: "button", class: "primary mini", onclick: () => void say("allow") }, `Allow ${pend.info?.host ?? ""}`),
+          h("button", { type: "button", class: "ghost mini", onclick: () => void say("no") }, "Don't")));
+      } else if (pend.kind === "submit") {
+        const word = (pend.info as any)?.word === "start" ? "start" : "submit";
+        card.append(h("button", { type: "button", class: "primary mini", onclick: () => void say(word) },
+          word === "start" ? "Start the quiz" : "Submit"),
+          h("p", { class: "meta" }, `Or say or type “${word}”.`));
       } else if (pend.kind === "confirm") {
         if (compact) card.append(h("p", { class: "q" }, `“${pend.info?.statement ?? ""}”`));
         card.append(h("button", { type: "button", class: "primary mini", onclick: () => void say("I confirm") }, "I confirm"),
@@ -152,11 +161,12 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   url.addEventListener("change", fillHost); fillHost();
   const shots = h("input", { type: "checkbox" }) as HTMLInputElement;
   const askMore = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const helpers = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
   const err = h("p", { class: "keynote" });
   const start = async () => {
     err.textContent = ""; err.className = "keynote";
     const r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
-      "managed_browser", shots.checked, askMore.checked);
+      "managed_browser", shots.checked, askMore.checked, helpers.checked);
     if (!r.ok) { err.className = "keynote bad"; err.textContent = `⚠ ${r.error}`; return; }
     toast("Started. Watch the Monkey browser window; you can Pause or Stop anytime.", 5000);
     void refresh();
@@ -173,6 +183,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
+    h("label", { class: "field toggle" }, helpers, h("span", {}, "Also allow the sign-in and video sites courses use (your school's login, Duo, Microsoft, Canvas, Kaltura, Panopto, YouTube, Vimeo). Anything else, he asks you first.")),
     h("label", { class: "field toggle" }, askMore, h("span", {}, "Ask me before he types into or saves anything, too")),
     h("p", { class: "help" }, `Questions and confirmations are yours: Monkey reads each one out with his pick and a reason, then clicks exactly what you say ("B", "I confirm"). He clicks Complete module on his own. He never signs in or types passwords, and asks before anything that sends, submits, buys or deletes. Stop anytime with the Stop button or ${hotkey()}.`),
     h("div", { class: "row" },

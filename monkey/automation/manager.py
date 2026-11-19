@@ -155,6 +155,11 @@ class TaskManager:
         self.user_done(task_id)
         if r["kind"] == "confirm":
             return "Confirmed. Ticking it and finishing the module."
+        if r["kind"] in ("allow", "deny"):
+            host = t.pending.get("info", {}).get("host", "that site")
+            return f"Allowed {host} for this task." if r["kind"] == "allow" else f"Okay, I won't open {host}."
+        if r["kind"] == "submit":
+            return "Starting it." if (t.pending.get("info") or {}).get("word") == "start" else "Submitting it."
         opt = t.pending.get("info", {}).get("options", [])[r["index"]]
         return f"{chr(65 + r['index'])}: {opt}. Checking it…"
 
@@ -276,7 +281,7 @@ class TaskManager:
     def _loop(self, t: Task, f: _Flags) -> None:
         s = self._ensure_session(t)
         self._reconcile(t, s)
-        memo: dict = {}
+        memo: dict = {"start_url": t.start_url}
         recent: list[str] = []
         last_key, same = "", 0
         retries, losses, verify_fails, model_attempts = 0, 0, 0, 0
@@ -322,6 +327,8 @@ class TaskManager:
                 self._reconcile(t, s)
                 continue
             self._track_units(t, obs, prev_units)
+            if self._ask_new_site(t, s, f, memo):
+                continue
             # -- decide ----------------------------------------------------------------------------------------------
             step = self.skill.decide(obs, memo)
             key = f"{obs.signature}|{step.kind}|{step.el.name if step.el else ''}"
@@ -386,7 +393,9 @@ class TaskManager:
                 self._save(t)
             elif step.kind == "wait":
                 self._set(t, S.WAITING, step.subgoal)
-                ok = s.wait_js(step.wait_js, step.timeout_s, lambda: self._should_stop(f))
+                waiter = s.wait_state if step.wait_js in ("media_done", "media_playing", "play_ready", "next_enabled") \
+                    else s.wait_js
+                ok = waiter(step.wait_js, step.timeout_s, lambda: self._should_stop(f))
                 if not ok and not self._should_stop(f):
                     t.error("wait_timeout", step.subgoal)
                     retries += 1
@@ -400,7 +409,7 @@ class TaskManager:
                 t.pending = {"kind": step.user_kind, "message": step.message}
                 if step.approval_id:
                     t.pending["approval_id"] = step.approval_id
-                if step.user_kind in ("question", "confirm"):
+                if step.user_kind in ("question", "confirm", "submit"):
                     self._describe(t, step, memo)
                     self._mark_pick(s, t, obs)
                 self._set(t, S.NEEDS_INPUT, t.pending["message"])
@@ -435,9 +444,55 @@ class TaskManager:
                     verify_fails = 0
 
     # ---- pieces --------------------------------------------------------------------------------------------------
+    def _ask_new_site(self, t: Task, s: BrowserSession, f: _Flags, memo: dict) -> bool:
+        """The course tried to open a site outside the allowed list (school sign-in, Duo, the video/training vendor):
+        ask once per site; on "allow", add it to this task's scope and open exactly that page."""
+        asked = memo.setdefault("asked_hosts", set())
+        ev = next((e for e in s.events if e.get("type") == "navigation_refused" and e.get("host")
+                   and e["host"] not in asked), None)
+        s.events = [e for e in s.events if e.get("type") != "navigation_refused"]
+        here = s.page.url if s.page else ""
+        if ev is None and here.startswith("http") and not url_allowed(here, t.allowed_domains)[0]:
+            # A redirect landed on a site that isn't allowed (redirect hops aren't re-checked by the browser).
+            from urllib.parse import urlsplit
+
+            host = urlsplit(here).hostname or ""
+            if host in asked:                                  # you said no: go back to the task's own site
+                back = t.last_url if t.last_url and url_allowed(t.last_url, t.allowed_domains)[0] else t.start_url
+                if memo.get("bounced") != here:
+                    memo["bounced"] = here
+                    s.act(t, Action("navigate", url=back))
+                    return True
+                return False
+            ev = {"host": host, "url": here}
+        if ev is None:
+            return False
+        host = ev["host"]
+        asked.add(host)
+        t.pending = {"kind": "domain", "info": {"host": host},
+                     "message": f"The course wants to open {host} (often your school's sign-in, Duo, or the training's "
+                                f"video site). Allow it for this task? Say “allow” or “no”.",
+                     "speak": f"The course wants to open {host}. Should I allow it?"}
+        self._set(t, S.NEEDS_INPUT, t.pending["message"])
+        self._replies.pop(t.id, None)
+        self._wait_user(t, f, None, 1800)
+        r = self._replies.pop(t.id, None)
+        if r and r["kind"] == "allow" and not self._should_stop(f):
+            if host not in t.allowed_domains:
+                t.allowed_domains.append(host)
+            s.allowed_domains = list(t.allowed_domains)
+            res = s.act(t, Action("navigate", url=ev["url"]))
+            t.checkpoint("site_allowed", ev["url"], f"you allowed {host}")
+            self.store.audit(t.id, "allow_site", "", host, ev["url"], "your choice" if res.ok else "failed")
+        self._save(t)
+        return True
+
     def _describe(self, t: Task, step: Step, memo: dict) -> None:
         """What Monkey says for a question (with his suggestion) or a confirmation (its exact words)."""
         info = dict(step.info)
+        if step.user_kind == "submit":
+            t.pending.update(info=info, speak=step.message)
+            return
         if step.user_kind == "confirm":
             t.pending.update(info=info, speak=f"This one asks you to confirm: {info['statement']}. Say “I confirm” "
                                                  f"if that's true.")
@@ -503,6 +558,13 @@ class TaskManager:
                              "your choice" if res.ok else "failed")
             return res.ok
 
+        if r["kind"] == "submit":
+            btn = next((e for e in obs.elements if e.role in ("button", "link") and e.name == step.info.get("button")
+                        and not e.disabled), None)
+            if btn is not None and click_granted(btn, "submit"):
+                t.checkpoint("submitted", url, "you said submit", {"count": step.info.get("count")})
+                s.wait_change(obs.signature, 8, lambda: self._should_stop(f))
+            return
         if r["kind"] == "confirm":
             statement = step.info.get("statement", "")
             box = next((e for e in obs.elements if e.role == "checkbox" and not e.checked and e.name == statement), None)
@@ -510,12 +572,14 @@ class TaskManager:
                 t.checkpoint("confirmed", url, "you confirmed", {"statement": statement[:120]})
             return
         opt = step.info["options"][r["index"]]
-        el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opt), None)
+        group = step.info.get("group")
+        el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opt
+                   and (not group or e.qkey == group)), None)
         if el is None or not click_granted(el, "answer"):
             t.error("answer_failed", opt)
             return
         before = s.observe()
-        check = next((e for e in before.find(("button",), CHECK) if not e.disabled), None)
+        check = None if group else next((e for e in before.find(("button",), CHECK) if not e.disabled), None)
         if check is not None:
             click_granted(check, "check")
             s.wait_change(before.signature, 6, lambda: self._should_stop(f))
@@ -539,8 +603,7 @@ class TaskManager:
     def _verify_effect(self, s: BrowserSession, before: Observation, step: Step, f: _Flags) -> bool:
         """Don't trust that a click worked because it didn't raise: look for the change it should cause."""
         if step.expect == "media_playing":
-            return s.wait_js("() => [...document.querySelectorAll('video,audio')].some(m => !m.paused || m.ended)",
-                             6, lambda: self._should_stop(f))
+            return s.wait_state("media_playing", 6, lambda: self._should_stop(f))
         return s.wait_change(before.signature, 8, lambda: self._should_stop(f))
 
     def _wait_user(self, t: Task, f: _Flags, signature: str | None, timeout: float) -> None:

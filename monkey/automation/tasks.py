@@ -51,7 +51,7 @@ class InvalidTransition(Exception):
 
 @dataclass
 class Budget:
-    max_minutes: float = 90.0
+    max_minutes: float = 240.0          # long compliance trainings have 30-60 min of video
     max_actions: int = 600
     max_model_calls: int = 40
     max_usd: float = 1.00

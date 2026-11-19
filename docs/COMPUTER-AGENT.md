@@ -52,6 +52,33 @@ python -m monkey
 - the banana's look at 125/150% scaling;
 - GPU/CPU in Task Manager while a lesson plays (expected: near idle).
 
+## Real modules: what's handled, and your first run
+
+Researched from the Canvas, Kaltura, Storyline and Playwright source code (exact labels and hosts), then rebuilt as test
+fixtures, so each is exercised by the evaluation.
+
+| Real-world shape | How Monkey handles it | Test fixture |
+|---|---|---|
+| Canvas module items: link "Next Module Item" (text "Next ›"), button "Mark as done" → "Done", modules page with "Must view…" / "N of N Required Items" | Clicks Next and Mark as done. On the modules page, opens the first item that still says "Must view / Must mark done". Verifies completion when every module reads "N of N Required Items". | `canvas` |
+| Lesson video inside an embedded **cross-origin** player (Kaltura `cdnapisec.kaltura.com`, Panopto, YouTube, Vimeo, SCORM frames) | The accessibility snapshot reaches into iframes, and clicks use the frame refs (`f1e4`). Waiting for the lesson to end checks `<video>` state in **every frame**, including shadow DOM, locally every 0.5 s. | `embed` |
+| Storyline / Rise | Labels "Next (Ctrl+Alt+Period)", "NEXT LESSON", "START COURSE", "CONTINUE". Disabled means `aria-disabled` / `disabled`. Rise's `div[role=radio]` counts as a question. | covered by labels |
+| Quizzes: "Take the Quiz" / "START QUIZ" (may start a timer), several questions on one page, "Submit Quiz", Canvas's `confirm()` dialogs | Asks you to say "start". Asks each question in turn (grouped by container). When all are answered, asks you to say "submit". Native dialogs are always dismissed (cancelled), never accepted. | `quizpage` |
+| School sign-in: Canvas → `login.wisc.edu` → Duo (`api-*.duosecurity.com`) / Microsoft | You sign in yourself, once; the profile remembers it (Duo's own "remember me" lasts 7 days). Any site outside the allowed list makes Monkey ask "Allow X?" first, including sites reached by **redirect**. On a page whose site isn't allowed, nothing is clicked. | `sso` |
+| Locked items ("hasn't been unlocked yet", "Lessons must be completed in order") | Handed to you. | — |
+| End of the course with no Next button | Goes back to your start page and checks completion there. If unsure, asks you instead of claiming "done". | — |
+
+### Your first real run (on the Dell)
+
+1. 🖐 Tasks → turn it on.
+2. Fill in:
+   - **What to do:** e.g. "Finish the modules in this course".
+   - **Start page:** the course's **Modules** page, e.g. `https://canvas.wisc.edu/courses/12345/modules`. That's where completion is checked.
+   - Keep **"Also allow the sign-in and video sites courses use"** ticked. It adds `wisc.edu` (your NetID login), Duo, Microsoft, `instructure.com`, Kaltura, Panopto, YouTube and Vimeo.
+3. Press **Allow and start**. Edge opens with Monkey's own profile. Sign in with NetID and Duo **yourself** the first time (tick "Yes, this is my device").
+4. Watch the first module. When he asks, answer questions by letter, say "I confirm", "start" or "submit", or "allow" for a new site.
+5. If he says "I'm not sure what to do on this page", do that one step yourself. He notices and carries on, or asks Claude (a few cents).
+6. Budget per task: 4 hours, 600 actions, 40 Claude calls, $1. Pause and **Ctrl+Alt+Q** work at any time.
+
 ## Answering questions: "you say it, he clicks it"
 
 1. When a question appears, Monkey **reads it and the options aloud**, then gives **his pick and one sentence why**. The suggestion comes from Haiku 5.5, about $0.001 per question; the question text is marked as untrusted page data.

@@ -261,3 +261,63 @@ def test_user_choice_grant_is_exact_and_one_time():
     assert not g.authorize(sc, pick, url).allowed
     with pytest.raises(PermissionError):
         g.grant_user_choice("t1", Action("type", Target("textbox", "Password", input_type="password")), url)
+
+
+
+# ---------------------------------------------------------------- real-platform vocabulary + checks
+def test_real_platform_labels():
+    from monkey.automation.course import CONTINUE, PLAY, QUIZ_START, START
+
+    for name in ("Next Module Item", "Next Module Item - opens in new window", "Next (Ctrl+Alt+Period)", "NEXT LESSON",
+                 "START COURSE", "RESUME COURSE", "Next Question", "Next ›", "CONTINUE", "Next Topic"):
+        assert CONTINUE.match(name), name
+    for name in ("Nextdoor", "Previous Module Item", "Next steps for your career", "Continue to bonus content"):
+        assert not CONTINUE.match(name), name
+    for name in ("Play", "Play, Lesson 3", "Play (Ctrl+Alt+P)", "Play (k)", "play video"):
+        assert PLAY.search(name), name
+    assert not PLAY.search("Replay") and not PLAY.search("Display settings")
+    assert QUIZ_START.match("Take the Quiz") and QUIZ_START.match("START QUIZ") and START.search("Start course")
+
+
+def test_completion_markers_and_first_unfinished_item():
+    from monkey.automation.browser import Element, Observation
+    from monkey.automation.course import CourseSkill, first_incomplete_item
+
+    sk = CourseSkill()
+    done = Observation(title="Modules", text="Safety\nComplete All Items · 4 of 4 Required Items\nWellbeing\n"
+                                            "Complete All Items · 4 of 4 Required Items")
+    half = Observation(title="Modules", text="Safety\n4 of 4 Required Items\nWellbeing\n1 of 4 Required Items")
+    assert sk.verify(done)[0] and not sk.verify(half)[0]
+    markers = Observation(title="Training", text="Intro\nViewed\nQuiz\nMust submit this module item to complete it")
+    assert not sk.verify(markers)[0]                                   # one requirement left: not done
+    assert not sk.verify(Observation(title="Blank", text="Welcome"))[0]  # unsure is not done
+    page = Observation(text="Safety\nSafety: Introduction\nViewed\nWellbeing\nWellbeing: Video\n"
+                            "Must view in order to complete this module item",
+                       elements=[Element("e1", "link", "Safety: Introduction"), Element("e2", "link", "Wellbeing: Video")])
+    assert first_incomplete_item(page).name == "Wellbeing: Video"
+
+
+def test_nothing_is_clicked_on_a_site_you_didnt_allow():
+    g = PermissionGate()
+    sc = scope()
+    assert not g.authorize(sc, click("Continue"), "https://tracker.example/landing").allowed
+    assert g.authorize(sc, click("Continue"), "http://127.0.0.1/next").allowed
+    assert g.authorize(sc, Action("read"), "https://tracker.example/landing").allowed
+
+
+def test_allow_site_and_submit_replies():
+    from monkey.automation.course import parse_reply
+
+    d = {"kind": "domain", "info": {"host": "login.wisc.edu"}}
+    assert parse_reply("allow", d) == {"kind": "allow"} and parse_reply("no", d) == {"kind": "deny"}
+    assert parse_reply("B", d) is None
+    assert parse_reply("submit", {"kind": "submit"}) == {"kind": "submit"}
+    assert parse_reply("start", {"kind": "submit", "info": {"word": "start"}}) == {"kind": "submit"}
+
+
+def test_helper_sites_cover_school_sign_in():
+    from monkey.automation.service import AutomationService
+
+    assert AutomationService.school_domain("canvas.wisc.edu") == "wisc.edu"
+    assert url_allowed("https://login.wisc.edu/idp", ["wisc.edu"])[0]
+    assert url_allowed("https://api-1a2b3c4d.duosecurity.com/frame", ["duosecurity.com"])[0]

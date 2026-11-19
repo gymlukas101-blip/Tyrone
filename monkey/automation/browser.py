@@ -41,14 +41,38 @@ _FLAGS_JS = r"""el => {
   const box = el.closest('fieldset,[role=radiogroup],[role=group],form,[class*=question i],[id*=question i],' +
                          '[class*=quiz i],[class*=survey i],[class*=assessment i],[data-question]');
   const txt = box ? (box.innerText || '').slice(0, 500) : '';
-  const formish = ['radio','checkbox','text','textarea','select','select-one','email','number','search','input'].includes(t);
+  const role = (el.getAttribute('role') || '').toLowerCase();       // Rise uses div[role=radio|checkbox]
+  const formish = ['radio','checkbox','text','textarea','select','select-one','email','number','search','input'].includes(t)
+                  || ['radio','checkbox','option','menuitemradio'].includes(role);
+  const qel = box && ['.question_text', '[id$=_question_text]', 'legend', '[role=heading]']
+                      .map(q => box.querySelector(q)).find(x => x && /\S/.test(x.innerText || ''));
+  const qraw = qel && !/group of answer choices/i.test(qel.innerText || '') ? qel.innerText : '';
+  const qline = qraw || (txt.split('\n').find(l => l.includes('?')) || txt.split('\n')[0] || '');
   return {type: t, label, href: el.getAttribute('href') || '',
-          inQuestion: !!box && formish && /question|quiz|exam|assessment|survey|\btest\b|answer|\?/i.test(txt)};
+          inQuestion: !!box && formish && /question|quiz|exam|assessment|survey|\btest\b|answer|\?/i.test(txt),
+          qkey: box ? (box.id || '') + '|' + txt.slice(0, 80) : '', qtext: qline.trim().slice(0, 300)};
 }"""
 _MEDIA_JS = """() => [...document.querySelectorAll('video,audio')].map((m, i) => ({
   i, paused: m.paused, ended: m.ended, t: Math.round(m.currentTime * 10) / 10,
   d: isFinite(m.duration) ? Math.round(m.duration * 10) / 10 : null, ready: m.readyState,
   label: m.getAttribute('aria-label') || m.title || ''}))"""
+# Per-frame state for local waits: media (incl. inside shadow roots) + whether a Next/Play control is usable.
+# Runs in every frame (embedded Kaltura/Panopto/YouTube/SCORM players live in iframes, often cross-origin).
+_STATE_JS = """([nextRe, playRe]) => {
+  const all = (sel, root = document, out = []) => {
+    root.querySelectorAll(sel).forEach(e => out.push(e));
+    root.querySelectorAll('*').forEach(e => { if (e.shadowRoot) all(sel, e.shadowRoot, out); });
+    return out; };
+  const media = all('video,audio').map(m => ({paused: m.paused, ended: m.ended, t: Math.round(m.currentTime * 10) / 10,
+    d: isFinite(m.duration) ? Math.round(m.duration * 10) / 10 : null, ready: m.readyState,
+    label: m.getAttribute('aria-label') || m.title || ''}));
+  const shown = b => b.getClientRects().length > 0 && getComputedStyle(b).visibility !== 'hidden';
+  const name = b => (b.getAttribute('aria-label') || b.innerText || b.value || '').trim();
+  const off = b => b.disabled || b.getAttribute('aria-disabled') === 'true';
+  const btns = all('button,a,[role=button],input[type=button],input[type=submit]').filter(shown);
+  const nx = new RegExp(nextRe, 'i'), pl = new RegExp(playRe, 'i');
+  return {media, next: btns.some(b => nx.test(name(b)) && !off(b)), play: btns.some(b => pl.test(name(b)) && !off(b))};
+}"""
 _POINT_JS = """([x, y]) => { const el = document.elementFromPoint(x, y); if (!el) return null;
   const c = el.closest('a,button,input,select,textarea,[role],label') || el;
   return {role: c.getAttribute('role') || ({A:'link',BUTTON:'button',INPUT:(c.type==='checkbox'?'checkbox':c.type==='radio'?'radio':'textbox'),
@@ -78,6 +102,8 @@ class Element:
     sensitive: bool = False
     in_question: bool = False
     depth: int = 0
+    qkey: str = ""                # which question container it's in (several questions can share a page)
+    qtext: str = ""               # that question's text
 
     def target(self) -> Target:
         return Target(role=self.role, name=self.name, input_type=self.input_type, href=self.href,
@@ -219,7 +245,10 @@ class BrowserSession:
         if top and self.allowed_domains:
             ok, why = url_allowed(req.url, self.allowed_domains)
             if not ok:
-                self.events.append({"type": "navigation_refused", "host": why[:80]})
+                from urllib.parse import urlsplit as _us
+
+                self.events.append({"type": "navigation_refused", "host": (_us(req.url).hostname or "")[:120],
+                                    "url": req.url[:2000], "why": why[:80]})
                 return route.abort("blockedbyclient")
         return route.continue_()
 
@@ -256,14 +285,14 @@ class BrowserSession:
             if e.role in ("textbox", "checkbox", "radio", "combobox", "searchbox", "spinbutton", "link", "button"):
                 self._flag(page, e)
         aria = self._redact(aria, elements)
-        try:
-            media = page.evaluate(_MEDIA_JS)
-        except Exception:  # noqa: BLE001
-            media = []
-        try:
-            text = page.evaluate("() => (document.body && document.body.innerText || '').slice(0, 4000)")
-        except Exception:  # noqa: BLE001
-            text = ""
+        media = [m for st in self.frame_states() for m in st["media"]]
+        text = ""
+        for fr in self._frames():                          # the page plus embedded lesson/player frames
+            try:
+                text += fr.evaluate("() => (document.body && document.body.innerText || '').slice(0, 4000)") + "\n"
+            except Exception:  # noqa: BLE001
+                pass
+        text = text[:8000]
         sig_src = page.url + "\n" + _REF.sub("", aria) + "\n" + "|".join(f"{m['ended']}{m['paused']}" for m in media)
         obs = Observation(url=page.url, title=_safe(page.title), elements=elements, media=media, text=text,
                           aria=aria, signature=hashlib.sha1(sig_src.encode()).hexdigest()[:16])
@@ -306,6 +335,7 @@ class BrowserSession:
         e.input_type = f.get("type", "")
         e.href = e.href or f.get("href", "")
         e.in_question = bool(f.get("inQuestion"))
+        e.qkey, e.qtext = f.get("qkey", ""), f.get("qtext", "")
         e.sensitive = e.input_type == "password" or (e.role in ("textbox", "searchbox", "spinbutton") and bool(
             SENSITIVE_FIELD.search(f"{e.name} {f.get('label', '')}")))
 
@@ -421,6 +451,54 @@ class BrowserSession:
                       href=info.get("href", ""), sensitive=info.get("type") == "password")
 
     # ---- waiting (event-driven, local, interruptible) ----------------------------------------------------------
+    def _frames(self) -> list:
+        try:
+            return [self.page.main_frame] + [f for f in self.page.frames if f is not self.page.main_frame]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def frame_states(self) -> list[dict]:
+        from .course import NEXT_JS_RE, PLAY_JS_RE
+
+        out = []
+        for fr in self._frames():
+            try:
+                out.append(fr.evaluate(_STATE_JS, [NEXT_JS_RE, PLAY_JS_RE]))
+            except Exception:  # noqa: BLE001 - detached or navigating frame: skip it this round
+                continue
+        return out or [{"media": [], "next": False, "play": False}]
+
+    def state_ready(self, kind: str) -> bool:
+        st = self.frame_states()
+        media = [m for s in st for m in s["media"]]
+        playing = any(not m["paused"] and not m["ended"] for m in media)
+        if kind == "media_done":       # ended, stopped, or swapped for a fresh player: either way, look again
+            return not playing
+        if kind == "media_playing":
+            return playing or any(m["ended"] for m in media)
+        if kind == "play_ready":
+            return playing or any(m["ended"] for m in media) or any(s["play"] for s in st)
+        if kind == "next_enabled":
+            return any(s["next"] for s in st)
+        raise ValueError(kind)
+
+    def wait_state(self, kind: str, timeout_s: float, should_stop: Callable[[], bool]) -> bool:
+        """Poll every frame locally (0.5 s) until `kind` holds: no tokens, interruptible by Pause/Stop."""
+        end = time.time() + timeout_s
+        while time.time() < end:
+            if should_stop():
+                return False
+            self.pump()
+            try:
+                if self.state_ready(kind):
+                    return True
+                self.page.wait_for_timeout(500)
+            except Exception as exc:  # noqa: BLE001 - navigation mid-wait: re-check next round
+                if not self.alive():
+                    raise BrowserGone(str(exc)) from exc
+                time.sleep(0.2)
+        return False
+
     def wait_js(self, js: str, timeout_s: float, should_stop: Callable[[], bool], arg=None) -> bool:
         """True once `js` is truthy in the page. Checks the stop flag every half second; no tokens are spent."""
         end = time.time() + timeout_s

@@ -16,19 +16,28 @@ from dataclasses import dataclass, field
 from .browser import Element, Observation
 from .permissions import Action, USER_ONLY_WORDS
 
-CONTINUE = re.compile(r"^\W*(continue|next|next page|next lesson|next section|proceed|go on|forward)\W*$", re.I)
-COMPLETE = re.compile(r"\b(complete|finish|mark)\b.*\b(module|lesson|section|unit|page)\b|^mark (as )?(complete|done)",
-                      re.I)
-PLAY = re.compile(r"(^|\W)(play|start video|watch|▶)(\W|$)", re.I)
+# Canvas "Next Module Item" / "Next Question", Storyline "Next (Ctrl+Alt+Period)", Rise "NEXT LESSON" / "CONTINUE" /
+# "START COURSE" / "RESUME COURSE", Brightspace "Next Topic" (exact names from their source; see docs/COMPUTER-AGENT.md).
+_NEXT_SRC = (r"^\W*(continue|next|proceed|go on|forward|continue to next|resume|start course|resume course|begin course|"
+             r"next (?:page|lesson|section|slide|item|module item|screen|step|module|topic|chapter|question))"
+             r"(?: - opens in new window)?(?: \(ctrl\+alt\+[^)]*\))?\W*$")
+CONTINUE = re.compile(_NEXT_SRC, re.I)
+_COMPLETE_SRC = (r"\b(complete|finish|mark)\b.*\b(module|lesson|section|unit|page)\b|^\W*mark (as )?(complete|done)\W*$")
+NEXT_JS_RE = f"(?:{_NEXT_SRC})|(?:{_COMPLETE_SRC})"               # "can I move on?" — checked inside every frame
+PLAY_JS_RE = r"(^|\W)(play|play video|play media|start video|watch|▶)(\W|$)"
+COMPLETE = re.compile(_COMPLETE_SRC, re.I)
+PLAY = re.compile(PLAY_JS_RE, re.I)
 DISMISS = re.compile(r"^\W*(not now|no thanks|close|dismiss|skip|later|maybe later|×|x|got it|ok)\W*$", re.I)
-START = re.compile(r"\b(start|open|begin|resume|continue|go to)\b.*\b(module|lesson|unit|chapter|section)\b", re.I)
+START = re.compile(r"\b(start|open|begin|resume|continue|go to|launch|enter)\b.*\b(module|lesson|unit|chapter|section|course|"
+                   r"training)\b", re.I)
 ERROR_PAGE = re.compile(r"\b(50[0-4]|service (temporarily )?unavailable|something went wrong|bad gateway|"
                         r"server error|try again later)\b", re.I)
 SIGN_IN = re.compile(r"\b(sign in|log ?in|session (has )?expired|authenticate|single sign-on|netid)\b", re.I)
 DONE_PAGE = re.compile(r"\b(course complete|completion record|certificate of completion|all \d+ modules? (are )?complete)\b",
                        re.I)
 UNIT = re.compile(r"\b(module|lesson|unit|chapter)\s+(\d+)\b", re.I)
-STATUS_DONE = re.compile(r"\b(completed|complete|done|finished|passed)\b|✓|✔", re.I)
+STATUS_DONE = re.compile(r"\b(completed|complete|done|finished|passed|viewed|marked done|submitted|contributed|"
+                         r"module completed|completed all items|100% complete)\b|✓|✔", re.I)
 STATUS_NOT = re.compile(r"\b(not started|in progress|locked|incomplete|not complete)\b", re.I)
 
 
@@ -48,7 +57,35 @@ class Step:
     info: dict = field(default_factory=dict)    # question/options or the confirmation statement, for the user
 
 
-CHECK = re.compile(r"^\W*(check|check answer|submit answer|check my answer)\W*$", re.I)
+CHECK = re.compile(r"^\W*(check|check answer|submit answer|check my answer|submit)\W*$", re.I)
+SUBMIT_ALL = re.compile(r"^\W*(submit|submit quiz|submit test|submit exam|submit answers|submit assessment|finish|"
+                        r"finish quiz|turn in|submit attempt)\W*$", re.I)
+INCOMPLETE = re.compile(r"\b(must (view|mark|submit|score|contribute|complete|pass)|not started|incomplete|not complete|"
+                        r"not completed|in progress|module locked|locked until|not yet completed|missing)\b", re.I)
+LOCKED = re.compile(r"hasn't been unlocked yet|is locked until|lessons must be completed in order|"
+                    r"must pass quiz before continuing|currently unavailable", re.I)
+QUIZ_START = re.compile(r"^\W*(take the quiz|take the quiz again|resume quiz|start quiz|begin quiz|start attempt|"
+                        r"take quiz|start test|start exam|begin)\W*$", re.I)
+REQ_ITEMS = re.compile(r"\b(\d+) of (\d+) required items\b", re.I)
+
+
+def first_incomplete_item(obs: Observation):
+    """On a modules/requirements page, the link for the first item whose requirement isn't met yet."""
+    lines = [ln.strip() for ln in obs.text.splitlines() if ln.strip()]
+    links = [e for e in obs.elements if e.role == "link" and e.name and not e.disabled]
+    for i, ln in enumerate(lines):
+        if not re.search(r"\bmust (view|mark|submit|contribute|score|complete)\b", ln, re.I):
+            continue
+        for back in range(i, max(-1, i - 4), -1):            # the item's title is on this line or just above it
+            cand = next((e for e in links if len(e.name) > 2 and (e.name in lines[back] or lines[back] in e.name)), None)
+            if cand is not None and not CONTINUE.match(cand.name):
+                return cand
+    return None
+
+
+def _clean_q(text: str) -> str:
+    t = re.sub(r"^\s*(question\s*\d*\s*[:.]|group of answer choices)\s*", "", text or "", flags=re.I).strip()
+    return t
 
 
 def question_text(obs: Observation) -> str:
@@ -146,21 +183,69 @@ class CourseSkill:
             pick = next((e for e in starts if todo and re.search(rf"\b{todo[0]}\b", e.name)), starts[0] if starts else None)
             if pick is not None:
                 return Step("act", Action("click"), pick, subgoal=f"opening module {todo[0] if todo else ''}".strip())
+        # 5b. A locked item (Canvas lock page, Rise "Lessons must be completed in order"): that's for the user.
+        if LOCKED.search(obs.text[:2000]) and not obs.find(("button", "link"), CONTINUE, enabled_only=True):
+            return Step("user", user_kind="user_turn", wait_change=True, timeout_s=1800, subgoal="a locked item",
+                        message="This item is locked (it needs something earlier finished, or a date). Open what's "
+                                "next yourself, or tell me where to go.")
+        # 5c. Starting a quiz attempt can start a timer: ask first.
+        qs = next((e for e in obs.find(("button", "link"), QUIZ_START) if not e.disabled
+                   and (re.search(r"quiz|test|exam|attempt", e.name, re.I)
+                        or re.search(r"\b(quiz|test|exam|assessment)\b", obs.text[:1500], re.I))), None)
+        if qs is not None and not any(e.in_question for e in obs.elements):
+            return Step("user", user_kind="submit", wait_change=True, timeout_s=1800, subgoal="ready to start the quiz",
+                        message=f"This starts the quiz (a timer may start). Say “start” and I'll press “{qs.name}”.",
+                        info={"button": qs.name, "count": 0, "word": "start"})
+        # 5c'. Every module on a requirements page reads "N of N Required Items": check it properly.
+        req = REQ_ITEMS.findall(obs.text)
+        if req and all(a == b for a, b in req) and not obs.find(("button", "link"), CONTINUE, enabled_only=True):
+            return Step("verify", subgoal="every module shows all required items done")
+        # 5d. A Canvas-style requirements list: open the first item still marked "Must view / Must mark done ...".
+        item = first_incomplete_item(obs)
+        if item is not None and not obs.find(("button", "link"), CONTINUE, enabled_only=True):
+            return Step("act", Action("click"), item, subgoal=f"opening “{item.name[:50]}”")
         # 6. Things that are the user's to do on this page.
         attest = [e for e in obs.find(("checkbox",)) if not e.checked and USER_ONLY_WORDS.search(e.name or "")]
         cont = obs.find(("button", "link"), CONTINUE)
         complete = obs.find(("button", "link"), COMPLETE)
         enabled_next = [e for e in complete + cont if not e.disabled]
-        if attest and not enabled_next:
+        if attest:
             return Step("user", user_kind="confirm", wait_change=True, timeout_s=1800,
                         subgoal="your confirmation",
                         message=f"This needs your confirmation: “{attest[0].name[:120]}”. Say or type “I confirm” if "
                                 "that's true (or tick it yourself).",
                         info={"statement": attest[0].name[:200]})
         question = [e for e in obs.elements if e.in_question and e.role in ("radio", "checkbox", "textbox", "combobox")]
-        if question and not enabled_next:
+        groups: dict = {}
+        for e in question:
+            if e.role in ("radio", "checkbox") and e.name:
+                groups.setdefault(e.qkey or "_", []).append(e)
+        if len(groups) > 1:                                      # a quiz page: one question at a time, then submit
+            for key, items in groups.items():
+                if not any(e.checked for e in items):
+                    opts = [e.name for e in items]
+                    qtext = _clean_q(items[0].qtext) or question_text(obs)
+                    if len(opts) <= 8:
+                        n = list(groups).index(key) + 1
+                        return Step("user", user_kind="question", wait_change=True, timeout_s=1800,
+                                    subgoal=f"question {n} of {len(groups)}",
+                                    message=f"Question {n} of {len(groups)}: {qtext} " +
+                                            " ".join(f"{chr(65 + i)}) {o}." for i, o in enumerate(opts)) +
+                                            " Say or type a letter.",
+                                    info={"question": qtext, "options": opts, "check": "", "group": key})
+                    break
+            else:
+                sub = next((e for e in obs.find(("button", "link"), SUBMIT_ALL) if not e.disabled), None)
+                if sub is not None:
+                    return Step("user", user_kind="submit", wait_change=True, timeout_s=1800,
+                                subgoal="ready to submit",
+                                message=f"All {len(groups)} questions are answered. Say “submit” and I'll press "
+                                        f"“{sub.name}” (or check your answers first).",
+                                info={"button": sub.name, "count": len(groups)})
+        unanswered = bool(question) and not any(e.checked for e in question if e.role in ("radio", "checkbox"))
+        if question and (unanswered or not enabled_next) and len(groups) <= 1:
             opts = [e.name for e in question if e.role in ("radio", "checkbox") and e.name]
-            qtext = question_text(obs)
+            qtext = _clean_q(question[0].qtext if question else "") or question_text(obs)
             if opts and len(opts) <= 8:
                 return Step("user", user_kind="question", wait_change=True, timeout_s=1800,
                             subgoal="your answer to the question",
@@ -188,9 +273,9 @@ class CourseSkill:
                 # Paused and no Play control yet: the page is probably still rendering. Wait briefly, not for the
                 # whole lesson (a paused lesson never ends on its own).
                 memo["play_tries"] = memo.get("play_tries", 0) + 1
-                return Step("wait", wait_js=_PLAY_READY_JS, timeout_s=10, subgoal="waiting for the lesson to load")
+                return Step("wait", wait_js="play_ready", timeout_s=10, subgoal="waiting for the lesson to load")
             remaining = (m.get("d") or 600) - (m.get("t") or 0)
-            return Step("wait", wait_js=_MEDIA_DONE_JS, timeout_s=max(30.0, remaining * 1.5 + 30),
+            return Step("wait", wait_js="media_done", timeout_s=max(30.0, remaining * 1.5 + 30),
                         subgoal="the lesson is playing; I'll continue when it ends")
         memo.pop("play_tries", None)
         # 8. Move on: finish the unit if that's offered, otherwise Continue.
@@ -199,31 +284,33 @@ class CourseSkill:
             if ok:
                 return Step("act", Action("click"), ok[0], subgoal=f"clicking “{ok[0].name[:40]}”")
         if cont or complete:
-            return Step("wait", wait_js=_NEXT_ENABLED_JS, timeout_s=120,
+            return Step("wait", wait_js="next_enabled", timeout_s=120,
                         subgoal="waiting for the page to let me continue")
+        if memo.get("start_url") and obs.url.split("#")[0] != memo["start_url"].split("#")[0] \
+                and memo.get("settle_sig") == obs.signature and memo.get("end_check") != obs.signature:
+            # Only after the page had time to settle and still offers nothing (not a page still rendering).
+            memo["end_check"] = obs.signature                  # no Next here: maybe that was the last item
+            return Step("verify", subgoal="no more Next buttons: checking the course page")
         return Step("stuck", subgoal="I don't recognize this page")
 
     def verify(self, obs: Observation) -> tuple[bool, dict]:
-        """Completion is what the site itself shows on the course overview, not what Monkey remembers clicking."""
+        """Completion is what the site itself shows on the course overview, not what Monkey remembers clicking.
+        Numbered modules: all of them say complete. Otherwise (Canvas-style requirement lists): at least one
+        "Completed" marker and no "Must view / Must submit / Locked / Incomplete" marker left. Unsure = not done."""
         ov = read_overview(obs)
-        ok = ov.total >= 1 and ov.done == ov.total and bool(DONE_PAGE.search(obs.text) or ov.total)
-        return ok, {"units": ov.units, "done": ov.done, "total": ov.total, "page": obs.title[:80]}
-
-
-_MEDIA_DONE_JS = """() => { const ms = [...document.querySelectorAll('video,audio')];
-  // The page re-rendered and swapped in a fresh (stopped) player: look again instead of waiting it out.
-  if (!window.__mkMedia || !window.__mkMedia.isConnected) {
-    const was = window.__mkMedia; window.__mkMedia = ms[0] || null; if (was && ms[0] && ms[0].paused) return true; }
-  const next = [...document.querySelectorAll('button,a,[role=button]')].some(b =>
-      /^\\W*(continue|next|next page|proceed)\\W*$/i.test((b.innerText || b.getAttribute('aria-label') || '').trim())
-      && !b.disabled && b.getAttribute('aria-disabled') !== 'true');
-  return ms.every(m => m.ended) || (next && ms.every(m => m.ended || m.paused)); }"""
-_PLAY_READY_JS = """() => [...document.querySelectorAll('video,audio')].some(m => !m.paused || m.ended) ||
-  [...document.querySelectorAll('button,a,[role=button]')].some(b => b.offsetParent !== null &&
-      /(^|\\W)(play|start video|watch|▶)(\\W|$)/i.test((b.innerText || b.getAttribute('aria-label') || '').trim()))"""
-_NEXT_ENABLED_JS = """() => [...document.querySelectorAll('button,a,[role=button]')].some(b =>
-  /^\\W*(continue|next|next page|proceed|complete module|finish module|mark module complete)\\W*$/i
-    .test((b.innerText || b.getAttribute('aria-label') || '').trim()) && !b.disabled)"""
+        if ov.total >= 1:
+            ok = ov.done == ov.total
+            return ok, {"units": ov.units, "done": ov.done, "total": ov.total, "page": obs.title[:80]}
+        req = REQ_ITEMS.findall(obs.text)
+        if req:                                          # Canvas: "4 of 4 Required Items" per module
+            ok = all(a == b for a, b in req)
+            return ok, {"units": {}, "done": sum(int(a) for a, _ in req), "total": sum(int(b) for _, b in req),
+                        "page": obs.title[:80], "markers": True}
+        lines = [ln for ln in obs.text.splitlines() if ln.strip()]
+        done = sum(1 for ln in lines if STATUS_DONE.search(ln))
+        todo = sum(1 for ln in lines if INCOMPLETE.search(ln))
+        ok = todo == 0 and (done >= 1 or bool(DONE_PAGE.search(obs.text)) or "100%" in obs.text)
+        return ok, {"units": {}, "done": done, "total": done + todo, "page": obs.title[:80], "markers": True}
 
 
 # ---- the user's reply to a question or confirmation ("B", "option b", "bee", "I confirm") ------------------------------
@@ -234,13 +321,23 @@ _LETTER = re.compile(r"^\W*(?:(?:it'?s|its|i'?ll go with|go with|pick|choose|ans
 _CONFIRM = re.compile(r"^\W*(?:yes,?\s+)?(?:i\s+)?confirm(?:ed)?\b(?:[^?]*)$", re.I)
 
 
+_ALLOW = re.compile(r"^\W*(?:yes|yeah|yep|ok(?:ay)?|sure|allow(?: it)?|go ahead)\W*$", re.I)
+_DENY = re.compile(r"^\W*(?:no|nope|don'?t|do not|deny|block(?: it)?|don'?t allow)\W*$", re.I)
+_SUBMIT = re.compile(r"^\W*(?:yes,?\s+)?(?:submit|start|begin)(?: it| the quiz| the test| now)?\W*$", re.I)
+
+
 def parse_reply(text: str, pending: dict | None) -> dict | None:
-    """{"kind": "answer", "index": n} | {"kind": "confirm"} | {"kind": "wrong_kind", "message"} | None (not a reply)."""
-    if not pending or pending.get("kind") not in ("question", "confirm"):
+    """{"kind": "answer", "index": n} | {"kind": "confirm"} | {"kind": "allow"/"deny"} | {"kind": "submit"} |
+    {"kind": "wrong_kind", "message"} | None (not a reply: it goes to the normal chat)."""
+    if not pending or pending.get("kind") not in ("question", "confirm", "domain", "submit"):
         return None
     t = " ".join((text or "").strip().split())
     if not t or len(t) > 80:
         return None
+    if pending["kind"] == "domain":
+        return {"kind": "allow"} if _ALLOW.match(t) else ({"kind": "deny"} if _DENY.match(t) else None)
+    if pending["kind"] == "submit":
+        return {"kind": "submit"} if _SUBMIT.match(t) else None
     if pending["kind"] == "confirm":
         if _CONFIRM.match(t):
             return {"kind": "confirm"}

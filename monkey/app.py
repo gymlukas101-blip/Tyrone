@@ -1753,9 +1753,9 @@ class Api:
         return self._app.automation.state()
 
     def automation_start(self, objective: str, start_url: str, domains: list, mode: str = "managed_browser",
-                         send_screenshots: bool = False, confirm_medium: bool = False):
+                         send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True):
         return self._app.automation.start(objective, start_url, list(domains or []), mode, send_screenshots,
-                                          confirm_medium)
+                                          confirm_medium, helper_sites=bool(helper_sites))
 
     def automation_demo(self):
         return self._app.automation.demo_start()

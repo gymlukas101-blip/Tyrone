@@ -185,6 +185,10 @@ class PermissionGate:
         risk, why = classify(action)
         if scope.mode == "observe_window" and action.kind not in READ_KINDS:
             return Decision(False, risk, "this task can only look, not click or type")
+        if action.kind not in READ_KINDS and action.kind != "navigate" and page_url.startswith("http") \
+                and getattr(scope, "allowed_domains", None) and not url_allowed(page_url, scope.allowed_domains)[0]:
+            # A redirect can land on a site you never allowed: nothing is clicked or typed there.
+            return Decision(False, Risk.FORBIDDEN, "this page is on a site you didn't allow for this task")
         if action.kind == "navigate":
             ok, msg = url_allowed(action.url, scope.allowed_domains)
             if not ok:

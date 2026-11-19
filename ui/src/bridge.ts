@@ -117,7 +117,7 @@ export interface Api {
   automation_state(): Promise<AutoState>;
   automation_enable(on: boolean): Promise<AutoState>;
   automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
-                   confirmMedium: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+                   confirmMedium: boolean, helperSites?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
   automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
   automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;
@@ -131,7 +131,8 @@ export interface Api {
 export interface AutoTask {
   id: string; objective: string; mode: string; state: string; note: string; subgoal: string; start_url: string;
   allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string;
-    info?: { question?: string; options?: string[]; statement?: string; recommend?: { letter: string; reason: string } } } | null;
+    info?: { question?: string; options?: string[]; statement?: string; host?: string; word?: string; button?: string;
+      recommend?: { letter: string; reason: string } } } | null;
   progress: { steps: number; modules_done: number }; usage: { actions: number; model_calls: number; usd: number; elapsed_s: number };
   created: number; updated: number; outcome: Record<string, any> | null; errors: { kind: string; detail: string }[];
 }

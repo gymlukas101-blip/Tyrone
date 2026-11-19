@@ -124,8 +124,19 @@ class AutomationService:
         out["approvals"] = [a.public() for t in out["tasks"] for a in self.gate.pending_for(t["id"])]
         return out
 
+    # Sites real courses send you through (from Canvas/Kaltura/Panopto/Duo sources; see docs/COMPUTER-AGENT.md).
+    HELPER_SITES = ["duosecurity.com", "login.microsoftonline.com", "instructure.com", "kaltura.com", "panopto.com",
+                    "youtube.com", "youtube-nocookie.com", "vimeo.com"]
+
+    @staticmethod
+    def school_domain(host: str) -> str:
+        """canvas.wisc.edu -> wisc.edu (covers login.wisc.edu); leaves other hosts alone."""
+        parts = (host or "").lower().split(".")
+        return ".".join(parts[-2:]) if len(parts) >= 3 and parts[-1] == "edu" else host
+
     def start(self, objective: str, start_url: str, domains: list[str], mode: str = "managed_browser",
-              send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None) -> dict:
+              send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None,
+              helper_sites: bool = True) -> dict:
         if not self.enabled():
             return {"ok": False, "error": "Turn on computer tasks first (the switch at the top of this window)."}
         objective = (objective or "").strip()
@@ -135,6 +146,13 @@ class AutomationService:
             return {"ok": False, "error": "Window tasks are read-only previews in this version: use the Monkey "
                                          "browser for tasks."}
         domains = [d.strip().lower() for d in domains if d and d.strip()]
+        if helper_sites and domains:
+            from urllib.parse import urlsplit
+
+            host = urlsplit(start_url if "://" in start_url else "https://" + start_url).hostname or ""
+            for d in [self.school_domain(host), *self.HELPER_SITES]:
+                if d and d not in domains:
+                    domains.append(d)
         if not domains:
             return {"ok": False, "error": "Add at least one site Monkey may use."}
         ok, why = url_allowed(start_url, domains)
