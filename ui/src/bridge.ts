@@ -44,6 +44,8 @@ export interface Api {
   open_draft(draftId: string): Promise<void>;
   open_url(url: string): Promise<void>;
   google_sign_in(): Promise<{ ok: boolean; error?: string; started?: boolean; needs_client?: boolean }>;
+  google_sign_in_cancel(): Promise<{ ok: boolean; was_waiting?: boolean }>;
+  health_check(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
   google_client_file(): Promise<{ ok: boolean; error?: string }>;
   routing_benchmark(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
   google_sign_out(): Promise<void>;
@@ -68,8 +70,8 @@ export interface Api {
   brief_preview(opened: boolean): Promise<{ ok: boolean; error?: string; brief?: Brief | null }>;
   brief_candidates(): Promise<{ ok: boolean; error?: string; candidates?: Record<string, { time: string; title: string; seen: number }> }>;
   brief_confirm(byDay: Record<string, string>, source: string): Promise<BriefStatus>;
-  brief_task_preview(): Promise<{ ok: boolean; error?: string; xml?: string }>;
-  brief_task_enable(): Promise<{ ok: boolean; error?: string }>;
+  brief_task_preview(): Promise<{ ok: boolean; error?: string; xml?: string; needs_schedule?: boolean }>;
+  brief_task_enable(): Promise<{ ok: boolean; error?: string; needs_schedule?: boolean }>;
   brief_task_disable(): Promise<{ ok: boolean }>;
   import_preview(): Promise<{ ok: boolean; error?: string; label?: string; files?: ImportFile[] }>;
   import_apply(): Promise<{ ok: boolean; error?: string; backup?: string }>;
@@ -253,9 +255,19 @@ function mockApi(): Api {
     async open_url(url) { window.open(url, "_blank"); },
     async google_sign_in() {
       later(400, () => emit([["google", { stage: "opening", url: "https://accounts.google.com/o/oauth2/auth?demo" }]]));
-      later(1800, () => emit([["google", { stage: "error", message: "Google blocked the sign-in. In Google Cloud → OAuth consent screen, add your Google account under Test users (demo)." }]]));
       return { ok: true, started: true };
     },
+    async health_check() {
+      later(900, () => emit([["health", { ok: true, report: "Monkey check (demo)", checks: [
+        { area: "App", name: "Version", status: "ok", detail: "Monkey demo", fix: "" },
+        { area: "Brain", name: "Claude API key", status: "ok", detail: "key works", fix: "" },
+        { area: "Listening", name: "Microphone", status: "ok", detail: "default input: Microphone Array (Realtek)", fix: "" },
+        { area: "Google", name: "Sign-in", status: "fail", detail: "not signed in", fix: "Google Cloud → Audience → Publish app, then Settings → Accounts → Sign in" },
+        { area: "Morning brief", name: "Class schedule", status: "warn", detail: "not confirmed", fix: "Settings → Morning brief → type your earliest class times → Confirm schedule" },
+        { area: "Garmin", name: "Sleep + health", status: "skip", detail: "not connected", fix: "" }] }]]));
+      return { ok: true, started: true };
+    },
+    async google_sign_in_cancel() { later(200, () => emit([["google", { stage: "cancelled" }]])); return { ok: true, was_waiting: true }; },
     async google_client_file() { return { ok: false, error: "Demo mode" }; },
     async routing_benchmark() {
       let i = 0;
@@ -297,8 +309,8 @@ function mockApi(): Api {
     },
     async brief_candidates() { return { ok: true, candidates: { mon: { time: "09:00", title: "Demo class", seen: 2 }, tue: { time: "09:30", title: "DEMO 102", seen: 1 } } }; },
     async brief_confirm(byDay: Record<string, string>) { demoBriefState.verified = Object.keys(byDay).length > 0; demoBriefState.schedule = byDay; demoBriefState.next_run = demoBriefState.verified ? "2026-11-19T07:30:00-06:00" : null; return { ...demoBriefState }; },
-    async brief_task_preview() { return demoBriefState.verified ? { ok: true, xml: "<Task>…demo…</Task>" } : { ok: false, error: "Confirm your class schedule first." }; },
-    async brief_task_enable() { return { ok: false, error: "Demo mode" }; },
+    async brief_task_preview() { return demoBriefState.verified ? { ok: true, xml: "<Task>…demo…</Task>" } : { ok: false, error: "Confirm your class schedule first: type your earliest class start time in each school-day box (or click Detect from calendar), then click Confirm schedule.", needs_schedule: true }; },
+    async brief_task_enable() { return demoBriefState.verified ? { ok: false, error: "Demo mode" } : { ok: false, error: "Confirm your class schedule first: type your earliest class start time in each school-day box (or click Detect from calendar), then click Confirm schedule.", needs_schedule: true }; },
     async brief_task_disable() { return { ok: true }; },
     async import_preview() {
       return { ok: true, label: "Imported context (demo)", files: [

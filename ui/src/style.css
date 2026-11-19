@@ -366,3 +366,14 @@ dialog, .settings header { background: #0a3a1c; }
 .briefgrid label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
 .briefxml { white-space: pre-wrap; font-size: 11px; max-height: 180px; overflow: auto; }
 .briefgrid input { width: 100%; min-width: 0; box-sizing: border-box; }
+.briefgrid.attention { outline: 3px solid var(--banana, #ffd23f); outline-offset: 4px; border-radius: 8px; transition: outline-color .3s; }
+
+/* Check everything */
+.healthlist { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.healthlist li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; }
+.healthlist .hicon { font-weight: 700; text-align: center; }
+.healthlist .h-ok .hicon { color: #35d06a; }
+.healthlist .h-warn .hicon { color: var(--banana, #ffd23f); }
+.healthlist .h-fail .hicon { color: #ff6b6b; }
+.healthlist .h-skip { opacity: .7; }
+.healthlist .hfix { color: var(--banana, #ffd23f); }

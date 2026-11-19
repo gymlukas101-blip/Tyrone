@@ -17,12 +17,14 @@ from xml.sax.saxutils import escape
 from .morning import DAYS, SCHOOL_DAYS, Schedule, brief_time
 
 TASK_NAME = r"Monkey\Morning brief"
+SCHEDULE_FIRST = ("Confirm your class schedule first: in Settings → Morning brief, type your earliest class start "
+                  "time in each school-day box (or click Detect from calendar), then click Confirm schedule.")
 DAY_TAG = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday"}
 
 
 def task_xml(exe: str, schedule: Schedule, lead_min: int = 90, today: date | None = None) -> str:
     if not schedule.verified:
-        raise ValueError("Confirm your class schedule first.")
+        raise ValueError(SCHEDULE_FIRST)
     today = today or date.today()
     triggers = []
     for i in range(7):
@@ -80,3 +82,15 @@ def register(xml: str) -> None:
 def unregister() -> None:
     if sys.platform == "win32":
         subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"], capture_output=True, text=True)
+
+
+def is_registered() -> bool:
+    """Is the morning-brief task in Task Scheduler? Read-only query (Windows only)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        r = subprocess.run(["schtasks", "/Query", "/TN", TASK_NAME], capture_output=True, text=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0

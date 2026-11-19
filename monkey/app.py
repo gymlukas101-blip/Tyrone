@@ -1015,7 +1015,15 @@ class Api:
         st = a.morning.status(_dt.now().astimezone())
         return {**st, "lead_min": a.cfg.settings.brief_lead_min, "speak": a.cfg.settings.brief_speak_on_open,
                 "canvas": a.canvas_token_status(), "calendar": bool(a._calendars()),
-                "task": getattr(a, "_brief_task_enabled", False)}
+                "task": self._brief_task_registered()}
+
+    def _brief_task_registered(self) -> bool:
+        from .routines.scheduler import is_registered
+
+        a = self._app
+        if getattr(a, "_brief_task_enabled", None) is None:
+            a._brief_task_enabled = is_registered()     # asked Task Scheduler once; Enable/Disable keep it current
+        return bool(a._brief_task_enabled)
 
     def brief_preview(self, opened: bool = True):
         """The app was opened: today's brief (cached, or built now; a draft if the schedule isn't confirmed)."""
@@ -1078,7 +1086,7 @@ class Api:
             return {"ok": True, "xml": task_xml(exe, Schedule.from_settings(a.cfg.settings.brief_schedule),
                                                 a.cfg.settings.brief_lead_min)}
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
+            return {"ok": False, "error": str(exc), "needs_schedule": True}
 
     def brief_task_enable(self):
         """Register the Windows scheduled task (explicit click only). It prepares the brief; it never notifies."""
@@ -1244,7 +1252,7 @@ class Api:
     def google_sign_in(self):
         """Starts the browser sign-in in the background and returns at once. Progress comes as "google" events:
         opening (with the sign-in link, in case the browser didn't come up) -> done | error."""
-        from .integrations.google import validate_client
+        from .integrations.google import SignInCancelled, validate_client
 
         a = self._app
         if getattr(a, "_google_signing_in", False):
@@ -1259,6 +1267,8 @@ class Api:
             try:
                 a.google.sign_in(on_url=lambda url: a.ui.emit("google", {"stage": "opening", "url": url}))
                 a.ui.emit("google", {"stage": "done"})
+            except SignInCancelled:
+                a.ui.emit("google", {"stage": "cancelled"})
             except Exception as exc:  # noqa: BLE001
                 log.warning("google sign-in failed: %s", type(exc).__name__)
                 a.ui.emit("google", {"stage": "error", "message": str(exc)})
@@ -1267,6 +1277,35 @@ class Api:
 
         threading.Thread(target=run, name="google-signin", daemon=True).start()
         return {"ok": True, "started": True}
+
+    def health_check(self):
+        """Settings → Check everything. Runs in the background; the result comes as a "health" event."""
+        a = self._app
+        if getattr(a, "_health_running", False):
+            return {"ok": False, "error": "The check is already running."}
+        a._health_running = True
+
+        def run():
+            from .health import as_dicts, report_text, run_checks
+
+            try:
+                checks = run_checks(a, self)
+                a.ui.emit("health", {"ok": True, "checks": as_dicts(checks), "report": report_text(checks)})
+            except Exception as exc:  # noqa: BLE001
+                log.exception("health check failed")
+                a.ui.emit("health", {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            finally:
+                a._health_running = False
+
+        threading.Thread(target=run, name="health-check", daemon=True).start()
+        return {"ok": True, "started": True}
+
+    def google_sign_in_cancel(self):
+        """Stop waiting for the browser sign-in (Google showed an error page and won't come back)."""
+        a = self._app
+        if not getattr(a, "_google_signing_in", False):
+            return {"ok": True, "was_waiting": False}
+        return {"ok": True, "was_waiting": bool(a.google.cancel())}
 
     def google_client_file(self):
         """Pick the client_secret_*.json downloaded from Google Cloud (Desktop app) and save it."""

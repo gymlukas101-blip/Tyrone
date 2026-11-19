@@ -1,6 +1,6 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-19 (release v0.3.36, which adds "Move to a new PC").
+Last updated 2026-11-19 (release v0.3.37: Google sign-in cancel/expiry handling, schedule hint, Settings → Check everything). The owner is now on the Dell XPS 15 9530.
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
 
@@ -19,8 +19,8 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
   - sound kit, Pocket TTS offline voice, Blender rig and clips, fur and lighting.
 
 ## Waiting on the owner (on their PC)
-1. Move to the Dell XPS (`docs/MOVE-TO-NEW-PC.md`).
-2. Google: Sign in on the new PC, or confirm the moved sign-in works. Check that the Gmail API and Calendar API are enabled in the Google Cloud project.
+1. Settings → **Check everything** → Copy report → paste it into the chat. It shows what works on the Dell.
+2. Google: in Google Cloud → Audience → **Publish app** (or add the account as a test user), then Sign in. Check that the Gmail API and Calendar API are enabled in the Google Cloud project.
 3. Import the private context pack: Settings → Memory → Import context files. It never goes in this repo.
 4. Confirm the class schedule (Morning brief → Detect), or paste a calendar link, then turn the morning brief on.
 5. Run the routing benchmark (Settings → Brain → Run benchmark) and share the result, so the router rules and policy can be tuned.

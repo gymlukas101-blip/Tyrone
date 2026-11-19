@@ -275,3 +275,19 @@ Now (`monkey/memory/export.py`):
 - Tests: `tests/test_transfer.py`.
 - User guide: `docs/MOVE-TO-NEW-PC.md`. Session handoff: `docs/HANDOFF.md`. Repo rules for future sessions: `CLAUDE.md`.
 - `tools/sfx/raw/` and the AO bakes are now committed, so nothing lives only in a dev container.
+
+## First run on the Dell: Google "Access blocked", schedule-first hint, Check everything (v0.3.37)
+
+**Google "Access blocked … has not completed the Google verification process" (403 access_denied).** The OAuth app was in Testing and the account wasn't a test user. Google then never redirects back, so Monkey waited 5 minutes and reported a timeout.
+- Fix on Google's side: Audience → **Publish app** (In production). A personal app needs no review and gets one "unverified app" screen. Testing mode also ends refresh tokens after 7 days, so publishing is the recommended path; the test-user route is the alternative.
+- The waiting status now shows that hint and a **Cancel** button. `GoogleAuth.cancel()` sends one request to the flow's own localhost redirect (`error=access_denied` with the same `state`), so the wait ends right away. It refuses any non-localhost redirect. The result is reported as "cancelled".
+- `credentials()` now catches `RefreshError`: it deletes the dead token and says to sign in again (and why).
+- The setup guide was rewritten around Publish app.
+
+**Morning brief "Enable" → "Confirm your class schedule first."** This works as designed, but the message now says how to confirm. Enable/Preview scroll to and highlight the weekday boxes and show the steps inline. Task status comes from `schtasks /Query` (`scheduler.is_registered`) instead of an in-memory flag that reset on every restart.
+
+**Settings → Check everything** (`monkey/health.py`):
+- Grouped checks: app/update/move, Claude key (free `models.list`), voice engines and devices, mic/wake word/listener/VAD, Google (client, sign-in, Gmail profile, calendar), calendar link, Canvas, Outlook (registry only), Garmin, memory/context pack/history, brief schedule and task, budget.
+- Each group is isolated, with a 20 s timeout. Network checks are free reads.
+- **Copy report** gives scrubbed text with no keys, tokens, JSON blobs, emails or links (tests seed real-looking secrets and assert they're absent).
+- Tests: `tests/test_health.py` and additions to `tests/test_google_bench.py`.

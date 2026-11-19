@@ -345,6 +345,7 @@ function onEvent(name: string, p: any) {
     case "calibration": brainEvent(p); break;
     case "voicekit": voiceKitEvent(p); if (p.finished) void offlineVoiceRefresh?.(); break;
     case "google": googleEvent(p); break;
+    case "health": healthEvent(p); break;
     case "bench": benchEvent(p); break;
     case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
@@ -562,6 +563,7 @@ async function openSettings() {
     h("header", {}, h("strong", {}, "Settings"), h("div", { class: "spacer" }),
       h("button", { class: "icon", onclick: () => dlg.close() }, "✕")),
     h("div", { class: "body" },
+      healthSection(),
       h("section", {}, h("h4", {}, "You"), field("Your first name", "user_name")),
       h("section", {}, h("h4", {}, "API keys"),
         h("p", { class: "help" }, "Encrypted with your Windows account (" + (appState.secrets_backend ?? "DPAPI") +
@@ -840,30 +842,73 @@ function googleSetupGuide() {
     h("ol", { class: "help" },
       h("li", {}, "Open ", a("https://console.cloud.google.com/projectcreate", "Google Cloud → New project"), " (any name, e.g. Monkey)."),
       h("li", {}, "Enable the ", a("https://console.cloud.google.com/apis/library/gmail.googleapis.com", "Gmail API"), " and the ", a("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com", "Google Calendar API"), "."),
-      h("li", {}, a("https://console.cloud.google.com/apis/credentials/consent", "OAuth consent screen"), ": External → fill the app name and your email → under Test users, add your own Google account."),
+      h("li", {}, a("https://console.cloud.google.com/apis/credentials/consent", "OAuth consent screen"), ": External → fill the app name and your email."),
+      h("li", {}, a("https://console.cloud.google.com/auth/audience", "Audience"), " → Publish app → Confirm. Monkey is only for you, so Google doesn't need to review it, and this keeps you signed in (in Testing mode Google signs you out every 7 days). Prefer Testing? Add your Gmail under Test users instead, or Google shows “Access blocked”."),
       h("li", {}, a("https://console.cloud.google.com/apis/credentials", "Credentials"), " → Create credentials → OAuth client ID → Application type: Desktop app → Create → Download JSON."),
-      h("li", {}, "Back here: Load JSON file… (above), then Sign in. Your browser opens; pick your account; you may see “Google hasn't verified this app”: click Continue (it's your own app).")),
+      h("li", {}, "Back here: Load JSON file… (above), then Sign in. Your browser opens; pick your account. On “Google hasn't verified this app”, click Advanced → Go to Monkey (it's your own app), then allow Gmail and Calendar.")),
     h("p", { class: "help" }, "Only need your calendar for the morning brief? Skip all this and use the Calendar link below instead."));
 }
 
 function googleEvent(p: any) {
   const st = document.getElementById("googleStatus");
   if (p.stage === "opening") {
-    if (st) st.replaceChildren("Finish signing in in your browser. Nothing opened? ",
-      extLink(p.url, "Open Google sign-in"), " or ",
-      h("button", { class: "ghost", type: "button", onclick: async () => {
-        try { await navigator.clipboard.writeText(p.url); toast("Link copied: paste it into your browser"); }
-        catch { toast("⚠ Couldn't copy; use the Open link"); }
-      } }, "Copy link"),
-      " (Monkey waits up to 5 minutes).");
+    if (st) st.replaceChildren(
+      h("span", {}, "Finish signing in in your browser. Nothing opened? ",
+        extLink(p.url, "Open Google sign-in"), " or ",
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          try { await navigator.clipboard.writeText(p.url); toast("Link copied: paste it into your browser"); }
+          catch { toast("⚠ Couldn't copy; use the Open link"); }
+        } }, "Copy link"), " ",
+        h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_in_cancel(); } }, "Cancel")),
+      h("span", { class: "help", style: "display:block;margin-top:4px" },
+        "Google says “Access blocked … has not completed the Google verification process”? In ",
+        extLink("https://console.cloud.google.com/auth/audience", "Google Cloud → Audience"),
+        ", click Publish app (or add your Gmail under Test users), then Cancel here and Sign in again."));
   } else if (p.stage === "done") {
     if (st) st.textContent = "✓ Google connected";
     toast("✓ Google connected");
     void api.get_state().then((s) => { appState = s; });
+  } else if (p.stage === "cancelled") {
+    if (st) st.textContent = "Sign-in cancelled. Fix the Google setting, then click Sign in again.";
   } else if (p.stage === "error") {
     if (st) st.textContent = `⚠ ${p.message}`;
     toast(`⚠ ${p.message}`);
   }
+}
+
+// ------------------------------------------------------------------ check everything
+let lastHealthReport = "";
+function healthSection() {
+  const out = h("div", { id: "checkAllOut", class: "checkall" });
+  const btn = h("button", { class: "primary", type: "button", id: "checkAllBtn", onclick: async () => {
+    const r = await api.health_check();
+    if (!r.ok) { toast(`⚠ ${r.error}`); return; }
+    out.replaceChildren(h("p", { class: "help" }, "Checking every part of Monkey… (about 10–20 seconds)"));
+  } }, "Check everything");
+  return h("section", {}, h("h4", {}, "Is everything working?"),
+    h("p", { class: "help" }, "Tests the microphone, wake word, voices, your keys, Google, calendars, Canvas, memory and the morning brief on this PC. Free; nothing is sent or changed. Copy the report to share it: it never includes keys, emails or links."),
+    h("div", { class: "field" }, btn), out);
+}
+
+function healthEvent(p: any) {
+  const out = document.getElementById("checkAllOut");
+  if (!out) return;
+  if (!p.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${p.error}`)); return; }
+  lastHealthReport = p.report;
+  const icon: Record<string, string> = { ok: "✓", warn: "⚠", fail: "✗", skip: "–" };
+  const checks = p.checks as { area: string; name: string; status: string; detail: string; fix: string }[];
+  const bad = checks.filter((c) => c.status === "fail").length, warn = checks.filter((c) => c.status === "warn").length;
+  out.replaceChildren(
+    h("p", {}, h("strong", {}, bad ? `${bad} problem${bad > 1 ? "s" : ""}` : "No problems"),
+      warn ? `, ${warn} thing${warn > 1 ? "s" : ""} to look at` : "", ". ",
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        try { await navigator.clipboard.writeText(lastHealthReport); toast("Report copied: paste it to Claude"); }
+        catch { toast("⚠ Couldn't copy"); }
+      } }, "Copy report")),
+    h("ul", { class: "healthlist" }, ...checks.map((c) => h("li", { class: `h-${c.status}` },
+      h("span", { class: "hicon" }, icon[c.status] ?? "?"),
+      h("span", {}, h("b", {}, `${c.area} · ${c.name}: `), c.detail,
+        c.fix && (c.status === "fail" || c.status === "warn") ? h("span", { class: "hfix" }, ` → ${c.fix}`) : "")))));
 }
 
 function benchEvent(p: any) {
@@ -906,6 +951,14 @@ function briefSettings(s: Record<string, any>) {
     grid.append(h("label", {}, h("span", {}, DAY_LABEL[d]), inp));
   }
   const xmlOut = h("pre", { class: "briefxml" });
+  const taskHint = h("p", { class: "help", id: "briefTaskHint" });
+  const needSchedule = (msg: string) => {
+    taskHint.textContent = `⚠ ${msg}`;
+    grid.scrollIntoView({ behavior: "smooth", block: "center" });
+    grid.classList.add("attention");
+    setTimeout(() => grid.classList.remove("attention"), 2500);
+    (grid.querySelector("input") as HTMLInputElement | null)?.focus();
+  };
   const refresh = async () => {
     const st = await api.brief_status();
     status.textContent = (st.verified
@@ -944,14 +997,18 @@ function briefSettings(s: Record<string, any>) {
       h("div", { class: "field" },
         h("button", { class: "ghost", type: "button", onclick: async () => {
           const r = await api.brief_task_preview();
+          if (!r.ok && r.needs_schedule) { xmlOut.textContent = ""; needSchedule(r.error ?? ""); return; }
+          taskHint.textContent = "";
           xmlOut.textContent = r.ok ? r.xml ?? "" : `⚠ ${r.error}`;
         } }, "Preview task"),
         h("button", { class: "ghost", type: "button", onclick: async () => {
           const r = await api.brief_task_enable();
+          if (!r.ok && r.needs_schedule) { needSchedule(r.error ?? ""); return; }
+          taskHint.textContent = r.ok ? "✓ Scheduled task enabled" : `⚠ ${r.error}`;
           toast(r.ok ? "Scheduled task enabled" : `⚠ ${r.error}`);
         } }, "Enable"),
-        h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); toast("Scheduled task removed"); } }, "Disable")),
-      xmlOut));
+        h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); taskHint.textContent = ""; toast("Scheduled task removed"); } }, "Disable")),
+      taskHint, xmlOut));
 }
 
 // ------------------------------------------------------------------ memory: inspector, import, history

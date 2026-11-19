@@ -45,14 +45,25 @@ def validate_client(text: str) -> dict:
     return info
 
 
+AUDIENCE_URL = "https://console.cloud.google.com/auth/audience"
+ACCESS_BLOCKED_HELP = ("Google blocked the sign-in (\"Access blocked … has not completed the Google verification "
+                       "process\"). In Google Cloud → Google Auth Platform → Audience, click Publish app (best: the "
+                       "sign-in then never expires), or add your Gmail under Test users. Then click Sign in again.")
+EXPIRED_HELP = ("Your Google sign-in expired or was removed. Sign in again in Settings → Accounts. (Google ends "
+                "sign-ins every 7 days while the app is in Testing; Publish app in Google Cloud → Audience to stop that.)")
+
+
+class SignInCancelled(RuntimeError):
+    pass
+
+
 def explain_sign_in_error(exc: Exception) -> str:
     text = f"{type(exc).__name__}: {exc}"
     low = text.lower()
     if "timeout" in low or "timed out" in low:
         return "Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser."
     if "access_denied" in low or "access denied" in low:
-        return ("Google blocked the sign-in. In Google Cloud → OAuth consent screen, add your Google account under "
-                "Test users (the app stays in Testing mode), then try again.")
+        return ACCESS_BLOCKED_HELP
     if "redirect_uri" in low:
         return "Google rejected the redirect: make sure the client is a Desktop app (not Web)."
     if "invalid_client" in low:
@@ -69,6 +80,8 @@ class GoogleAuth:
     def __init__(self):
         self._creds = None
         self._lock = threading.Lock()
+        self._auth_url = ""
+        self._cancelled = False
 
     def connected(self) -> bool:
         return bool(keys.get("google_token"))
@@ -89,8 +102,12 @@ class GoogleAuth:
         info = validate_client(keys.get("google_client") or "")
         flow = InstalledAppFlow.from_client_config(info, SCOPES)
 
+        auth = self
+        self._cancelled, self._auth_url = False, ""
+
         class _SignInBrowser(webbrowser.BaseBrowser):
             def open(self, url, new=0, autoraise=True):
+                auth._auth_url = url
                 if on_url is not None:
                     on_url(url)
                 return launch_url(url)          # never webbrowser.open(): no way to loop back here
@@ -101,11 +118,39 @@ class GoogleAuth:
                                           authorization_prompt_message="",
                                           success_message="Monkey is connected to Google. You can close this tab.")
         except Exception as exc:  # noqa: BLE001
+            if self._cancelled:
+                raise SignInCancelled("Sign-in cancelled.") from exc
             raise RuntimeError(explain_sign_in_error(exc)) from exc
+        finally:
+            self._auth_url = ""
+        if self._cancelled:
+            raise SignInCancelled("Sign-in cancelled.")
         if creds is None or not getattr(creds, "token", None):
             raise RuntimeError("Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser.")
         keys.set("google_token", creds.to_json())
         self._creds = creds
+
+    def cancel(self) -> bool:
+        """Stop waiting for the browser (e.g. Google showed "Access blocked" and will never redirect back). Sends one
+        request to Monkey's own localhost redirect listener so the waiting flow ends right away."""
+        from urllib.parse import parse_qs, urlencode, urlparse
+        from urllib.request import ProxyHandler, build_opener
+
+        url = self._auth_url
+        if not url:
+            return False
+        self._cancelled = True
+        q = parse_qs(urlparse(url).query)
+        redirect, state = (q.get("redirect_uri") or [""])[0], (q.get("state") or [""])[0]
+        host = urlparse(redirect).hostname or ""
+        if host not in ("localhost", "127.0.0.1") or not redirect.startswith("http://"):
+            return False                            # only ever talk to our own listener
+        try:
+            build_opener(ProxyHandler({})).open(
+                redirect + "?" + urlencode({"error": "access_denied", "state": state}), timeout=3).read()
+        except Exception:  # noqa: BLE001 - the listener answers then closes; either way it has the request
+            pass
+        return True
 
     def sign_out(self) -> None:
         keys.delete("google_token")
@@ -122,7 +167,14 @@ class GoogleAuth:
                     raise RuntimeError("Google isn't connected. Sign in from Settings.")
                 self._creds = Credentials.from_authorized_user_info(json.loads(tok), SCOPES)
             if not self._creds.valid and self._creds.refresh_token:
-                self._creds.refresh(Request())
+                from google.auth.exceptions import RefreshError
+
+                try:
+                    self._creds.refresh(Request())
+                except RefreshError as exc:     # expired (7 days in Testing) or revoked: the token is dead
+                    keys.delete("google_token")
+                    self._creds = None
+                    raise RuntimeError(EXPIRED_HELP) from exc
                 keys.set("google_token", self._creds.to_json())
             return self._creds
 

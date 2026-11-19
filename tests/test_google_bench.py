@@ -168,3 +168,113 @@ def test_benchmark_api_needs_key(mk, monkeypatch):
     a, api, events = mk
     monkeypatch.setattr(a, "_ensure_client", lambda: None)
     assert "Anthropic key" in api.routing_benchmark()["error"]
+
+
+class BlockedFlow:
+    """Like run_local_server when Google shows "Access blocked": it never redirects back, so the local listener
+    waits. A real localhost listener, so cancel() is tested end to end."""
+    @classmethod
+    def from_client_config(cls, info, scopes):
+        return cls()
+
+    def run_local_server(self, **kw):
+        import webbrowser
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from urllib.parse import parse_qs, quote, urlparse
+
+        got = {}
+
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                got.update(parse_qs(urlparse(self.path).query))
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = HTTPServer(("localhost", 0), H)
+        srv.timeout = 5
+        redirect = f"http://localhost:{srv.server_port}/"
+        webbrowser.get(kw.get("browser")).open(
+            f"https://accounts.google.com/o/oauth2/auth?redirect_uri={quote(redirect, safe='')}&state=st8", new=1)
+        srv.handle_request()
+        srv.server_close()
+        if got.get("error") == ["access_denied"] and got.get("state") == ["st8"]:
+            raise RuntimeError("(access_denied) ")
+        raise TimeoutError("timed out")
+
+
+def test_cancel_unblocks_a_sign_in_google_never_returns_from(monkeypatch):
+    import threading
+
+    flowmod = pytest.importorskip("google_auth_oauthlib.flow")
+    from monkey import links
+
+    monkeypatch.setattr(flowmod, "InstalledAppFlow", BlockedFlow)
+    monkeypatch.setattr(links, "launch_url", lambda u: True)
+    keys.set("google_client", DESKTOP)
+    auth, result = G.GoogleAuth(), {}
+
+    def run():
+        try:
+            auth.sign_in(on_url=lambda u: None)
+        except Exception as exc:  # noqa: BLE001
+            result["exc"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    for _ in range(50):
+        if auth._auth_url:
+            break
+        time.sleep(0.05)
+    started = time.monotonic()
+    assert auth.cancel() is True
+    t.join(5)
+    assert not t.is_alive() and time.monotonic() - started < 3
+    assert isinstance(result["exc"], G.SignInCancelled)
+
+
+def test_cancel_only_talks_to_localhost():
+    auth = G.GoogleAuth()
+    auth._auth_url = "https://accounts.google.com/o/oauth2/auth?redirect_uri=https%3A%2F%2Fevil.example%2F&state=x"
+    assert auth.cancel() is False
+    assert G.GoogleAuth().cancel() is False            # nothing waiting
+
+
+def test_api_reports_cancelled(mk, monkeypatch):
+    a, api, events = mk
+    keys.set("google_client", DESKTOP)
+
+    def fake_sign_in(on_url=None, timeout_s=300):
+        on_url("https://accounts.google.com/x")
+        raise G.SignInCancelled("Sign-in cancelled.")
+
+    monkeypatch.setattr(a.google, "sign_in", fake_sign_in)
+    api.google_sign_in()
+    time.sleep(0.3)
+    assert [p["stage"] for n, p in events if n == "google"] == ["opening", "cancelled"]
+
+
+def test_expired_sign_in_is_cleared_with_a_clear_message(monkeypatch):
+    pytest.importorskip("google.oauth2.credentials")
+    from google.auth.exceptions import RefreshError
+    from google.oauth2 import credentials as C
+
+    class Dead:
+        valid, refresh_token = False, "r"
+
+        def refresh(self, req):
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+    monkeypatch.setattr(C.Credentials, "from_authorized_user_info", classmethod(lambda cls, info, scopes: Dead()))
+    keys.set("google_token", '{"refresh_token": "r"}')
+    with pytest.raises(RuntimeError) as e:
+        G.GoogleAuth().credentials()
+    assert "Sign in again" in str(e.value) and "Publish app" in str(e.value)
+    assert not keys.get("google_token")
+
+
+def test_access_blocked_message_points_to_publish():
+    msg = G.explain_sign_in_error(RuntimeError("(access_denied)"))
+    assert "Publish app" in msg and "Test users" in msg
