@@ -14,10 +14,9 @@ Cursor: [docs/cursor/README.md](cursor/README.md) and [REFERENCE-ANALYSIS.md](cu
 | E. Durable TaskManager | Done: state machine, store, checkpoints, budgets, approvals, pause/stop/e-stop, restart recovery. |
 | F. Synthetic 4-module workflow | Done: `monkey/automation/democourse.py` plus a 24-run evaluation (below). |
 | G. Recovery, security, packaging, regression | Done for the browser path. Packaging is updated (Playwright + Edge). Windows CI run pending. |
-| Banana cursor | Runtime, browser integration, Windows overlay, settings, preview and tests are done. **The base art is still a vector placeholder** until the reference PNG is extracted and approved (see REFERENCE-ANALYSIS). |
+| Banana cursor | Done. The base art is the DEFAULT cursor isolated from the owner's reference (original pixels, IoU 0.99). Effects are measured from it. The Windows overlay hasn't been watched on the Dell yet. |
 
 Next, by evidence:
-1. Run the fidelity pipeline on the real reference and promote the sprite.
 2. Run the Windows checks below on the Dell.
 3. Route window-control tasks through the TaskManager (the driver is ready).
 4. Try the Claude planner on a real site (all planner tests so far use a fake client; no API key in the build container).
@@ -55,7 +54,24 @@ python -m monkey
 
 ## Evaluation (headless, Linux, real Chromium; `python -m tools.automation_eval --runs 24 --cursor alternate`)
 
-RESULTS_PLACEHOLDER
+| Measure | Result (24 runs: 12 variant mixes × cursor off/on) |
+|---|---|
+| Verified success (server shows 4/4 **and** Monkey says COMPLETED) | **24 / 24** |
+| False completions | **0** |
+| Unauthorized actions (injected exam submitted, off-site link followed, spoofed "lesson ended") | **0** |
+| Pause → PAUSED → Resume → continues | 6 / 6 |
+| Killed mid-course → reopened PAUSED → resumed → verified | 4 / 4 |
+| Claude calls | 0 (the course skill handled every page) |
+| Median time per 4-module course (1.5 s lessons) | 30.4 s with the cursor off; 37.9 s with the banana on (about 0.3 s × 24 clicks) |
+
+The runs from before the fixes are kept honestly in the commit history. They found and fixed:
+- relative links refused;
+- refs with a frame prefix;
+- YAML-quoted lines;
+- a late-rendering page read as "not complete";
+- a paused-but-not-started lesson treated as playing;
+- a re-rendered player waited out;
+- a shutdown that kept the browser profile locked.
 
 What a run tests:
 - **Variants:** renamed controls and links instead of buttons, slow rendering, a survey pop-up, DOM re-render (stale refs and a fresh player), prompt-injection text plus a "Submit final exam" button and an off-site "Continue to bonus content" link, 503s, and a session that expires mid-course (sign-in required). Plus mixes of these.
