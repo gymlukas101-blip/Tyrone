@@ -102,3 +102,12 @@ Rig limits: no microphone or speakers, no real Claude (a scripted stand-in calls
   - The Google file hint names the right file.
   - A ✓ shows next to saved fields.
   - The health check: the wake word shows not working when there's no mic, and plurals are fixed.
+
+## Verification round 4: 2 fresh testers (anxious, chatty)
+- **Severity 4 regression:** the round-4 "looks too short" check blocked saving a short key, so the anxious tester could never finish set-up. Now the length is only a hint: Claude decides, and a key it rejects isn't saved.
+- **Severity 3:** the chatty tester edited a fact, asked again, and got the old wording back. Monkey's own earlier reply in the same chat (and the chat's lines) came back as "memories". Memory search now skips the current conversation, which is already in context.
+- **Polish:**
+  - Each "Fix it" button says where it goes ("Set class times", "Open Accounts", …), with a hint to re-run the check.
+  - The brief's Today lists your classes from your notes.
+  - Remembered facts are written about you ("Their roommate is Sam"), not in your words.
+- The rig's "already set up" profile now includes the imported notes pack, as the task says.
