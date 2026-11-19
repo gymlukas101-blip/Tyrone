@@ -93,6 +93,12 @@ class Settings:
     memory_dir_override: str = ""     # e.g. a OneDrive folder to sync memory across PCs
     history_enabled: bool = True      # keep a searchable local history of conversations (monkey.db)
     history_retention_days: int = 365 # older conversations are deleted automatically (0 = keep forever)
+    # Computer tasks (docs/adr/0001-computer-agent.md). Off until the user turns it on; nothing else depends on it.
+    computer_access: bool = False
+    automation_stop_hotkey: str = "ctrl+alt+q"   # emergency stop: refuse every action and stop every task
+    overlay_enabled: bool = True      # the small always-on-top companion window (when computer access is on)
+    overlay_mode: str = "compact"     # compact | expanded | minimized
+    overlay_geom: dict = field(default_factory=dict)    # {"x", "y", "w", "h"} remembered position
     # App
     start_with_windows: bool = True
     first_run_complete: bool = False

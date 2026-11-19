@@ -11,6 +11,7 @@ import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
+import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
@@ -439,6 +440,10 @@ function onEvent(name: string, p: any) {
     case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); break;
+    case "automation": moodEmote(automationEvent(p)); break;
+    case "automation_propose": void openTasks(p); break;
+    case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
+    case "automation_enabled": void refreshTasks(); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
     case "heard": if (!p.text) addMsg("sys", "Didn't catch that."); break;
     case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); break;
@@ -1470,10 +1475,53 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
   void api.transfer_seen();
 }
 
+/** Task moods the main window shows as a short emote (the companion window shows them continuously). */
+let lastMood = "";
+function moodEmote(mood: string) {
+  if (mood === lastMood) return;
+  lastMood = mood;
+  if (mood === "celebrate") avatar.emote("celebrate");
+  else if (mood === "help") avatar.emote("wave");
+  else if (mood === "sad" || mood === "blocked") avatar.emote("shrug");
+}
+
+/** The companion window: same avatar, compact status + controls, no chat, no sounds (the main window plays them). */
+async function bootOverlay() {
+  appState = await api.get_state();
+  const a3 = (window as any).__monkeyAvatarObj;
+  if (a3) a3.maxFps = 30;                                       // light on the GPU; it's a small window
+  initComputer(api);
+  let mood = "idle";
+  const setMood = (m: string) => {
+    if (m === mood) return;
+    mood = m;
+    if (m === "celebrate") avatar.emote("celebrate");
+    else if (m === "help") avatar.emote("wave");
+    else if (m === "sad" || m === "blocked") avatar.emote("shrug");
+    avatar.setState(m === "working" || m === "thinking" ? "thinking" : "idle");
+  };
+  initOverlay($("#avatar"), setMood, appState.settings.overlay_mode ?? "compact");
+  window.__monkeyEvents = (events) => {
+    for (const [n, p] of events) {
+      try {
+        if (n === "state") { if (mood === "idle" || p.state === "speaking") avatar.setState(p.state); }
+        else if (n === "level") avatar.setLevel(p.v);
+        else if (n === "visemes") avatar.setVisemes(p);
+        else if (n === "emote" && p.name !== "sleep") avatar.emote(p.name);
+        else if (n === "automation") automationEvent(p);
+        else if (n === "automation_stopped" || n === "automation_enabled") void refreshTasks();
+      } catch (e) { console.error(n, e); }
+    }
+  };
+}
+
 // ------------------------------------------------------------------ boot
 (async () => {
   api = await waitForApi();
   (window as any).__monkeyBooted = true;
+  const role = new URLSearchParams(location.search).has("overlay") ? "overlay"
+    : await (api.window_role?.() ?? Promise.resolve("main")).catch(() => "main");
+  if (role === "overlay") { await bootOverlay(); return; }
   appState = await api.get_state();
   applyLook(appState.settings);
   applyChrome(appState);
@@ -1484,6 +1532,9 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
   ($("#spend") as HTMLElement).onclick = () => toast(`That's what Monkey's AI cost this month: $${appState.month_usd.toFixed(2)} of your $${appState.budget_usd.toFixed(0)} limit. ` +
     "It's billed to whoever owns the Claude key (prepaid credit at console.anthropic.com), never a card in Monkey. Change the limit in Settings → Advanced.", 8000);
   await restoreTranscript();
+  initComputer(api);
+  $("#stage").append(controlBanner());
+  $("#tasksBtn").addEventListener("click", () => void openTasks());
   if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {

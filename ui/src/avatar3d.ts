@@ -610,7 +610,14 @@ export class Avatar3D implements AvatarLike {
   }
   private frozen = false;
 
+  /** Frame cap (0 = display rate). The companion window runs at 30 fps; a hidden window renders nothing. */
+  maxFps = 0;
+  private lastFrame = 0;
   private frame() {
+    const now = performance.now();
+    if (document.hidden) return;
+    if (this.maxFps && now - this.lastFrame < 1000 / this.maxFps - 1) return;
+    this.lastFrame = now;
     if (this.frozen) { this.renderer.render(this.scene, this.camera); return; }
     const dt = Math.min(0.1, this.clock.getDelta());
     const t = performance.now();
