@@ -6,25 +6,28 @@
   - a large hero cursor (hover-like, with glow and rays);
   - four state tiles: DEFAULT, HOVER, CLICK (PRESS), LOADING / BUSY;
   - labels and a third-party wordmark.
-- **Not in the repo:** it has a third-party wordmark and isn't needed at runtime. Keep it local.
-- **Status:** it was shared only as an inline chat image, which never reached the build machine as a file. **No pixel extraction or pixel-level comparison has been run yet.**
-- **To run the pipeline:** upload the PNG as a file, or put it on the PC and run:
+- **Not committed.** The sheet is kept local: it has a third-party wordmark and isn't needed at runtime. `ref/` (the analysis crops) is gitignored.
+- **What is committed:**
+  - `banana_sprite.png`: the DEFAULT cursor isolated from it, original pixels;
+  - the effect parameters measured from it.
 
-```bash
-python -m tools.cursor.fidelity extract path\to\reference.png
-```
+## Status (2026-11-19): extracted, promoted, compared
 
-```bash
-python -m tools.cursor.fidelity compare
-```
+1. `python -m tools.cursor.fidelity extract reference.png` isolated all five cursors. They're shown on light and magenta backgrounds to check for fringes, and none were found.
+   - DEFAULT is 203×276 px of original art, with the hotspot at sprite pixel (14, 6).
+   - It's a clean cut: exact silhouette, no background, and no dark fringe.
+2. `promote` made it the **one base asset**: `manifest.json → sprite`. Every state, the browser cursor, the Settings preview and the Windows overlay PNGs draw that same image. The vector `banana.svg` is now only the fallback.
+3. `compare` rendered the states with the **real runtime controller** and aligned them on the hotspot. The sheets are in `docs/cursor/fidelity/`.
 
-`compare` writes the side-by-side, overlay and difference sheets to `docs/cursor/fidelity/`, with silhouette IoU and SSIM at 32/48/64/96/128 px on dark and light backgrounds. After you approve `ref/default.png`, run:
+| State | Silhouette IoU (32 / 48 / 64 / 128 px) | Luma SSIM (same) | Reading |
+|---|---|---|---|
+| DEFAULT | 0.993 / 0.992 / 0.993 / 0.994 | 0.989 / 0.985 / 0.983 / 0.972 | The reference's own pixels. Differences sit only on anti-aliased edges after resampling. The 96 px row scores 0.93/0.63 because of a one-pixel alignment rounding in the comparison at that size, not a visible difference. |
+| HOVER | ≈0.59 | ≈0.1–0.2 | The low numbers mostly measure the reference crop's **dark glow halo** (pixels of the dark board that the mask kept) against our transparent glow. Visually: contour band, warm glow and three wedge rays now match in placement and shape. **Remaining difference:** our contour band is slightly heavier toward the lower right; the reference band is perfectly even. |
+| CLICK | ≈0.5–0.58 | ≈0.1–0.4 | The reference is a single still frame; ours is an animation captured at 120 ms. Inner bright ring, second ring and segmented outer arcs are present. **Deliberate difference:** our rings are centred **exactly on the click point** (the tip), as the functional requirements demand. The reference's rings sit slightly below and to the right of the tip. |
+| BUSY | 0.83 / 0.81 (at 48 / 64) | 0.85 / 0.74 | Ring position, size, flat segment ends and bright-right/dim-left pattern match. The ring rotates, so any still frame differs in phase. |
 
-```bash
-python -m tools.cursor.fidelity promote
-```
-
-From then on every state draws from that one isolated sprite (`manifest.json → sprite`). The vector stays only as the fallback.
+These scores support judgement; they don't replace it. The DEFAULT object is a faithful reproduction (it *is* the
+reference art). The effects are close reproductions built as independent layers, not a 1:1 match.
 
 ## Layout of the sheet (approximate, used as search windows; the mask finds the exact bounds)
 
@@ -66,9 +69,9 @@ From then on every state draws from that one isolated sprite (`manifest.json →
 | Stem | `#7a4521` / `#4e2a10` |
 | Glow | `#ffd60a` |
 
-## Current runtime asset vs the reference (honest, visual)
+## The earlier vector reconstruction vs the reference (kept for the record; now only a fallback)
 
-The current base asset is `banana.svg`, a hand-built vector reconstruction. It's a placeholder until extraction is approved.
+`banana.svg` is a hand-built vector reconstruction, used only if the sprite is missing.
 
 | Aspect | Matches | Differs |
 |---|---|---|
@@ -80,7 +83,7 @@ The current base asset is `banana.svg`, a hand-built vector reconstruction. It's
 | CLICK | Squash around the tip, ring at the tip, dashed outer ring | Reference outer ring is drawn as **separate arcs** (gaps), not a dashed line. |
 | BUSY | 6-segment golden ring with stepped opacity, upper right | Close |
 
-**Not claimed:** a 1:1 reproduction. The quality gates "silhouette closely matches" and "peel proportions retained" are **not yet met** by the vector. They're expected to be met by promoting the extracted DEFAULT sprite (original pixels), verified with the compare sheets.
+With the vector, the quality gates "silhouette closely matches" and "peel proportions retained" were **not** met. With the promoted sprite they are (DEFAULT IoU 0.99).
 
 ## Why a sprite, not Blender, for the base
 

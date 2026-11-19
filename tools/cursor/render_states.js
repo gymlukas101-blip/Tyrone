@@ -25,7 +25,7 @@ const path = require("path");
       if (state === "click") { c.press(); setTimeout(() => c.release(), 20); }
       if (state === "busy") c.setState("busy");
     }, { svg, sprite, hot: man.hotspot, px, state });
-    await p.waitForTimeout(state === "click" ? 140 : 300);
+    await p.waitForTimeout(state === "click" ? 120 : 300);
     await p.screenshot({ path: path.join(out, `${state}.png`), omitBackground: true });
   }
   await b.close();

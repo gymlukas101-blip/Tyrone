@@ -11,6 +11,9 @@ const DIR = path.join(ROOT, "monkey/automation/cursor");
 const svg = fs.readFileSync(path.join(DIR, "banana.svg"), "utf8");
 const js = fs.readFileSync(path.join(DIR, "banana_cursor.js"), "utf8");
 const VB = 128;
+const man0 = JSON.parse(fs.readFileSync(path.join(DIR, "manifest.json"), "utf8"));
+const sprite = man0.sprite && fs.existsSync(path.join(DIR, man0.sprite.file))
+  ? { ...man0.sprite, src: "data:image/png;base64," + fs.readFileSync(path.join(DIR, man0.sprite.file)).toString("base64") } : null;
 
 (async () => {
   const exe = process.env.PW_CHROMIUM || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
@@ -44,20 +47,21 @@ const VB = 128;
       const scale = px / 48, pad = Math.round(px * 0.6), W = px + pad * 2;
       await p.setContent(`<body style="margin:0;background:transparent"><div id="h" style="position:relative;width:${W}px;height:${W}px"></div>
         <script>${js}</script></body>`);
-      await p.evaluate(({ svg, hotspot, scale, pad, actions }) => {
-        const c = window.MonkeyBananaCursor.create({ host: document.getElementById("h"), svg, hotspot });
+      await p.evaluate(({ svg, hotspot, scale, pad, actions, sprite }) => {
+        const c = window.MonkeyBananaCursor.create({ host: document.getElementById("h"), svg, hotspot, sprite });
         c.configure({ scale, glow: 0.8, motion: "reduced" });
         c.moveTo(pad + 4, pad + 4);
         if (actions.includes("hover")) c.hover("button");
         if (actions.includes("press")) c.press();
         if (actions.includes("busy")) { c.setState("busy"); }
-      }, { svg, hotspot, scale, pad, actions });
+      }, { svg, hotspot, scale, pad, actions, sprite });
       await p.waitForTimeout(250);
       await p.screenshot({ path: path.join(out, `${name}_${px}.png`), clip: { x: 0, y: 0, width: W, height: W }, omitBackground: true });
     }
   }
 
   const manifest = {
+    ...(man0.sprite ? { sprite: man0.sprite } : {}),
     source: "banana.svg (original low-poly vector; one geometry for every state)",
     viewBox: VB, hotspot, hotspotNote: "pointer tip in viewBox units; the tip is drawn exactly on the action coordinate",
     pngs: Object.fromEntries(Object.keys(states).map((s) => [s, sizes.map((px) => {

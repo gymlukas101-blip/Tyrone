@@ -11,30 +11,16 @@ feedback only: it never decides, never moves a click, takes no mouse events, and
 
 | | |
 |---|---|
-| Source of truth | `monkey/automation/cursor/banana.svg`. One faceted vector geometry for every state; effects are layered on top. |
-| How it was made | Reconstructed by hand as original low-poly vector art following the owner's concept sheet (pointer tip, two curled peel flaps, golden fruit, brown stem block, dark brown extruded edge, cream rim light). The sheet itself is **not** in the repo (it contains a third-party wordmark) and was never cropped. |
-| Hotspot | `manifest.json → hotspot` = (7.56, 4.44) in the 128-unit viewBox. **Measured** by `tools/cursor/build_assets.js` from the rendered alpha (the opaque pixel furthest toward the top-left = the sharp outer tip of the brown edge), never assumed to be the centre. |
+| Source of truth | `monkey/automation/cursor/banana_sprite.png`: the DEFAULT cursor **isolated from the owner's reference sheet, original pixels** (203×276, transparent, edge-decontaminated). Every state is this same image plus effect layers. `banana.svg` (a hand-built vector) is the fallback only. |
+| How it was made | `python -m tools.cursor.fidelity extract` (mask, decontaminated alpha, hotspot), then `promote`. See [REFERENCE-ANALYSIS.md](REFERENCE-ANALYSIS.md) and the comparison sheets in `fidelity/`. |
+| Hotspot | `manifest.json → sprite.hotspot` = pixel (14, 6) of the sprite: the opaque pixel furthest toward the top-left (the sharp tip), **measured**, never the image centre. The vector's is `hotspot` (7.56, 4.44) in its 128-unit viewBox. |
 | Derived files | `png/{default,hover,pressed,busy}_{32,48,64,96}.png`: transparent, rendered by the real controller, used by the Windows desktop overlay. Rebuild with `node tools/cursor/build_assets.js` after editing the SVG. |
 | Why vector + CSS effects | Crisp at every DPI and size, about 4 KB, a single geometry so the proportions can't drift between states, GPU-composited transforms, and no renderer running while hidden. A Three.js model was rejected for a 48 px pointer: it needs a WebGL context per surface and reads worse at that size. |
 
-**Honest fidelity note.** Side by side with the reference sheet (the top image vs the owner's sheet), these match:
-- the silhouette;
-- the palette (cream pointer, golden fruit, brown tip and edge);
-- the faceting style;
-- the hover rays and glow;
-- the segmented busy ring;
-- the concentric click ripple.
-
-It is a hand-built reconstruction, not a pixel match. The reference's flaps are puffier and more rounded, with more
-facets, and its lighting has soft ambient occlusion that flat facets don't reproduce.
-
-For a production-grade match, the spec for an artist or a 3D render is:
-- same silhouette and hotspot;
-- 3/4 top-left key light;
-- flat-shaded facets of about 2–4 px at 48 px;
-- 2 px dark brown `#4d2b0f` outer edge;
-- extrusion 2.5 px down-left `#2c1605`;
-- exported as a 256 px transparent PNG plus 2× PNGs per state, with the hotspot re-measured by `build_assets.js`.
+**Fidelity.**
+- **DEFAULT** is the reference's own pixels: silhouette IoU 0.99 and SSIM about 0.98 against the reference at 32–128 px.
+- **Effects** (hover contour, glow and rays; click rings and arcs; busy ring) were measured from the reference and rebuilt as independent layers. They're close, not 1:1. The remaining differences are listed in REFERENCE-ANALYSIS.md.
+- **No Blender model:** the original art is sharper than any re-model at cursor sizes. That's deferred until peel animation is wanted.
 
 ## States (`banana_cursor.js`)
 

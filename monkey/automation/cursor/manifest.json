@@ -1,4 +1,14 @@
 {
+  "sprite": {
+    "file": "banana_sprite.png",
+    "width": 203,
+    "height": 276,
+    "hotspot": [
+      14,
+      6
+    ],
+    "source": "isolated from the owner's concept sheet (DEFAULT state), original pixels"
+  },
   "source": "banana.svg (original low-poly vector; one geometry for every state)",
   "viewBox": 128,
   "hotspot": [
