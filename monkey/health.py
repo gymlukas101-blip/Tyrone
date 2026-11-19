@@ -76,17 +76,17 @@ def _brain_checks(app) -> list[Check]:
     from . import keys
 
     if not keys.get("anthropic"):
-        return [Check("Brain", "Claude API key", FAIL, "not saved", "Settings → API keys → Anthropic")]
+        return [Check("Brain", "Claude key", FAIL, "not saved", "Settings → Start here → Your Claude key")]
     client = app._ensure_client()
     try:
         page = client.models.list(limit=1)
         n = len(getattr(page, "data", []) or [])
-        return [Check("Brain", "Claude API key", OK, f"key works (models list answered, {n} shown)")]
+        return [Check("Brain", "Claude key", OK, "working")]
     except Exception as exc:  # noqa: BLE001
         name = type(exc).__name__
-        fix = ("Create a new key at the Anthropic Console and paste it in Settings → API keys"
+        fix = ("Make a new key at platform.claude.com and paste it in Settings → Start here"
                if "Authentication" in name or "401" in str(exc) else "Check your internet connection, then run the check again")
-        return [Check("Brain", "Claude API key", FAIL, f"{name}: {_scrub(exc)}", fix)]
+        return [Check("Brain", "Claude key", FAIL, "didn't work" if "Authentication" in name else "couldn't reach Claude", fix)]
 
 
 def _voice_checks(app) -> list[Check]:
@@ -96,16 +96,16 @@ def _voice_checks(app) -> list[Check]:
     s = app.cfg.settings
     fish = bool(keys.get("fish"))
     out.append(Check("Voice", "Fish Audio key", OK if fish else WARN, "saved" if fish else "not saved",
-                     "" if fish else "Settings → API keys → Fish Audio (without it Monkey uses the offline or Windows voice)"))
+                     "" if fish else "Optional: Settings → Start here → Fish Audio key (without it Monkey uses his backup voice)"))
     ref = Path(app.cfg.data_dir) / "voice" / "monkey-ref.wav"
     out.append(Check("Voice", "Monkey's voice sample", OK if ref.exists() else WARN,
                      "present" if ref.exists() else "missing (the offline voice will sound generic)",
-                     "" if ref.exists() else "Settings → Sound → Make Monkey's voice set"))
+                     "" if ref.exists() else "Optional: Settings → Voice & sound → Make Monkey's voice set"))
     ov = getattr(app, "offline_voice", None)
     have_ov = bool(ov is not None and ov.available())
     out.append(Check("Voice", "Offline voice", OK if have_ov else WARN,
-                     "downloaded" if have_ov else f"not downloaded (setting: {s.offline_voice})",
-                     "" if have_ov else "Settings → Sound → Offline voice → Download"))
+                     "ready" if have_ov else "not downloaded yet",
+                     "" if have_ov else "Settings → Voice & sound → Backup voice → Download"))
     out.append(Check("Voice", "Loudness", OK, f"match videos/music {'on' if s.voice_match_loudness else 'off'}, "
                                               f"volume {s.voice_volume}%"))
     try:
@@ -147,7 +147,7 @@ def _listening_checks(app) -> list[Check]:
                          "Windows Settings → Privacy & security → Microphone → allow desktop apps; check the mic is enabled"))
     label = str(getattr(app, "wakeword_label", "") or "")
     bad = not label or "starting" in label or "off" in label.lower() or "fail" in label.lower()
-    out.append(Check("Listening", "Wake word", WARN if bad else OK, _scrub(label) or "unknown",
+    out.append(Check("Listening", "Wake word", WARN if bad else OK, "“Hey Monkey” is listening" if not bad else (_scrub(label) or "not running"),
                      "Restart Monkey; if it stays like this, send the report" if bad else ""))
     lst = getattr(app, "listener", None)
     if lst is None:
@@ -172,9 +172,9 @@ def _google_checks(app) -> list[Check]:
     out = []
     try:
         validate_client(client)
-        out.append(Check("Google", "Client file", OK, "Desktop app client saved"))
+        out.append(Check("Google", "Setup file", OK, "loaded"))
     except ValueError as exc:
-        out.append(Check("Google", "Client file", FAIL, _scrub(exc), "Settings → Accounts → Load JSON file…"))
+        out.append(Check("Google", "Setup file", FAIL, "not loaded", "Settings → Accounts → Gmail + Google Calendar → Step 1"))
     if not keys.get("google_token"):
         out.append(Check("Google", "Sign-in", FAIL, "not signed in",
                          "Google Cloud → Audience → Publish app (or add yourself as a test user), then Settings → Accounts → Sign in"))
@@ -246,8 +246,8 @@ def _memory_checks(app) -> list[Check]:
             real += len(F.parse_file(root, name))
         except Exception:  # noqa: BLE001
             pass
-    out.append(Check("Memory", "About you", OK if real >= 5 else WARN, f"{real} facts in profile/classes/preferences/projects",
-                     "" if real >= 5 else "Settings → Memory → Import context files (your context pack)"))
+    out.append(Check("Memory", "About you", OK if real >= 5 else WARN, f"Monkey knows {real} thing{'' if real == 1 else 's'} about you",
+                     "" if real >= 5 else "Settings → Memory → Add notes about you (or just tell Monkey things in chat)"))
     hist = getattr(app, "history", None)
     if hist is None:
         out.append(Check("Memory", "Chat history", WARN, "history is off"))

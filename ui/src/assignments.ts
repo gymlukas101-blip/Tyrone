@@ -22,7 +22,7 @@ function checkbox(checked: boolean) {
     s("path", { class: "cb-check", d: "M8.5 14.5 L12.5 18.5 L20 10" }));
   const btn = h("button", {
     class: `cb ${checked ? "on" : ""}`, type: "button", role: "checkbox",
-    "aria-checked": String(checked), title: checked ? "Mark not done" : "Mark done",
+    "aria-checked": String(checked), title: checked ? "Mark not done" : "Mark done (in Monkey only; doesn't submit anything on Canvas)",
   }, svg);
   return btn;
 }
@@ -158,9 +158,12 @@ function draw() {
     h("div", { class: "asg-head" },
       ring(st.week_done ?? 0, st.week_total ?? 0),
       h("div", {},
-        h("div", { class: "asg-headline" }, `${board.todo.length} to do`),
+        h("div", { class: "asg-headline" }, (() => {
+          const week = (st.week_total ?? 0) - (st.week_done ?? 0), other = board.todo.length - week;
+          return `${week} due this week${other > 0 ? ` · ${other} other` : ""}`;
+        })()),
         h("div", { class: "meta" },
-          [`${st.week_done ?? 0} of ${st.week_total ?? 0} due this week done`,
+          [`${st.week_done ?? 0} of ${st.week_total ?? 0} this week done`,
            st.missing ? `${st.missing} missing` : "", st.critical ? `${st.critical} critical` : "",
            board.source === "feed" ? "sorted by due date" : "ranked by grade impact, due date & your grade"]
             .filter(Boolean).join(" · ")))),

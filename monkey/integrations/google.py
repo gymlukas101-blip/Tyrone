@@ -30,18 +30,19 @@ SCOPES = [
 def validate_client(text: str) -> dict:
     """The OAuth client JSON Google gives you for a *Desktop app*. Raises ValueError with what to fix."""
     if not text.strip():
-        raise ValueError("Add your Google OAuth client first: Settings → Accounts → Set up Google → Load JSON file.")
+        raise ValueError("Load your Google setup file first: Settings → Accounts → Gmail + Google Calendar → Step 1.")
     try:
         info = json.loads(text)
     except json.JSONDecodeError:
-        raise ValueError("That isn't the JSON file from Google Cloud (it should start with {\"installed\": …}).")
+        raise ValueError("That isn't the Google setup file. Pick the client_secret_….json you downloaded from Google Cloud.")
     if "web" in info and "installed" not in info:
-        raise ValueError("That's a *Web application* client. In Google Cloud → Credentials, create an OAuth client "
-                         "of type **Desktop app**, download its JSON and load that one.")
+        raise ValueError("That's not the right Google file (it's for websites, not apps). If there's another "
+                         "client_secret file in your Downloads, try that one. Otherwise, in Google Cloud → Credentials, "
+                         "make one for \"Desktop app\" and download it.")
     inst = info.get("installed")
     if not isinstance(inst, dict) or not inst.get("client_id") or not inst.get("client_secret"):
-        raise ValueError("The client JSON is missing client_id/client_secret. Download it again from Google Cloud → "
-                         "Credentials (Desktop app).")
+        raise ValueError("That Google file looks incomplete. Download it again from Google Cloud → Credentials "
+                         "(the one for \"Desktop app\").")
     return info
 
 

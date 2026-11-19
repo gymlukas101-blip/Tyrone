@@ -407,3 +407,7 @@ section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f)
 .briefsec { justify-items: start; text-align: left; }
 .briefsec .items { width: 100%; }
 .briefsec .items li { display: block; text-align: left; }
+
+button:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
+#cards .card.folded h3::after { content: "  ▸ open"; font-size: 13px; font-weight: 700; opacity: .9; }
+#cards { max-height: 55%; }

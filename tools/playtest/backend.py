@@ -149,11 +149,11 @@ class ScriptedBrain:
             return None, None
         # Like real Claude with the in-app map in its persona: point to the right Settings section.
         sections = [(r"\b(louder|quieter|volume|too quiet|too loud|backup voice|voice)\b", "sound"),
-                    (r"\b(what you know|forget|wrong about me|change what|fix what|memory|notes)\b", "memory"),
+                    (r"\b(what you know|you know about me|forget|wrong about me|change what|fix what|memory|notes)\b", "memory"),
                     (r"\b(morning brief|class times|schedule)\b.*\b(set|change|turn|fix|how)\b|\b(set|change|how)\b.*\b(morning brief|class times)\b", "brief"),
                     (r"\b(connect|hook up|link|sign in)\b.*\b(gmail|google|canvas|calendar|outlook)\b", "accounts"),
                     (r"\b(is everything|all working|check everything|working right|report)\b", "check")]
-        if re.search(r"\b(how|where|can you|make|change|turn|fix|set|connect|hook|link|check|everything)\b", t) and want("open_settings"):
+        if re.search(r"\b(how|where|can you|make|change|turn|fix|edit|set|connect|hook|link|check|everything)\b", t) and want("open_settings"):
             for pat, sec in sections:
                 if re.search(pat, t):
                     return "open_settings", {"section": sec}

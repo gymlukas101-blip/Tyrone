@@ -16,9 +16,9 @@ DESKTOP = json.dumps({"installed": {"client_id": "x.apps.googleusercontent.com",
 
 def test_validate_client():
     assert "installed" in G.validate_client(DESKTOP)
-    for bad, word in [("", "Add your Google OAuth client"), ("{nope", "isn't the JSON"),
-                      (json.dumps({"web": {"client_id": "a"}}), "Web application"),
-                      (json.dumps({"installed": {}}), "missing client_id")]:
+    for bad, word in [("", "Load your Google setup file"), ("{nope", "isn't the Google setup file"),
+                      (json.dumps({"web": {"client_id": "a"}}), "not the right Google file"),
+                      (json.dumps({"installed": {}}), "looks incomplete")]:
         with pytest.raises(ValueError) as e:
             G.validate_client(bad)
         assert word in str(e.value)
@@ -114,7 +114,7 @@ def test_api_sign_in_without_client_explains(mk):
     a, api, events = mk
     keys.delete("google_client")
     r = api.google_sign_in()
-    assert not r["ok"] and r.get("needs_client") and "Set up Google" in r["error"]
+    assert not r["ok"] and r.get("needs_client") and "Google setup file" in r["error"]
 
 
 def test_api_sign_in_runs_in_background_and_reports(mk, monkeypatch):

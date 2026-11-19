@@ -30,7 +30,7 @@ def test_fresh_install_reports_every_area_and_skips_unconfigured(mk):
     assert {"App", "Brain", "Voice", "Listening", "Google", "Calendar", "Canvas", "Memory", "Morning brief",
             "Budget"} <= areas
     by = {(c.area, c.name): c for c in checks}
-    assert by[("Brain", "Claude API key")].status == H.FAIL and "Settings" in by[("Brain", "Claude API key")].fix
+    assert by[("Brain", "Claude key")].status == H.FAIL and "Settings" in by[("Brain", "Claude key")].fix
     assert by[("Google", "Gmail + Calendar")].status == H.SKIP
     assert by[("Calendar", "Calendar link")].status == H.SKIP
     assert by[("Morning brief", "Class schedule")].status == H.WARN
@@ -61,7 +61,7 @@ def test_report_never_contains_secrets_or_emails(mk, monkeypatch):
                  "https://"):
         assert leak not in text, leak
     by = {(c.area, c.name): c for c in checks}
-    assert by[("Brain", "Claude API key")].status == H.FAIL
+    assert by[("Brain", "Claude key")].status == H.FAIL
     assert by[("Google", "Gmail")].status == H.FAIL and by[("Calendar", "Calendar link")].status == H.FAIL
 
 
@@ -70,7 +70,7 @@ def test_working_key_is_ok(mk, monkeypatch):
     keys.set("anthropic", SECRET)
     monkeypatch.setattr(a, "_ensure_client", lambda: NS(models=NS(list=lambda **kw: NS(data=[1]))))
     by = {(c.area, c.name): c for c in H.run_checks(a, api)}
-    assert by[("Brain", "Claude API key")].status == H.OK
+    assert by[("Brain", "Claude key")].status == H.OK
 
 
 def test_one_crashing_or_hanging_group_does_not_stop_the_rest(mk, monkeypatch):

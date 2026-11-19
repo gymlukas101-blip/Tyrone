@@ -590,7 +590,7 @@ class MonkeyApp:
 
     def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
         if self._ensure_client() is None:
-            self._emit("error", {"message": "Add your Anthropic API key in Settings first."})
+            self._emit("error", {"message": "Paste your Claude key in Settings → Start here first."})
             return
         self.agent.cancel()
         if self.speaker:
@@ -1101,6 +1101,10 @@ class Api:
         if not found and not cals:
             return {"ok": False, "error": "To detect your classes, add your calendar link (Settings → Accounts) or connect "
                                           "Google. Or just type your first class time for each day here."}
+        if not found:
+            return {"ok": False, "error": "Monkey looked at the next 2 weeks of your calendar and didn't see classes that repeat "
+                                          "each week. If your classes are on a different calendar, add its link in Settings → "
+                                          "Accounts. Or just type your first class time for each day here."}
         return {"ok": True, "candidates": found, "source": source}
 
     def brief_confirm(self, by_day: dict, source: str = "confirmed in app"):
@@ -1339,7 +1343,14 @@ class Api:
                     a.cfg.update(google_account=str(prof.get("emailAddress", ""))[:120])
                 except Exception:  # noqa: BLE001
                     pass
-                a.ui.emit("google", {"stage": "done"})
+                found = {}
+                try:                                  # proof both halves work (testers weren't sure the calendar did)
+                    found["emails"] = len(a.gmail.list_recent(max_results=10))
+                    now = datetime.now().astimezone()
+                    found["events"] = len(a.gcal.list_events(now, now + timedelta(days=7)))
+                except Exception:  # noqa: BLE001
+                    pass
+                a.ui.emit("google", {"stage": "done", **found})
             except SignInCancelled:
                 a.ui.emit("google", {"stage": "cancelled"})
             except Exception as exc:  # noqa: BLE001

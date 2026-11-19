@@ -68,3 +68,21 @@ Rig limits: no microphone or speakers, no real Claude (a scripted stand-in calls
   - sample events at odd hours;
   - text-box contents read wrong;
   - the stand-in brain's memory search.
+
+## Verification round 2: 5 fresh testers (privacy-wary, night owl, literal reader, chatty, money-cautious)
+- **Task success:** 22 of 23 tasks. The same personas did 13 of 19 in discovery.
+- **Ease (1–7):** median about 6.
+- **Would recommend:** 7, 7, 8, 7 and 8 out of 10.
+- **No new severity 3–4 problems in the app itself.** The one failure, the chatty tester's "fix what you know", exposed a real issue: memory search returned Monkey's internal notes (the model table) and the user's own question as "facts". It's fixed in round 3.
+- **Round 3 polish:**
+  - The welcome said "all set" before a key was saved; fixed. Your question stays in the box until the Claude key is in.
+  - Plain Google setup-file errors.
+  - Detect-from-calendar explains why it found nothing.
+  - After Google connects: "found N emails and M events".
+  - Health check: plain words, the real tab names, "Fix it" buttons, and Copy report at the end too.
+  - Transfer: type the password twice; keys listed by name.
+  - "Send email" label.
+  - Cards fold when you send a message, and a closed brief stays closed.
+  - Memory chips have a "See or fix what Monkey knows" button, and Monkey opening Memory opens that list.
+  - Toasts for Quick/Auto/Important; tooltip on Mark done.
+  - The backup voice Download is the main button; the voice set is marked optional.

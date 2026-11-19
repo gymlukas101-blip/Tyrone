@@ -209,7 +209,13 @@ class ToolRunner:
         if self.s.history is None:
             return "Memory search isn't available."
         self.s.history.index_facts(self._mem_root())
-        hits = self.s.history.search(query, scope=scope, limit=8, include_superseded=include_history)
+        hits = self.s.history.search(query, scope=scope, limit=12, include_superseded=include_history)
+        # Not "things about the user": Monkey's own internal notes, and the question being asked right now
+        # (testers got their own message and the model table listed back as facts about them).
+        internal = ("model_policy.md", "sites.md")
+        now = (self.user_texts[-1] if getattr(self, "user_texts", None) else "").strip().lower()
+        hits = [h for h in hits if not (h.kind == "fact" and h.source in internal)
+                and not (h.kind != "fact" and now and now[:60] in (h.text or "").lower())][:8]
         if not hits:
             return "No matching memories or past conversations."
         self.s.emit("memory_used", {"items": [{"kind": h.kind, "ref": h.ref, "date": h.date, "source": h.source,

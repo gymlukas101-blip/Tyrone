@@ -179,3 +179,23 @@ def test_brief_today_shows_first_class_when_calendar_is_empty():
 def test_not_connected_tells_claude_to_open_settings():
     r = ToolRunner(NS(calendars=[], emit=lambda *a: None)).t_get_calendar()
     assert "open_settings('accounts')" in r
+
+
+# ---------------------------------------------------------------- verification round 3
+def test_memory_search_skips_internal_notes_and_the_question_itself(tmp_path):
+    from monkey.memory.history import HistoryStore
+    from monkey.memory import facts as F
+
+    root = tmp_path / "memory"
+    (root / "memories").mkdir(parents=True)
+    F.add_fact(root / "memories", "profile.md", "Roommate is Sam")
+    F.add_fact(root / "memories", "model_policy.md", "Auto Haiku 5.5 low; Important Sonnet 5.5 about me")
+    hist = HistoryStore(tmp_path / "h.db")
+    sid = hist.start_session("typed")
+    hist.add_message(sid, "user", "what do you know about me", "typed")
+    runner = ToolRunner(NS(history=hist, emit=lambda *a: None, memory=NS(memory_root=str(root))))
+    runner._mem_root = lambda: root / "memories"
+    runner.user_texts = ["what do you know about me"]
+    out = runner.t_search_memory("about me Sam")
+    assert "Roommate is Sam" in out or "No matching" in out
+    assert "Haiku" not in out and "what do you know about me" not in out

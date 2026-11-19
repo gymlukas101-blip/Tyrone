@@ -106,10 +106,10 @@ function soundSection(s: Record<string, any>) {
       }))) : [h("p", { class: "help" }, "No recorded sounds loaded yet.")]));
   };
   renderLab();
-  const make = h("button", { class: "primary", type: "button", onclick: async () => {
+  const make = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.make_voice_kit(4);
     status.textContent = r.ok ? "Starting…" : `⚠ ${r.error}`;
-  } }, "🎙 Make Monkey's voice set");
+  } }, "🎙 Make Monkey's voice set (optional)");
   voiceKitHooks = { status, done: async () => { await a3?.sfx.reloadUser(); renderLab(); } };
   return h("section", {}, h("h4", {}, "Sound"),
     h("p", { class: "help" }, "Monkey's grunts, laughs, yawns and snorts are made in his own Fish voice with Fish's free model " +
@@ -127,10 +127,11 @@ function offlineVoiceRow(s: Record<string, any>) {
     st.textContent = v.downloading ? "Downloading…" : !v.installed ? "Not downloaded yet (about 200 MB, one time)"
       : v.own_voice ? "✓ On: if the main voice is down, Monkey uses this (sounds like him)" : "✓ On: if the main voice is down, Monkey uses this (a generic voice; the voice set above makes it sound like him)";
     dl.textContent = v.installed ? "Download again" : "⬇ Download";
+    dl.className = v.installed ? "ghost" : "primary";
     (dl as HTMLButtonElement).disabled = !!v.downloading;
     test.disabled = !v.installed;
   };
-  const dl = h("button", { class: "ghost", type: "button", onclick: async () => {
+  const dl = h("button", { class: "primary", type: "button", onclick: async () => {
     (dl as HTMLButtonElement).disabled = true;
     const r = await api.download_offline_voice();
     st.textContent = r.ok ? "Starting download…" : `⚠ ${r.error}`;
@@ -237,6 +238,21 @@ function card(title: string, ...body: Child[]) {
   return c;
 }
 
+/** Settings → Memory with "What Monkey knows about you" open. */
+async function openMemory() {
+  settingsOpenDetails.add("memoryInspector");
+  await openSettings("memory");
+  const box = document.querySelector<HTMLDetailsElement>("#memoryInspector");
+  if (box && !box.open) box.open = true;
+}
+
+/** Fold every card to its title bar (unsent drafts stay open) so the conversation is readable. */
+function foldCards() {
+  cards.querySelectorAll<HTMLElement>(".card").forEach((c) => {
+    if (!(c.classList.contains("draft") && !c.classList.contains("sent"))) c.classList.add("folded");
+  });
+}
+
 function draftCard(d: any) {
   document.querySelectorAll(`.draft[data-id="${d.draft_id}"]`).forEach((n) => n.remove());
   const subj = h("input", { value: d.subject });
@@ -250,7 +266,7 @@ function draftCard(d: any) {
   );
   c.classList.add("draft");
   c.dataset.id = d.draft_id;
-  const send = h("button", { class: "send", type: "button" }, "Send");
+  const send = h("button", { class: "send", type: "button", title: "Send this email now" }, "Send email");
   send.addEventListener("click", async () => {
     send.disabled = true;
     if (subj.value !== d.subject || body.value !== d.body) {
@@ -300,11 +316,11 @@ function emailsCard(p: any) {
   if (!p.emails.length) return;
   // Click an email to have Monkey read it to you (testers expected rows to open).
   card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {
-      class: "clickable", title: "Click to have Monkey read it",
+      class: "clickable", title: "Click to have Monkey read it", role: "button", tabindex: "0",
       onclick: () => { api.send_text(`Read me the email "${e.subject}" from ${e.sender} (id ${e.id}, ${e.account}).`, null); } },
     h("span", { class: "badge" }, e.account === "gmail" ? "Gmail" : e.account === "outlook" ? "Outlook" : e.account),
     h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
-      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)} · click to read`))))));
+      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`))))));
 }
 
 function imagesCard(p: any) {
@@ -381,7 +397,7 @@ function onEvent(name: string, p: any) {
     case "voicekit": voiceKitEvent(p); if (p.finished) void offlineVoiceRefresh?.(); break;
     case "google": googleEvent(p); break;
     case "health": healthEvent(p); break;
-    case "open_settings": void openSettings(p.section); break;
+    case "open_settings": if (p.section === "memory") void openMemory(); else void openSettings(p.section); break;
     case "bench": benchEvent(p); break;
     case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
@@ -436,13 +452,21 @@ $("#importance").addEventListener("click", (e) => {
   if (!b) return;
   importance = b.dataset.v as Importance;
   document.querySelectorAll("#importance button").forEach((x) => x.classList.toggle("on", x === b));
+  toast(importance === "high" ? "Important is on for your next questions: Monkey thinks harder (a few cents at most). Switch back to Auto anytime."
+    : importance === "low" ? "Quick is on for your next questions: fastest and cheapest." : "Auto: Monkey picks for each question.", 4500);
 });
 $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $<HTMLInputElement>("#input");
   const text = input.value.trim();
   if (!text) return;
+  if (!appState.keys.anthropic) {               // keep what they typed; take them to the one thing missing
+    toast("⚠ Paste your Claude key first (Settings → Start here). Your question is still in the box.", 6500);
+    void openSettings("start");
+    return;
+  }
   input.value = "";
+  foldCards();
   api.send_text(text, importance === "normal" ? null : importance);
 });
 $("#mic").addEventListener("click", () => api.push_to_talk());
@@ -591,7 +615,7 @@ async function openSettings(section?: string) {
           if (r.ok) openSettings();
         } }, "Test")),
       name === "anthropic" && h("details", { class: "help maxhelp", id: "maxHelp" }, h("summary", {}, "Where do I get a Claude key? (and using Claude Max credits)"),
-        "Make one at platform.claude.com → API keys (it starts with sk-ant-). Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
+        "Make one at platform.claude.com (also called console.anthropic.com) → API keys; it starts with sk-ant-. Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
         h("b", {}, "API credits"), " → link a Console org, then create a key at platform.claude.com → API keys and paste it here. ",
         h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); api.open_url("https://claude.ai/settings/billing"); } }, "Open billing settings"),
         " · ",
@@ -1028,7 +1052,7 @@ function googleEvent(p: any) {
           extLink("https://console.cloud.google.com/auth/audience", "Google Cloud → Audience"),
           ", click Publish app (or add your Gmail under Test users), then Cancel here and sign in again.")));
   } else if (p.stage === "done") {
-    toast("✓ Google connected");
+    toast(p.emails != null ? `✓ Google connected: found ${p.emails} recent emails and ${p.events} calendar events this week` : "✓ Google connected", 6000);
     void openSettings();
   } else if (p.stage === "cancelled") {
     if (st) st.textContent = "Sign-in cancelled. Click Sign in with Google to try again.";
@@ -1052,6 +1076,9 @@ function healthSection() {
     h("div", { class: "field" }, btn), out);
 }
 
+const FIX_SECTION: Record<string, string> = { Brain: "start", Voice: "sound", Listening: "feel", Google: "accounts",
+  Calendar: "accounts", Canvas: "accounts", Outlook: "accounts", Garmin: "advanced", Memory: "memory",
+  "Morning brief": "brief", Budget: "advanced", App: "feel" };
 function healthEvent(p: any) {
   const out = document.getElementById("checkAllOut");
   if (!out) return;
@@ -1070,7 +1097,14 @@ function healthEvent(p: any) {
     h("ul", { class: "healthlist" }, ...checks.map((c) => h("li", { class: `h-${c.status}` },
       h("span", { class: "hicon" }, icon[c.status] ?? "?"),
       h("span", {}, h("b", {}, `${c.area} · ${c.name}: `), c.detail,
-        c.fix && (c.status === "fail" || c.status === "warn") ? h("span", { class: "hfix" }, ` → ${c.fix}`) : "")))));
+        c.fix && (c.status === "fail" || c.status === "warn") ? h("span", { class: "hfix" }, ` → ${c.fix} `,
+          FIX_SECTION[c.area] ? h("button", { class: "ghost mini", type: "button", onclick: () => {
+            if (c.area === "Memory") void openMemory(); else void openSettings(FIX_SECTION[c.area]);
+          } }, "Fix it") : "") : "")))),
+    h("button", { class: "ghost mini", type: "button", onclick: async () => {
+      try { await navigator.clipboard.writeText(lastHealthReport); toast("Report copied: paste it anywhere (a text, Discord, or to Claude)"); }
+      catch { toast("⚠ Couldn't copy"); }
+    } }, "Copy report"));
 }
 
 function benchEvent(p: any) {
@@ -1084,7 +1118,9 @@ function benchEvent(p: any) {
 }
 
 // ------------------------------------------------------------------ morning brief
+let briefDismissed = false;
 async function showMorningBrief(refresh = false) {
+  if (refresh && (briefDismissed || !cards.querySelector('.card[data-title^="☀️"]'))) return;   // closed stays closed
   const r = await api.brief_preview(!refresh, refresh).catch(() => null);
   if (!r?.ok || !r.brief) return;
   cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if ((c.dataset.title ?? "").startsWith("☀️")) c.remove(); });
@@ -1093,7 +1129,8 @@ async function showMorningBrief(refresh = false) {
 
 function briefCard(b: Brief) {
   const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (late start)" : "☀️ Morning brief";
-  card(title,
+  const wasFolded = !!cards.querySelector('.card.folded[data-title^="☀️"]');
+  const c = card(title,
     b.kind === "draft" ? h("p", { class: "help" }, "Tell Monkey when your first class is each day and he'll have this ready 90 minutes before. ",
       h("button", { class: "ghost mini", type: "button", onclick: () => void openSettings("brief") }, "Set my class times")) : "",
     h("p", {}, h("strong", {}, "Top priority: "), b.top),
@@ -1102,6 +1139,8 @@ function briefCard(b: Brief) {
       h("strong", {}, s.title),
       s.items.length ? h("ul", { class: "items" }, ...s.items.map((i) => h("li", {}, i))) : "",
       s.note ? h("span", { class: "meta" }, s.note) : "")));
+  c.querySelector(".close")?.addEventListener("click", () => { briefDismissed = true; });
+  if (wasFolded) c.classList.add("folded");
 }
 
 const DAY_LABEL: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri" };
@@ -1130,7 +1169,7 @@ function briefSettings(s: Record<string, any>) {
     status.textContent = (st.verified
       ? `✓ Set. Your next brief: ${friendly(st.next_run)} (${st.lead_min} min before your first class).`
       : "Not set yet: type the start time of your first class on each school day, then click Confirm schedule.")
-      + ` ${st.canvas.message}`;
+      + (st.canvas.status === "none" ? "" : ` ${st.canvas.message}`);
     taskState.textContent = st.task ? `✓ On${st.verified ? `: ready at ${friendly(st.next_run)} even if Monkey is closed` : ""}` : "Off";
     taskToggle.textContent = st.task ? "Turn off" : "Turn on";
     taskToggle.className = st.task ? "ghost" : "primary";
@@ -1173,7 +1212,6 @@ function briefSettings(s: Record<string, any>) {
     grid, h("div", { class: "field" }, detect, confirmBtn), status,
     h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
     appState.keys.canvas_token ? h("div", { class: "field" }, h("span", {}, "Canvas access token expires"), expires) : "",
-    h("label", { class: "field toggle" }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "meta" }, "Phone notifications: off (needs your approval before it can be turned on)")),
     h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"), taskToggle, taskState),
     h("p", { class: "help" }, "Windows wakes your PC a little early to build it (silently, no notifications)."),
     taskHint,
@@ -1199,7 +1237,8 @@ function memoryUsed(items: { kind: string; ref: string; date: string; source: st
   const label = items.map((i) => i.text ? `“${i.text}”` :
     `${i.kind === "fact" ? (tech ? i.source : FRIENDLY_SOURCE[i.source]) : i.kind === "episode" ? "an earlier chat" : "this conversation"} · ${i.date}`);
   const chip = h("details", { class: "memchip" }, h("summary", {}, `🧠 used ${items.length} memor${items.length === 1 ? "y" : "ies"}`),
-    h("ul", {}, ...label.map((t) => h("li", {}, t))));
+    h("ul", {}, ...label.map((t) => h("li", {}, t))),
+    h("button", { class: "ghost mini", type: "button", onclick: () => void openMemory() }, "See or fix what Monkey knows"));
   log.append(chip);
   log.scrollTop = log.scrollHeight;
 }
@@ -1218,7 +1257,7 @@ function memoryInspector() {
           const save = async () => {
             const res = await api.memory_edit(f.id, inp.value);
             if (!res.ok) { toast(`⚠ ${res.error}`); return; }
-            toast("Updated: Monkey keeps the old version as history");
+            toast("Updated. (Monkey keeps the old version marked as outdated so he doesn't bring it back; it's never used as current.)", 6000);
             void load();
           };
           inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") void save(); });
@@ -1295,7 +1334,7 @@ function contextImport() {
 function historyControls(s: Record<string, any>) {
   const stats = h("span", { class: "meta" }, "…");
   api.history_stats().then((st) => {
-    stats.textContent = st.enabled ? `${st.sessions ?? 0} conversations, ${st.episodes ?? 0} summaries, ${st.facts ?? 0} facts indexed${st.fts ? "" : " (basic search)"}` : "History is off";
+    stats.textContent = st.enabled ? `${st.sessions ?? 0} conversation${st.sessions === 1 ? "" : "s"} saved${appState.settings.show_tech_details ? ` · ${st.episodes ?? 0} summaries · ${st.facts ?? 0} lines searchable${st.fts ? "" : " (basic search)"}` : ""}` : "History is off";
   });
   const enabled = h("input", { type: "checkbox", checked: s.history_enabled !== false }) as HTMLInputElement;
   enabled.addEventListener("change", async () => { appState = await api.save_settings({ history_enabled: enabled.checked }); toast("Saved (takes effect after restart)"); });
@@ -1332,16 +1371,22 @@ async function restoreTranscript() {
 // ------------------------------------------------------------------ move to a new PC
 function moveToNewPc(): HTMLElement {
   const pw = h("input", { type: "password", placeholder: "Password for the file (8+ characters)", autocomplete: "new-password" }) as HTMLInputElement;
+  const pw2 = h("input", { type: "password", placeholder: "Type it again (for Export)", autocomplete: "new-password" }) as HTMLInputElement;
   const withKeys = h("input", { type: "checkbox" }) as HTMLInputElement;
   withKeys.checked = true;
   const out = h("div", { class: "meta", id: "transferStatus" });
   const exportBtn = h("button", { class: "primary", type: "button", onclick: async () => {
     if (pw.value.length < 8) { toast("⚠ Use a password of at least 8 characters"); return; }
+    if (pw.value !== pw2.value) { toast("⚠ The two passwords don't match. Type them again so you can open the file later."); return; }
     out.textContent = "Packing everything up…";
     const r = await api.export_memory(pw.value, withKeys.checked);
     if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
     const size = (r.mb ?? 0) >= 1 ? `${r.mb} MB` : "under 1 MB";
-    out.replaceChildren(`Saved ${r.path} (${size}: your memory, chats, settings, voice${r.keys?.length ? ` and ${r.keys.length} keys` : ""}). Copy it to a USB drive or your personal Google Drive. `,
+    const KEYNAME: Record<string, string> = { anthropic: "Claude key", fish: "Fish voice key", google_token: "Google sign-in",
+      google_client: "Google setup file", calendar_ics: "calendar link", canvas_token: "Canvas access token", openai: "OpenAI key",
+      youtube: "YouTube key", brave: "Brave key", deepgram: "Deepgram key" };
+    const which = (r.keys ?? []).map((k) => KEYNAME[k] ?? k).join(", ");
+    out.replaceChildren(`Saved ${r.path} (${size}: your memory, chats, settings, voice${which ? `, plus ${which}` : ""}). Copy it to a USB drive or your personal Google Drive. `,
       h("button", { class: "ghost", type: "button", onclick: () => { void api.open_documents_folder(); toast("Opened your Documents folder"); } }, "Open folder"));
     toast("Transfer file ready");
   } }, "Export for new PC");
@@ -1358,8 +1403,9 @@ function moveToNewPc(): HTMLElement {
     h("p", {}, h("strong", {}, "Move to a new PC")),
     h("p", { class: "help" }, "One encrypted file with your memory, chats, settings, voice and (optionally) your API keys and sign-ins. "
       + "On the old PC: Export. On the new PC: install Monkey, Import the file with the same password, restart."),
-    h("div", { class: "field" }, pw),
-    h("div", { class: "field" }, h("label", {}, withKeys, " Include my API keys and sign-ins (protected by this password)")),
+    h("div", { class: "field" }, pw, pw2),
+    h("div", { class: "field" }, h("label", { title: "Your Claude key, voice key, Google sign-in and calendar/Canvas links, so you don't have to set them up again. Locked with this password." },
+      withKeys, " Include my keys and sign-ins (Claude key, Google sign-in, links), locked with this password")),
     h("div", { class: "field" }, exportBtn, importBtn),
     out);
 }
@@ -1402,6 +1448,10 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
 let welcomeEl: HTMLElement | null = null;
 function updateWelcome() {
   if (!welcomeEl) return;
+  if (!appState.keys.anthropic) {
+    welcomeEl.textContent = "Welcome! Paste your Claude key in Settings → Start here to get going (that's the only thing you need).";
+    return;
+  }
   const c = appState.connections;
   const next = c.canvas ? "Try: \"what's due this week?\"" : c.calendar_ics || c.google_calendar ? "Try: \"what's on tomorrow?\""
     : "Next: add your Canvas or calendar link in Settings → Accounts, then ask \"what's due this week?\"";
