@@ -86,3 +86,19 @@ Rig limits: no microphone or speakers, no real Claude (a scripted stand-in calls
   - Memory chips have a "See or fix what Monkey knows" button, and Monkey opening Memory opens that list.
   - Toasts for Quick/Auto/Important; tooltip on Mark done.
   - The backup voice Download is the main button; the voice set is marked optional.
+
+## Verification round 3: 3 fresh testers (skimmer, anxious, chatty)
+- **Task success:** 13 of 13.
+- **Ease (1–7):** 5–7.
+- **Would recommend:** 8, 7 and 7 out of 10.
+- **No severity 3–4 problems.**
+- **Round 4 fixes:**
+  - Settings opened from chat landed on Memory: a re-opened menu was hijacking the scroll. The jump now ignores re-opened sections and uses plain scroll math.
+  - A refreshed brief popped open over the chat; it keeps its folded state now.
+  - A half-pasted key gets a "looks too short" hint before trying.
+  - Next brief says "today/tomorrow" or a date.
+  - Past questions are no longer returned as facts.
+  - "Fill in from my calendar or notes".
+  - The Google file hint names the right file.
+  - A ✓ shows next to saved fields.
+  - The health check: the wake word shows not working when there's no mic, and plurals are fixed.

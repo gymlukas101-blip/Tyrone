@@ -146,8 +146,9 @@ def _listening_checks(app) -> list[Check]:
         out.append(Check("Listening", "Microphone", FAIL, "no microphone found",
                          "Windows Settings → Privacy & security → Microphone → allow desktop apps; check the mic is enabled"))
     label = str(getattr(app, "wakeword_label", "") or "")
-    bad = not label or "starting" in label or "off" in label.lower() or "fail" in label.lower()
-    out.append(Check("Listening", "Wake word", WARN if bad else OK, "“Hey Monkey” is listening" if not bad else (_scrub(label) or "not running"),
+    bad = not label or "starting" in label or "off" in label.lower() or "fail" in label.lower() \
+        or any(c.name == "Microphone" and c.status == FAIL for c in out)
+    out.append(Check("Listening", "Wake word", WARN if bad else OK, "“Hey Monkey” is listening" if not bad else ("can't listen without a microphone" if any(c.name == "Microphone" and c.status == FAIL for c in out) else (_scrub(label) or "not running")),
                      "Restart Monkey; if it stays like this, send the report" if bad else ""))
     lst = getattr(app, "listener", None)
     if lst is None:
@@ -253,8 +254,8 @@ def _memory_checks(app) -> list[Check]:
         out.append(Check("Memory", "Chat history", WARN, "history is off"))
     else:
         st = hist.stats()
-        out.append(Check("Memory", "Chat history", OK, f"{st['sessions']} conversations, {st['messages']} messages, "
-                                                        f"search {'on' if st.get('fts') else 'basic'}"))
+        n = st["sessions"]
+        out.append(Check("Memory", "Chat history", OK, f"{n} conversation{'' if n == 1 else 's'} saved"))
     return out
 
 

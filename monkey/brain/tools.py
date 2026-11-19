@@ -215,7 +215,9 @@ class ToolRunner:
         internal = ("model_policy.md", "sites.md")
         now = (self.user_texts[-1] if getattr(self, "user_texts", None) else "").strip().lower()
         hits = [h for h in hits if not (h.kind == "fact" and h.source in internal)
-                and not (h.kind != "fact" and now and now[:60] in (h.text or "").lower())][:8]
+                and not (h.kind != "fact" and now and now[:60] in (h.text or "").lower())
+                and not (h.kind == "message" and (h.text or "").lstrip().lower().startswith("you:")
+                         and "?" in (h.text or ""))][:8]                # their own past questions aren't facts
         if not hits:
             return "No matching memories or past conversations."
         self.s.emit("memory_used", {"items": [{"kind": h.kind, "ref": h.ref, "date": h.date, "source": h.source,

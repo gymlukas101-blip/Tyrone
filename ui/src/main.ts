@@ -244,6 +244,7 @@ async function openMemory() {
   await openSettings("memory");
   const box = document.querySelector<HTMLDetailsElement>("#memoryInspector");
   if (box && !box.open) box.open = true;
+  setTimeout(() => jumpTo($<HTMLDialogElement>("#settings"), "memory", false), 200);
 }
 
 /** Fold every card to its title bar (unsent drafts stay open) so the conversation is readable. */
@@ -581,6 +582,12 @@ async function openSettings(section?: string) {
       appState.keys[name] ? `✓ Saved and working${hint ? ` (ends in ${hint})` : ""}. Stays saved after restarts and updates.` : "");
     const save = async () => {
       if (!inp.value.trim()) return;
+      if (name === "anthropic" && inp.value.trim().length < 60) {
+        note.className = "keynote bad";
+        note.textContent = "⚠ That looks shorter than a Claude key (they're about 100 characters and start with sk-ant-). Did you copy all of it?";
+        inp.select();
+        return;
+      }
       const r = await api.save_key(name, inp.value.trim());
       if (!r.ok) { keyWarnings[name] = r.error ?? "it wasn't accepted"; note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; inp.select(); return; }
       inp.value = "";
@@ -627,9 +634,11 @@ async function openSettings(section?: string) {
       const v = type === "number" ? Number(inp.value) : inp.value;
       appState = await api.save_settings({ [key]: v });
       applyLook(appState.settings);
+      tick.textContent = "✓ saved";
       toast(`Saved: ${label}`);
     });
-    return h("div", { class: "field" }, h("span", {}, label), inp);
+    const tick = h("span", { class: "meta" }, "");
+    return h("div", { class: "field" }, h("span", {}, label), inp, tick);
   };
   const resultToast = (r: { ok: boolean; error?: string }, ok: string) => toast(r.ok ? ok : `⚠ ${r.error}`);
   const voiceOut = h("div", {});
@@ -769,7 +778,7 @@ async function openSettings(section?: string) {
             h("p", { class: "help" }, connected ? `✓ Connected${appState.settings.google_account ? ` as ${appState.settings.google_account}` : ""}. Monkey can read your Gmail and Google Calendar.` :
               "Needs a one-time Google setup (about 5 minutes, steps below). Only want your schedule? The calendar link above is enough."),
             !connected && h("div", { class: "field" }, status(hasClient), h("span", {}, "Step 1: your Google setup file"), pick,
-              h("span", { class: "meta" }, hasClient ? "✓ Loaded" : "client_secret_….json from your Downloads")),
+              h("span", { class: "meta" }, hasClient ? "✓ Loaded" : "the client_secret_….apps.googleusercontent.com.json in your Downloads")),
             h("div", { class: "field" }, status(connected), h("span", {}, connected ? "Google account" : "Step 2: sign in"), signIn,
               connected && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
             h("div", { class: "field" }, h("span", {}, ""), st),
@@ -933,13 +942,14 @@ async function openSettings(section?: string) {
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
   organizeSettings(dlg);
+  const quietUntil = Date.now() + 600;   // details re-opened by this render must not drag the view away from the target
   dlg.querySelectorAll<HTMLDetailsElement>(".body details").forEach((d) => d.addEventListener("toggle", () => {
-    if (d.open && d.id !== "set-advanced") setTimeout(() => d.scrollIntoView({ behavior: "smooth", block: "nearest" }), 30);
+    if (d.open && d.id !== "set-advanced" && Date.now() > quietUntil) setTimeout(() => d.scrollIntoView({ behavior: "smooth", block: "nearest" }), 30);
   }));
   for (const id of settingsOpenDetails) dlg.querySelector<HTMLDetailsElement>(`details#${id}`)?.setAttribute("open", "");
   if (!dlg.open) dlg.showModal();
   const body = dlg.querySelector<HTMLElement>(".body")!;
-  if (section) jumpTo(dlg, section);
+  if (section) { jumpTo(dlg, section); setTimeout(() => jumpTo(dlg, section, false), 120); }   // again after layout settles
   else body.scrollTop = prevScroll;
 }
 
@@ -1001,20 +1011,16 @@ function organizeSettings(dlg: HTMLDialogElement) {
   dlg.querySelector(".settings > header")!.after(nav);
 }
 
-function jumpTo(dlg: HTMLDialogElement, id: string) {
-  if (id === "start" || id === "check") {           // the top: "Is everything working?" + Start here
-    dlg.querySelector<HTMLElement>(".body")!.scrollTop = 0;
-    const box = dlg.querySelector<HTMLElement>(id === "check" ? "#set-check" : "#set-start");
-    box?.classList.add("attention");
-    setTimeout(() => box?.classList.remove("attention"), 1600);
-    return;
-  }
-  const el = dlg.querySelector<HTMLElement>(`#set-${id}`);
-  if (!el) return;
-  if (el instanceof HTMLDetailsElement) el.open = true;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
-  el.classList.add("attention");
-  setTimeout(() => el.classList.remove("attention"), 1600);
+function jumpTo(dlg: HTMLDialogElement, id: string, flash = true) {
+  const body = dlg.querySelector<HTMLElement>(".body")!;
+  const target = id === "start" || id === "check" ? null : dlg.querySelector<HTMLElement>(`#set-${id}`);
+  if (target instanceof HTMLDetailsElement) target.open = true;
+  // Plain scrollTop math (no smooth scrolling) so nothing else can interrupt it.
+  body.scrollTop = target ? target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8 : 0;
+  if (!flash) return;
+  const box = target ?? dlg.querySelector<HTMLElement>(id === "check" ? "#set-check" : "#set-start");
+  box?.classList.add("attention");
+  setTimeout(() => box?.classList.remove("attention"), 1600);
 }
 
 // ------------------------------------------------------------------ Google sign-in + routing benchmark
@@ -1123,13 +1129,14 @@ async function showMorningBrief(refresh = false) {
   if (refresh && (briefDismissed || !cards.querySelector('.card[data-title^="☀️"]'))) return;   // closed stays closed
   const r = await api.brief_preview(!refresh, refresh).catch(() => null);
   if (!r?.ok || !r.brief) return;
+  const folded = !!cards.querySelector('.card.folded[data-title^="☀️"]');
   cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if ((c.dataset.title ?? "").startsWith("☀️")) c.remove(); });
-  briefCard(r.brief);
+  briefCard(r.brief, folded);
 }
 
-function briefCard(b: Brief) {
+function briefCard(b: Brief, wasFolded = false) {
   const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (late start)" : "☀️ Morning brief";
-  const wasFolded = !!cards.querySelector('.card.folded[data-title^="☀️"]');
+  const others = [...cards.querySelectorAll<HTMLElement>(".card")].filter((c) => !c.classList.contains("folded"));
   const c = card(title,
     b.kind === "draft" ? h("p", { class: "help" }, "Tell Monkey when your first class is each day and he'll have this ready 90 minutes before. ",
       h("button", { class: "ghost mini", type: "button", onclick: () => void openSettings("brief") }, "Set my class times")) : "",
@@ -1140,7 +1147,10 @@ function briefCard(b: Brief) {
       s.items.length ? h("ul", { class: "items" }, ...s.items.map((i) => h("li", {}, i))) : "",
       s.note ? h("span", { class: "meta" }, s.note) : "")));
   c.querySelector(".close")?.addEventListener("click", () => { briefDismissed = true; });
-  if (wasFolded) c.classList.add("folded");
+  if (wasFolded) {                                  // a refresh must not pop the brief open over the chat
+    c.classList.add("folded");
+    others.forEach((o) => o.classList.remove("folded"));
+  }
 }
 
 const DAY_LABEL: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri" };
@@ -1162,7 +1172,12 @@ function briefSettings(s: Record<string, any>) {
     setTimeout(() => grid.classList.remove("attention"), 2500);
     (grid.querySelector("input") as HTMLInputElement | null)?.focus();
   };
-  const friendly = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "none this week";
+  const friendly = (iso: string | null) => {
+    if (!iso) return "none this week";
+    const d = new Date(iso), t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const days = Math.round((new Date(d.toDateString()).getTime() - new Date(new Date().toDateString()).getTime()) / 864e5);
+    return days === 0 ? `today ${t}` : days === 1 ? `tomorrow ${t}` : `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, ${t}`;
+  };
   const taskState = h("span", { class: "meta" }, "");
   const refresh = async () => {
     const st = await api.brief_status();
@@ -1192,7 +1207,7 @@ function briefSettings(s: Record<string, any>) {
     for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
     taskHint.textContent = "";
     toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from ${r.source || "your calendar"}. Check them, then click Confirm schedule.` : "Couldn't find your classes. Type the first class time for each day instead.");
-  } }, "Detect from calendar");
+  } }, "Fill in from my calendar or notes");
   const confirmBtn = h("button", { class: "primary", type: "button", onclick: async () => {
     const byDay: Record<string, string> = {};
     for (const [d, inp] of Object.entries(inputs)) if (inp.value) byDay[d] = inp.value;
