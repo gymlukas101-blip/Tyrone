@@ -62,12 +62,14 @@ export interface Api {
   open_documents_folder(): Promise<{ ok: boolean }>;
   open_memory_folder(): Promise<void>;
   memory_search(query: string, scope: string, includeHistory: boolean): Promise<{ ok: boolean; error?: string; hits?: MemoryHit[] }>;
+  memory_list(): Promise<{ ok: boolean; error?: string; facts?: { id: string; file: string; section: string; text: string; date: string; source: string; sensitive: boolean }[] }>;
+  memory_edit(id: string, text: string): Promise<{ ok: boolean; error?: string; id?: string; text?: string }>;
   memory_forget(factId: string): Promise<{ ok: boolean; error?: string; file?: string }>;
   history_stats(): Promise<{ enabled: boolean; retention_days: number; sessions?: number; messages?: number; episodes?: number; facts?: number; fts?: boolean }>;
   history_delete(scope: string, days: number): Promise<{ ok: boolean; error?: string; deleted?: number }>;
   history_export(): Promise<{ ok: boolean; error?: string; path?: string }>;
   brief_status(): Promise<BriefStatus>;
-  brief_preview(opened: boolean): Promise<{ ok: boolean; error?: string; brief?: Brief | null }>;
+  brief_preview(opened: boolean, refresh?: boolean): Promise<{ ok: boolean; error?: string; brief?: Brief | null }>;
   brief_candidates(): Promise<{ ok: boolean; error?: string; candidates?: Record<string, { time: string; title: string; seen: number }> }>;
   brief_confirm(byDay: Record<string, string>, source: string): Promise<BriefStatus>;
   brief_task_preview(): Promise<{ ok: boolean; error?: string; xml?: string; needs_schedule?: boolean }>;
@@ -294,6 +296,11 @@ function mockApi(): Api {
       ] : [] };
     },
     async memory_forget() { return { ok: true, file: "projects.md" }; },
+    async memory_list() { return { ok: true, facts: [
+      { id: "f1", file: "profile.md", section: "", text: "Goes by Jordan; sophomore, CS major", date: "2026-11-19", source: "import", sensitive: false },
+      { id: "f2", file: "profile.md", section: "", text: "Roommate's name is Sam", date: "2026-11-19", source: "user_said", sensitive: false },
+      { id: "f3", file: "classes.md", section: "", text: "MATH 222 Mon/Wed/Fri 9:55", date: "2026-11-19", source: "import", sensitive: false }] }; },
+    async memory_edit(_id: string, text: string) { return { ok: true, id: "f9", text }; },
     async history_stats() { return { enabled: true, retention_days: 365, sessions: 12, messages: 140, episodes: 11, facts: 65, fts: true }; },
     async history_delete() { return { ok: true, deleted: 0 }; },
     async history_export() { return { ok: true, path: "Documents\\Monkey-conversations.json" }; },

@@ -47,8 +47,10 @@ LOCAL_TOOLS: list[dict] = [
     _tool("show_images", "Search for pictures and show them on screen.", {"query": S, "count": I}),
     _tool("show_videos", "Search YouTube and show videos on screen (the top one can autoplay).",
           {"query": S, "count": I, "autoplay": B}),
-    _tool("get_calendar", "Get events from all the user's calendars (Google, Outlook, Canvas due dates) "
-          "between now and `days_ahead` days from now.", {"days_ahead": I}),
+    _tool("get_calendar", "Get events from all the user's calendars (Google, Outlook, calendar links, Canvas due dates). "
+          "For one specific day set `day` ('today', 'tomorrow', a weekday like 'friday', or YYYY-MM-DD) and the result is "
+          "only that day. Otherwise it covers now through `days_ahead` days. Times are already in the user's local time; "
+          "use the `when` field when you say them.", {"days_ahead": I, "day": S}),
     _tool("get_emails", "List recent emails. account: 'all', 'gmail' or 'outlook'. "
           "query: optional search text (sender, subject words); empty string for none.",
           {"account": {"type": "string", "enum": ["all", "gmail", "outlook"]}, "unread_only": B,
@@ -72,6 +74,9 @@ LOCAL_TOOLS: list[dict] = [
     _tool("get_health", "Garmin data: sleep score and stages, heart rate over the day, resting HR, HRV, body battery, "
           "stress, steps. `day` is 'today' (includes last night's sleep), 'yesterday', or YYYY-MM-DD. Shows a "
           "health card on screen.", {"day": S}),
+    _tool("open_settings", "Open Monkey's Settings at a section so the user can change something themselves "
+          "(you can't change settings for them). section: start, accounts, sound, brief, memory, feel or advanced.",
+          {"section": {"type": "string", "enum": ["start", "accounts", "sound", "brief", "memory", "feel", "advanced"]}}),
     _tool("emote", "Make your 3D avatar react with a short animation. Use sparingly, at most once per reply: "
           "good news -> happy or flex, a joke -> laugh, greeting -> wave, the user finished something -> dance, "
           "bad news -> sad, wow -> surprised.",
@@ -292,24 +297,52 @@ class ToolRunner:
         self.s.emit("videos", {"query": query, "videos": vids, "autoplay": autoplay})
         return "Showing videos: " + "; ".join(f"{v['title']} ({v.get('channel', '')})" for v in vids)
 
-    def _events(self, days_ahead: int) -> list[Event]:
+    def _events(self, days_ahead: int, start: datetime | None = None, end: datetime | None = None) -> list[Event]:
         now = datetime.now(timezone.utc)
-        end = now + timedelta(days=max(1, min(days_ahead or 1, 60)))
+        if start is None:
+            start = now - timedelta(hours=2)
+            end = now + timedelta(days=max(1, min(days_ahead or 1, 60)))
         events: list[Event] = []
         for cal in self.s.calendars:
             try:
                 if cal.available():
-                    events.extend(cal.list_events(now - timedelta(hours=2), end))
+                    events.extend(cal.list_events(start, end))
             except Exception as exc:  # noqa: BLE001
                 self.s.emit("warning", {"message": f"{cal.name} calendar: {exc}"})
-        return sorted(events, key=lambda e: e.start if e.start.tzinfo else e.start.replace(tzinfo=timezone.utc))
+        key = lambda e: e.start if e.start.tzinfo else e.start.replace(tzinfo=timezone.utc)  # noqa: E731
+        return sorted((e for e in events if start <= key(e) < end), key=key)
 
-    def t_get_calendar(self, days_ahead: int = 1):
+    @staticmethod
+    def _day_window(day: str) -> tuple[datetime, datetime, str] | None:
+        """'today' / 'tomorrow' / 'friday' / '2026-11-20' -> that whole local day, and a label for the card."""
+        d = (day or "").strip().lower()
+        if not d:
+            return None
+        today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        if d == "today":
+            start, label = today, "Today"
+        elif d == "tomorrow":
+            start, label = today + timedelta(days=1), "Tomorrow"
+        elif d[:3] in [n[:3] for n in names]:
+            idx = next(i for i, n in enumerate(names) if n.startswith(d[:3]))
+            start, label = today + timedelta(days=(idx - today.weekday()) % 7), ""
+        else:
+            try:
+                start, label = datetime.fromisoformat(d[:10]).replace(tzinfo=today.tzinfo), ""
+            except ValueError:
+                return None
+        label = (label + ", " if label else "") + f"{start:%a %b} {start.day}"
+        return start, start + timedelta(days=1), label
+
+    def t_get_calendar(self, days_ahead: int = 1, day: str = ""):
         if not self.s.calendars:
-            return "No calendars are connected yet. Tell the user to connect Google/Outlook/Canvas in Settings."
-        events = self._events(days_ahead)
-        self.s.emit("events", {"events": [e.brief() for e in events]})
-        return [e.brief() for e in events] or "No events in that window."
+            return "No calendars are connected yet. Tell the user to add a calendar link or connect Google in Settings → Accounts."
+        win = self._day_window(day)
+        events = self._events(days_ahead, *(win[:2] if win else (None, None)))
+        label = win[2] if win else ("Today" if (days_ahead or 1) <= 1 else f"Next {days_ahead} days")
+        self.s.emit("events", {"events": [e.brief() for e in events], "label": label})
+        return [e.brief() for e in events] or f"Nothing on the calendar for {label.lower() if win else 'that time'}."
 
     def _emails(self, account: str, unread_only: bool, max_results: int, query: str) -> list[Email]:
         out: list[Email] = []
@@ -427,6 +460,10 @@ class ToolRunner:
         imgs = self.s.image_gen(prompt, max(1, min(count or 1, 4)))
         self.s.emit("images", {"query": prompt[:80], "images": imgs, "generated": True})
         return f"Generated {len(imgs)} image(s) and showed them on screen."
+
+    def t_open_settings(self, section: str = "start"):
+        self.s.emit("open_settings", {"section": section})
+        return f"Opened Settings at '{section}' on screen."
 
     def t_emote(self, name: str):
         self.s.emit("emote", {"name": name})

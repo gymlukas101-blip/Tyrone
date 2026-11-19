@@ -114,7 +114,7 @@ def _voice_checks(app) -> list[Check]:
         dev = sd.query_devices(kind="output")
         out.append(Check("Voice", "Speakers", OK, f"default output: {_scrub(dev.get('name', '?'))}"))
     except Exception as exc:  # noqa: BLE001
-        out.append(Check("Voice", "Speakers", FAIL, f"no output device ({type(exc).__name__})",
+        out.append(Check("Voice", "Speakers", FAIL, "no speakers or headphones found",
                          "Plug in or enable speakers/headphones in Windows Sound settings"))
     sp = getattr(app, "speaker", None)
     if sp is None:
@@ -127,8 +127,10 @@ def _voice_checks(app) -> list[Check]:
                     ready.append(type(e).__name__)
             except Exception:  # noqa: BLE001
                 pass
+        names = {"FishTTS": "Monkey's voice (Fish)", "PocketVoice": "backup voice", "SystemTTS": "Windows voice"}
+        ready = [names.get(r, "a voice") for r in ready]
         out.append(Check("Voice", "Speech engine", OK if ready else FAIL,
-                         f"ready: {', '.join(ready)}" if ready else "no voice engine available",
+                         f"ready: {', '.join(dict.fromkeys(ready))}" if ready else "no voice available",
                          "" if ready else "Add a Fish key or download the offline voice"))
     return out
 
@@ -141,7 +143,7 @@ def _listening_checks(app) -> list[Check]:
         dev = sd.query_devices(kind="input")
         out.append(Check("Listening", "Microphone", OK, f"default input: {_scrub(dev.get('name', '?'))}"))
     except Exception as exc:  # noqa: BLE001
-        out.append(Check("Listening", "Microphone", FAIL, f"no input device ({type(exc).__name__})",
+        out.append(Check("Listening", "Microphone", FAIL, "no microphone found",
                          "Windows Settings → Privacy & security → Microphone → allow desktop apps; check the mic is enabled"))
     label = str(getattr(app, "wakeword_label", "") or "")
     bad = not label or "starting" in label or "off" in label.lower() or "fail" in label.lower()
@@ -154,7 +156,7 @@ def _listening_checks(app) -> list[Check]:
         out.append(Check("Listening", "Listener", WARN if lst.muted else OK, "muted" if lst.muted else "running",
                          "Tray icon → Mute microphone (untick)" if lst.muted else ""))
         out.append(Check("Listening", "Speech detection", OK if lst.vad is not None else WARN,
-                         "Silero VAD loaded" if lst.vad is not None else "using loudness only (cuts off more often)",
+                         "smart speech detection on" if lst.vad is not None else "basic detection only (may cut you off more often)",
                          "" if lst.vad is not None else "Reinstall Monkey from the latest release"))
     return out
 
@@ -299,7 +301,7 @@ def run_checks(app, api=None, timeout_s: float = TIMEOUT_S) -> list[Check]:
         except cf.TimeoutError:
             out.append(Check(area, "Check", WARN, f"didn't answer within {timeout_s:.0f} s", "Run the check again"))
         except Exception as exc:  # noqa: BLE001
-            out.append(Check(area, "Check", FAIL, f"the check itself failed: {type(exc).__name__}: {_scrub(exc)}",
+            out.append(Check(area, "Check", FAIL, f"couldn't check this ({_scrub(exc) or type(exc).__name__})",
                              "Send this report to Claude"))
     pool.shutdown(wait=False, cancel_futures=True)
     return out

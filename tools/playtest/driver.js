@@ -11,7 +11,7 @@
 //   GET /hover?n=3                hover over control #3 (shows its tooltip, if any)
 //   GET /select?n=7&option=Always use the offline voice
 //   GET /check?n=9                toggle checkbox #9
-//   GET /scroll?dy=600            scroll the thing under the middle of the screen (negative = up)
+//   GET /scroll?dy=600            scroll like a mouse wheel over the main area (negative = up); add &n=K to scroll the box around control #K
 //   GET /wait?ms=3000             wait (things load, Monkey answers)
 //   GET /pick?files=a.json|b.md   choose file(s) in an open file picker (paths from /see); /pick with no files = Cancel
 //   GET /log                      every action so far, with timestamps (for the report)
@@ -138,12 +138,17 @@ async function act(pathname, q) {
     const e = await el(q.get("n"));
     await e.selectOption({ label: q.get("option") }).catch(async () => e.selectOption(q.get("option")));
   } else if (pathname === "/scroll") {
-    const dy = Number(q.get("dy") || 500);
-    await page.evaluate((dy) => {
+    const dy = Number(q.get("dy") || 500), n = q.get("n");
+    await page.evaluate(([dy, n]) => {
+      // Scroll what a person's mouse wheel would: the scrollable box under the pointer (or around control #n).
+      const scrollable = (el) => { for (let p = el; p && p !== document.body; p = p.parentElement) {
+        const cs = getComputedStyle(p); if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 2) return p; } return null; };
       const modal = [...document.querySelectorAll("dialog[open]")].pop();
-      const sc = modal ? modal.querySelector(".body") || modal : document.scrollingElement;
+      let target = n ? document.querySelector(`[data-pt="${n}"]`) : null;
+      if (!target) target = modal ? (modal.querySelector(".body") || modal) : document.elementFromPoint(innerWidth * 0.72, innerHeight * 0.4);
+      const sc = (target && scrollable(target)) || (modal ? modal.querySelector(".body") || modal : document.scrollingElement);
       sc.scrollBy(0, dy);
-    }, dy);
+    }, [dy, n]);
   } else if (pathname === "/wait") await page.waitForTimeout(Math.min(Number(q.get("ms") || 1000), 20000));
   else if (pathname === "/pick") {
     const files = (q.get("files") || "").split("|").filter(Boolean);

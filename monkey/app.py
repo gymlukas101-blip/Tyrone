@@ -589,7 +589,9 @@ class MonkeyApp:
             self.speaker.stop()
         self._reply_done = False
         if typed:
-            self._start_conversation()
+            # Typing means "I'm not talking right now": don't open the mic for a follow-up afterwards (testers read
+            # "Listening…" after a typed question as Monkey eavesdropping). Voice turns still continue hands-free.
+            self._in_conversation = False
         if self.listener is not None and self.listener.mode == "conversation":
             self.listener.end_conversation()          # only listen again once he has answered
 
@@ -694,6 +696,20 @@ class MonkeyApp:
         except (OSError, ValueError):
             return None
         return None if d.get("seen") else d
+
+
+def explain_download_error(exc: Exception) -> str:
+    """Plain words for a failed download (testers saw raw 'HTTP Error 403: Forbidden')."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(w in text for w in ("403", "401", "forbidden")):
+        why = "the download server refused the connection (a school or work network can block it)"
+    elif any(w in text for w in ("timed out", "timeout", "urlopen error", "connection", "getaddrinfo", "name resolution")):
+        why = "the internet connection dropped or isn't available"
+    elif any(w in text for w in ("no space", "disk", "errno 28")):
+        why = "your PC is out of disk space (it needs about 400 MB free)"
+    else:
+        why = "something went wrong while downloading"
+    return f"Couldn't download the backup voice: {why}. Try again on another network, or later."
 
 
 def _thumb_data_uri(path: Path, size: int = 1024) -> str:
@@ -1025,15 +1041,16 @@ class Api:
             a._brief_task_enabled = is_registered()     # asked Task Scheduler once; Enable/Disable keep it current
         return bool(a._brief_task_enabled)
 
-    def brief_preview(self, opened: bool = True):
-        """The app was opened: today's brief (cached, or built now; a draft if the schedule isn't confirmed)."""
+    def brief_preview(self, opened: bool = True, refresh: bool = False):
+        """The app was opened: today's brief (cached, or built now; a draft if the schedule isn't confirmed).
+        refresh=True: you just changed your setup (accounts, schedule), so rebuild it with what's connected now."""
         from datetime import datetime as _dt
 
         a = self._app
         if not a.cfg.settings.brief_enabled:
             return {"ok": False, "error": "The morning brief is off."}
         try:
-            b = a.morning.run(_dt.now().astimezone(), "app_open")
+            b = a.morning.run(_dt.now().astimezone(), "app_open", rebuild=bool(refresh))
         except Exception as exc:  # noqa: BLE001
             log.exception("brief failed")
             return {"ok": False, "error": f"Couldn't build the brief ({type(exc).__name__})."}
@@ -1054,8 +1071,8 @@ class Api:
         a = self._app
         cals = a._calendars()
         if not cals:
-            return {"ok": False, "error": "Connect Google Calendar or Outlook to detect your class times, "
-                                          "or enter them yourself."}
+            return {"ok": False, "error": "To detect your classes, add your calendar link (Settings → Accounts) or connect "
+                                          "Google. Or just type your first class time for each day here."}
         now = _dt.now(TZ)
         events = []
         for p in cals:
@@ -1119,6 +1136,36 @@ class Api:
         a.history.index_facts(Path(a.memory.memory_root))
         return {"ok": True, "hits": hits_json(a.history.search(str(query)[:300], scope=scope, limit=20,
                                                                include_superseded=bool(include_history)))}
+
+    INTERNAL_MEMORY = ("model_policy.md", "sites.md", "superseded.md")
+
+    def memory_list(self):
+        """Everything Monkey currently knows about you, by file (the inspector shows this before any search)."""
+        from .memory import facts as F
+
+        a = self._app
+        tech = bool(a.cfg.settings.show_tech_details)
+        out = [{"id": f.id, "file": f.file, "section": f.section, "text": f.text, "date": f.date, "source": f.src,
+                "sensitive": f.sensitive}
+               for f in F.all_facts(Path(a.memory.memory_root))
+               if f.status == "current" and (tech or f.file not in self.INTERNAL_MEMORY)]
+        return {"ok": True, "facts": out}
+
+    def memory_edit(self, fact_id: str, new_text: str):
+        """Correct a fact from the inspector; the old version is kept as superseded history."""
+        from .memory import facts as F
+
+        a = self._app
+        new_text = str(new_text or "").strip()
+        if not new_text:
+            return {"ok": False, "error": "Type the corrected text first."}
+        try:
+            old, new = F.update_fact(Path(a.memory.memory_root), str(fact_id), new_text, src="user_edit")
+        except KeyError as exc:
+            return {"ok": False, "error": str(exc)}
+        if a.history is not None:
+            a.history.index_facts(Path(a.memory.memory_root), force=True)
+        return {"ok": True, "id": new.id, "text": new.text}
 
     def memory_forget(self, fact_id: str):
         from .memory import facts as F
@@ -1481,7 +1528,7 @@ class Api:
                     a._warm_offline_voice()
             except Exception as exc:  # noqa: BLE001
                 log.exception("offline voice download failed")
-                a.ui.emit("offlinevoice", {"finished": True, "ok": False, "error": f"Download failed: {exc}"})
+                a.ui.emit("offlinevoice", {"finished": True, "ok": False, "error": explain_download_error(exc)})
             finally:
                 a._voice_dl = False
 

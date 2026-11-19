@@ -145,6 +145,16 @@ class ScriptedBrain:
         want = lambda name: name in tools  # noqa: E731
         if re.search(r"\b(did|was|has)\b.*\b(send|sent|go through|went)", t):
             return None, None
+        # Like real Claude with the in-app map in its persona: point to the right Settings section.
+        sections = [(r"\b(louder|quieter|volume|too quiet|too loud|backup voice|voice)\b", "sound"),
+                    (r"\b(what you know|forget|wrong about me|change what|fix what|memory|notes)\b", "memory"),
+                    (r"\b(morning brief|class times|schedule)\b.*\b(set|change|turn|fix|how)\b|\b(set|change|how)\b.*\b(morning brief|class times)\b", "brief"),
+                    (r"\b(connect|hook up|link|sign in)\b.*\b(gmail|google|canvas|calendar|outlook)\b", "accounts"),
+                    (r"\b(is everything|all working|check everything|working right)\b", "start")]
+        if re.search(r"\b(how|where|can you|make|change|turn|fix|set|connect|hook|link|check|everything)\b", t) and want("open_settings"):
+            for pat, sec in sections:
+                if re.search(pat, t):
+                    return "open_settings", {"section": sec}
         if re.search(r"\b(write|draft|email|message)\b.*\b(prof|professor|ta|whitfield|instructor)", t) and want("draft_email"):
             return "draft_email", {"account": "gmail", "to": ["whitfield@math.playtest.edu"], "cc": [],
                                    "subject": "Question about Problem Set 7",
@@ -158,7 +168,8 @@ class ScriptedBrain:
         if re.search(r"\b(weather|rain|cold|jacket|umbrella)", t) and want("get_weather"):
             return "get_weather", {}
         if re.search(r"\b(calendar|schedule|class|classes|today|tomorrow|week|free)\b", t) and want("get_calendar"):
-            return "get_calendar", {"days_ahead": 7 if "week" in t else 1}
+            day = "tomorrow" if "tomorrow" in t else "today" if "today" in t else ""
+            return "get_calendar", {"days_ahead": 7 if "week" in t else 1, "day": day}
         if re.search(r"\b(sleep|slept|heart|health|garmin)", t) and want("get_health"):
             return "get_health", {"day": "today"}
         if re.search(r"\b(picture|image|draw|generate)", t) and want("generate_image"):
@@ -196,6 +207,8 @@ class ScriptedBrain:
         except (TypeError, ValueError):
             data = content
         if isinstance(data, str):
+            if tool == "open_settings":
+                return "It's open on screen now."
             if tool == "search_memory":
                 facts = [re.sub(r"\[[^\]]*\]|<[^>]+>|\(.*?\)|\b\w+=\S+", "", ln).strip(" -•") for ln in data.splitlines()]
                 facts = [f for f in facts if len(f) > 3][:6]
@@ -219,7 +232,7 @@ class ScriptedBrain:
             if not data:
                 return "Your calendar's clear."
             first = data[0]
-            return f"You've got {len(data)} things. First up: {first.get('title')} at {str(first.get('start'))[11:16]}."
+            return f"You've got {len(data)} thing{'s' if len(data) != 1 else ''}. First up: {first.get('title')}, {first.get('when') or str(first.get('start'))[11:16]}."
         if tool == "get_emails":
             n = len(data)
             return f"You've got {n} recent emails. The top one is from {data[0].get('sender')}: \"{data[0].get('subject')}\"." if n else "Inbox is empty."
@@ -242,7 +255,8 @@ class ScriptedBrain:
         tool, args = self.plan(text, _tool_names(params))
         if tool:
             self.last_tool = tool
-            lead = {"draft_email": "On it, drafting that now. ", "get_assignments": "Let me check Canvas. "}.get(tool, "")
+            lead = {"draft_email": "On it, drafting that now. ", "get_assignments": "Let me check Canvas. ",
+                    "open_settings": "You can do that in Settings, I opened the right spot for you. "}.get(tool, "")
             blocks = ([NS(type="text", text=lead)] if lead else []) + \
                      [NS(type="tool_use", name=tool, input=args, id="toolu_" + uuid.uuid4().hex[:10])]
             return blocks, "tool_use"

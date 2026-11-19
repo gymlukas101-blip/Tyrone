@@ -42,10 +42,21 @@ class Event:
     attendees: list[str] = field(default_factory=list)
 
     def brief(self) -> dict:
+        """Times in the user's local time zone, plus a plain 'when' (Canvas feeds are UTC; testers saw "05:59" for an
+        11:59 PM deadline when the raw UTC time reached the assistant)."""
         d = asdict(self)
-        d["start"] = self.start.isoformat()
-        d["end"] = self.end.isoformat() if self.end else None
+        start = self.start.astimezone() if self.start.tzinfo else self.start
+        end = (self.end.astimezone() if self.end.tzinfo else self.end) if self.end else None
+        d["start"] = start.isoformat()
+        d["end"] = end.isoformat() if end else None
+        d["when"] = (f"{start:%a %b} {start.day}" + ("" if self.all_day else f", {start:%I:%M %p}".replace(" 0", " ")))
         d["description"] = (self.description or "")[:400]
+        if self.source == "canvas":                    # "Quiz 8 [MATH_222_001_F26]" -> "Quiz 8 (MATH 222)"
+            import re
+
+            from .canvas_api import pretty_course
+
+            d["title"] = re.sub(r"\[([^\]]+)\]\s*$", lambda m: f"({pretty_course(m.group(1))})", self.title).strip()
         return d
 
 

@@ -57,6 +57,7 @@ class Settings:
     monthly_budget_usd: float = 25.0
     force_model: str = ""             # "" = automatic routing
     juice_level: str = "auto"         # animation/VFX/SFX intensity: auto (follows Windows) | full | calm | minimal
+    show_tech_details: bool = False   # model chip, memory-file chips, Avatar Lab, raw task XML (for developers)
     voice_match_loudness: bool = True  # level his voice to streaming loudness (~-14 LUFS, like YouTube)
     voice_volume: int = 100           # 25-200 %, on top of the matched level
     sfx_volume: int = 70              # 0-100, Monkey's sound effects (his voice has its own level)

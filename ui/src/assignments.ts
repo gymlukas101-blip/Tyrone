@@ -59,8 +59,8 @@ function row(it: Item) {
         it.missing && !it.done ? h("span", { class: "flag" }, "MISSING") : null),
       h("div", { class: "asg-why" }, it.done ? (it.reason || "done") : it.reason || countdown(it.due))),
     h("div", { class: "asg-side" },
-      it.done ? null : h("span", { class: `tier ${it.tier}` }, it.tier),
-      h("span", { class: "due" }, countdown(it.due))),
+      it.done ? h("span", { class: "tier done" }, "done") : h("span", { class: `tier ${it.tier}` }, it.tier),
+      it.done ? null : h("span", { class: "due" }, countdown(it.due))),
   );
   if (!it.done) {
     const bar = h("div", { class: `prio ${it.tier}`, title: `Priority ${it.priority}/100` });
@@ -86,7 +86,13 @@ async function toggleItem(it: Item, r: HTMLElement, cb: HTMLButtonElement) {
     r.classList.remove("checking", "unchecking");
     return;
   }
-  if (done && res.synced) toast("✓ Checked off in Canvas too");
+  if (done) {
+    // Mis-taps happen (testers checked off the wrong row): always offer a quick Undo.
+    undoToast(`✓ "${it.title}" marked done${res.synced ? " (in Canvas too)" : " in Monkey (not submitted on Canvas)"}`, async () => {
+      const back = await current?.toggle(it.id, false);
+      if (back?.ok) moveItem(it.id, false);
+    });
+  }
   setTimeout(() => moveItem(it.id, done), done ? 700 : 250);
 }
 
@@ -134,6 +140,14 @@ function ring(done: number, total: number) {
     s("text", { x: 26, y: 30, "text-anchor": "middle", class: "ring-txt" }, `${done}/${total}`));
 }
 
+function undoToast(text: string, undo: () => void) {
+  const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
+  const t = h("div", { class: "toast" }, text, " ",
+    h("button", { class: "ghost mini", type: "button", onclick: () => { t.remove(); undo(); } }, "Undo"));
+  host.append(t);
+  setTimeout(() => t.remove(), 7000);
+}
+
 function draw() {
   if (!current) return;
   const { board, root, tab } = current;
@@ -143,10 +157,11 @@ function draw() {
     h("div", { class: "asg-head" },
       ring(st.week_done ?? 0, st.week_total ?? 0),
       h("div", {},
-        h("div", { class: "asg-headline" }, `${st.week_done ?? 0} of ${st.week_total ?? 0} done this week`),
+        h("div", { class: "asg-headline" }, `${st.week_done ?? 0} of ${st.week_total ?? 0} due this week are done`),
         h("div", { class: "meta" },
-          [st.missing ? `${st.missing} missing` : "", st.critical ? `${st.critical} critical` : "",
-           board.source === "feed" ? "due dates only — add a Canvas token for grades & points" : "ranked by grade impact, due date & your grade"]
+          [board.todo.length !== (st.week_total ?? 0) - (st.week_done ?? 0) ? `${board.todo.length} left to do in total (overdue and later ones too)` : "",
+           st.missing ? `${st.missing} missing` : "", st.critical ? `${st.critical} critical` : "",
+           board.source === "feed" ? "sorted by due date" : "ranked by grade impact, due date & your grade"]
             .filter(Boolean).join(" · ")))),
     h("div", { class: "tabs" },
       h("button", { type: "button", class: tab === "todo" ? "on" : "", onclick: () => { current!.tab = "todo"; draw(); } },

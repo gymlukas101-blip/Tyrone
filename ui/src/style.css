@@ -45,6 +45,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
 }
 #routeChip:empty { display: none; }
+body:not(.tech) #routeChip { display: none; }
 #convChip {
   font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px;
   display: inline-flex; align-items: center; gap: 6px; animation: convPulse 2.4s ease-in-out infinite;
@@ -377,3 +378,17 @@ dialog, .settings header { background: #0a3a1c; }
 .healthlist .h-fail .hicon { color: #ff6b6b; }
 .healthlist .h-skip { opacity: .7; }
 .healthlist .hfix { color: var(--banana, #ffd23f); }
+
+.memlist { display: grid; gap: 8px; margin: 6px 0; }
+.memgroup { display: grid; gap: 4px; }
+.memgroup .memhit { grid-template-columns: 1fr auto; align-items: center; }
+.memrow-actions { display: inline-flex; gap: 6px; }
+.memgroup .memhit input { min-width: 0; }
+
+/* Settings navigation + Advanced fold */
+.settingsnav { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.settingsnav .ghost.mini { padding: 3px 10px 5px; font-size: 12px; }
+details.advanced { margin: 10px 0; }
+details.advanced > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f); outline-offset: 4px; border-radius: 10px; }
+.dot.bad { background: #ff6b6b; box-shadow: 0 0 0 2px #7a1d1d; }

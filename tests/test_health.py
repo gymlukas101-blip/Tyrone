@@ -89,7 +89,7 @@ def test_one_crashing_or_hanging_group_does_not_stop_the_rest(mk, monkeypatch):
     monkeypatch.setattr(H, "GROUPS", groups)
     checks = H.run_checks(a, api, timeout_s=0.5)
     by_area = {c.area: c for c in checks}
-    assert by_area["Brain"].status == H.FAIL and "ZeroDivisionError" in by_area["Brain"].detail
+    assert by_area["Brain"].status == H.FAIL and "boom" in by_area["Brain"].detail
     assert by_area["Voice"].status == H.WARN and "didn't answer" in by_area["Voice"].detail
     assert "Memory" in by_area and "Budget" in by_area
 

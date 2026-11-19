@@ -170,6 +170,13 @@ class CanvasAPI:
 
 
 _COURSE = re.compile(r"\[([^\]]+)\]\s*$")
+_CODE = re.compile(r"^([A-Z][A-Z&]*(?:_[A-Z&]+)*)_(\d{3}[A-Z]?)(?:_\d{3})?(?:_[A-Z]{1,2}\d{2})?$")
+
+
+def pretty_course(code: str) -> str:
+    """Canvas feed course codes like PSYCH_202_001_F26 -> 'PSYCH 202' (testers read the raw codes as gibberish)."""
+    m = _CODE.match(code.strip())
+    return f"{m.group(1).replace('_', ' ')} {m.group(2)}" if m else code.replace("_", " ").strip()
 
 
 class AssignmentBoard:
@@ -185,7 +192,7 @@ class AssignmentBoard:
             m = _COURSE.search(e.title)
             aid = e.id.rsplit("-", 1)[-1] if e.id.startswith("event-assignment-") else ""
             out.append(Assignment(
-                id=f"ics:{e.id}", title=_COURSE.sub("", e.title).strip(), course=m.group(1) if m else "Canvas",
+                id=f"ics:{e.id}", title=_COURSE.sub("", e.title).strip(), course=pretty_course(m.group(1)) if m else "Canvas",
                 assignment_id=aid, due=e.start, url=e.web_link, source="ics",
             ))
         return out

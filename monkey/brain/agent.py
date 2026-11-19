@@ -453,11 +453,13 @@ class Agent:
     def _run(self, route: Route, holding: str = "") -> str:
         spoken_all: list[str] = [holding] if holding else []
         retried_server = repaired = False
+        tail = ""                 # last text shown; text from the next round must not glue onto it ("Canvas.You've")
         for _round in range(MAX_TOOL_ROUNDS):
             self.history, fixed = repair_history(self.history)
             if fixed:
                 log.warning("repaired conversation history before sending")
             self._apply_effort(route)
+            first_text = True
             chunker = SentenceChunker()
             self.emit("state", {"state": "thinking"})
             try:
@@ -466,6 +468,11 @@ class Agent:
                         if self._cancel.is_set():
                             break
                         if event.type == "text":
+                            if first_text and tail and event.text and not tail[-1].isspace() \
+                                    and not event.text[0].isspace():
+                                self.emit("delta", {"text": " "})          # new round: separate from the last one
+                            if event.text:
+                                first_text, tail = False, event.text
                             self.emit("delta", {"text": event.text})
                             for sentence in chunker.feed(event.text):
                                 spoken_all.append(sentence)

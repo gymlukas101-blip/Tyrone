@@ -115,18 +115,19 @@ function soundSection(s: Record<string, any>) {
     h("p", { class: "help" }, "Monkey's grunts, laughs, yawns and snorts are made in his own Fish voice with Fish's free model " +
       "(free until Nov 30, 2026) and saved on this PC, so they keep working after that. Takes about 3–5 minutes, once. " +
       "It also saves a clean sample of his voice for the offline voice."),
-    h("div", { class: "field" }, h("span", {}, "Voice set"), make, status),
+    h("div", { class: "field" }, h("span", {}, "Monkey's voice set"), make, status),
     offlineVoiceRow(s),
     h("details", {}, h("summary", {}, "Sound Lab: hear every sound (click a number; right-click to turn a take off)"), lab));
 }
-/** Settings → Sound → Offline voice: Pocket TTS clone of Monkey's voice, free forever, runs on this PC. */
+/** Settings → Voice & sound → Backup voice: Pocket TTS clone of Monkey's voice, free forever, runs on this PC. */
 function offlineVoiceRow(s: Record<string, any>) {
-  const st = h("span", { class: "meta", id: "offlineVoiceStatus" }, "…");
+  const st = h("span", { class: "meta", id: "offlineVoiceStatus" }, "Checking…");
   const refresh = async () => {
     const v = await api.offline_voice_state();
-    st.textContent = v.downloading ? "Downloading…" : !v.installed ? "Not downloaded (~200 MB, once)"
-      : v.own_voice ? "✓ Ready: Monkey's own voice" : "✓ Ready (generic voice until you make Monkey's voice set)";
-    dl.textContent = v.installed ? "Re-download" : "⬇ Download";
+    st.textContent = v.downloading ? "Downloading…" : !v.installed ? "Not downloaded yet (about 200 MB, one time)"
+      : v.own_voice ? "✓ Ready, sounds like Monkey" : "✓ Ready (a generic voice until you make Monkey's voice set above)";
+    dl.textContent = v.installed ? "Download again" : "⬇ Download";
+    test.disabled = !v.installed;
   };
   const dl = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.download_offline_voice();
@@ -134,26 +135,27 @@ function offlineVoiceRow(s: Record<string, any>) {
   } }, "⬇ Download");
   const test = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.test_offline_voice();
-    toast(r.ok ? (r.own_voice ? "🔊 Offline voice (Monkey's own)" : "🔊 Offline voice (generic: make the voice set to clone Monkey)") : `⚠ ${r.error}`);
-  } }, "▶ Test");
+    toast(r.ok ? (r.own_voice ? "🔊 That's the backup voice (Monkey's own)" : "🔊 That's the backup voice (generic until you make Monkey's voice set)") : `⚠ ${r.error}`);
+  } }, "▶ Hear it");
   const mode = h("select", {},
-    h("option", { value: "fallback" }, "Use it when Fish isn't available"),
-    h("option", { value: "only" }, "Always use the offline voice (never Fish)"),
-    h("option", { value: "off" }, "Off (Windows voice as backup)"));
+    h("option", { value: "fallback" }, "Use it when the main voice is down (recommended)"),
+    h("option", { value: "only" }, "Always use it (never the Fish voice)"),
+    h("option", { value: "off" }, "Don't use it (the plain Windows voice is the backup)"));
   mode.value = s.offline_voice ?? "fallback";
   mode.addEventListener("change", async () => { appState = await api.save_settings({ offline_voice: mode.value }); toast("Saved"); });
   offlineVoiceRefresh = refresh;
   void refresh();
   return h("div", {},
-    h("div", { class: "field" }, h("span", {}, "Offline voice"), dl, test, st),
+    h("div", { class: "field" }, h("span", {}, "Backup voice (works offline)"), dl, test, st),
     h("div", { class: "field" }, h("span", {}, ""), mode));
 }
 let offlineVoiceRefresh: (() => Promise<void>) | null = null;
 function offlineVoiceEvent(p: any) {
   const st = document.getElementById("offlineVoiceStatus");
   if (p.finished) {
-    toast(p.ok ? `✓ Offline voice downloaded (${p.mb} MB)` : `⚠ ${p.error}`);
+    toast(p.ok ? `✓ Backup voice downloaded (${p.mb} MB)` : `⚠ ${p.error}`, p.ok ? 4000 : 9000);
     void offlineVoiceRefresh?.();
+    if (!p.ok && st) setTimeout(() => { st.textContent = `⚠ ${p.error}`; }, 300);   // never stuck on "Starting download…"
     return;
   }
   if (st) st.textContent = p.what === "unpacking" ? "Unpacking…" :
@@ -178,6 +180,14 @@ function voiceKitEvent(p: any) {
 }
 
 /** Apply Settings → Look & feel to the 3D avatar (juice level, SFX volume, sleep timer). */
+/** Show only the header buttons that do something for this person; tech details only when asked for. */
+function applyChrome(st: AppState) {
+  const tech = !!st.settings.show_tech_details;
+  document.body.classList.toggle("tech", tech);
+  ($("#labBtn") as HTMLElement).hidden = !tech;
+  ($("#healthBtn") as HTMLElement).hidden = !st.connections.garmin;
+}
+
 function applyLook(s: Record<string, any>) {
   const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
   if (!a3) return;
@@ -203,9 +213,12 @@ function addMsg(kind: "user" | "bot" | "sys", text: string) {
 }
 const cards = $("#cards");
 function card(title: string, ...body: Child[]) {
+  // One card per kind: asking again replaces the old one instead of stacking a duplicate (drafts are per email).
+  if (!title.startsWith("✉️")) cards.querySelectorAll<HTMLElement>(".card").forEach((old) => { if (old.dataset.title === title) old.remove(); });
   const c = h("div", { class: "card" },
     h("button", { class: "close", title: "Close", onclick: () => c.remove() }, "✕"),
     h("h3", {}, title), ...body);
+  c.dataset.title = title;
   cards.prepend(c);
   while (cards.children.length > 4) cards.lastElementChild!.remove();
   return c;
@@ -216,8 +229,8 @@ function draftCard(d: any) {
   const subj = h("input", { value: d.subject });
   const body = h("textarea", {}, d.body);
   const status = h("span", { class: "badge" }, d.account === "outlook" ? "wisc.edu Outlook" : "Gmail");
-  const c = card("✉️ Draft for your approval",
-    h("div", {}, status, " ", h("span", { class: "meta" }, "Nothing is sent until you approve.")),
+  const c = card("✉️ Draft: check it, then Send",
+    h("div", {}, status, " ", h("span", { class: "meta" }, "Not sent yet. Edit anything, then click Send.")),
     h("label", {}, "To"), h("input", { value: [...d.to, ...(d.cc?.length ? ["cc: " + d.cc.join(", ")] : [])].join(", "), readOnly: true }),
     h("label", {}, "Subject"), subj,
     h("label", {}, "Message"), body,
@@ -234,8 +247,13 @@ function draftCard(d: any) {
     const r = await api.approve(d.draft_id, d.token);
     if (r.ok) {
       c.classList.add("sent");
-      c.querySelector(".actions")!.replaceChildren(h("strong", {}, "✓ Sent"));
-      addMsg("sys", `Email sent to ${d.to.join(", ")}`);
+      const when = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      c.querySelector("h3")!.textContent = `✅ Sent to ${d.to.join(", ")}`;
+      const sub = c.querySelector(".meta");
+      if (sub) sub.textContent = `Sent at ${when}. It's in your ${d.account === "outlook" ? "Outlook" : "Gmail"} Sent folder.`;
+      subj.readOnly = true; (body as HTMLTextAreaElement).readOnly = true;
+      c.querySelector(".actions")!.replaceChildren(h("strong", {}, `✓ Sent at ${when}`));
+      addMsg("sys", `Email sent to ${d.to.join(", ")} at ${when}`);
     } else { toast(r.error ?? "Send failed"); send.disabled = false; }
   });
   c.append(h("div", { class: "actions" },
@@ -258,10 +276,11 @@ function rankingCard(p: any) {
 }
 
 function eventsCard(p: any) {
-  if (!p.events.length) return;
-  card("📅 Calendar", h("ul", { class: "items" }, ...p.events.map((e: any) => h("li", {},
-    h("span", { class: "badge" }, e.source),
-    h("div", {}, h("div", {}, e.title), h("div", { class: "meta" }, `${fmtTime(e.start)}${e.location ? " · " + e.location : ""}`))))));
+  card("📅 Calendar", p.label ? h("p", { class: "help" }, h("strong", {}, p.label)) : "",
+    p.events.length ? h("ul", { class: "items" }, ...p.events.map((e: any) => h("li", {},
+      h("span", { class: "badge" }, e.source === "calendar" ? "your calendar" : e.source),
+      h("div", {}, h("div", {}, e.title), h("div", { class: "meta" }, `${e.when ?? fmtTime(e.start)}${e.location ? " · " + e.location : ""}`)))))
+      : h("p", { class: "help" }, "Nothing on your calendar then."));
 }
 
 function emailsCard(p: any) {
@@ -346,6 +365,7 @@ function onEvent(name: string, p: any) {
     case "voicekit": voiceKitEvent(p); if (p.finished) void offlineVoiceRefresh?.(); break;
     case "google": googleEvent(p); break;
     case "health": healthEvent(p); break;
+    case "open_settings": void openSettings(p.section); break;
     case "bench": benchEvent(p); break;
     case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
@@ -382,7 +402,7 @@ function onEvent(name: string, p: any) {
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
       break;
     case "opened": addMsg("sys", `Opened ${p.url}`); break;
-    case "memory": addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
+    case "memory": if (appState.settings.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
     case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); break;
@@ -411,7 +431,11 @@ $("#composer").addEventListener("submit", (e) => {
 });
 $("#mic").addEventListener("click", () => api.push_to_talk());
 $("#convEnd").addEventListener("click", () => { $("#convChip").hidden = true; void api.end_conversation(); });
-$("#newChat").addEventListener("click", () => { api.new_conversation(); log.replaceChildren(); addMsg("sys", "New conversation"); });
+$("#newChat").addEventListener("click", () => {
+  api.new_conversation(); log.replaceChildren();
+  cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if (!(c.classList.contains("draft") && !c.classList.contains("sent"))) c.remove(); });
+  addMsg("sys", "New conversation started. Earlier chats are still saved in your history.");
+});
 $("#settingsBtn").addEventListener("click", () => openSettings());
 $("#labBtn").addEventListener("click", () => {
   document.querySelectorAll(".card.lab").forEach((c) => c.remove());
@@ -487,8 +511,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") api.stop_s
 
 // ------------------------------------------------------------------ settings
 const KEY_INFO: [string, string, string][] = [
-  ["anthropic", "Anthropic (Claude)", "Required. console.anthropic.com → API keys."],
-  ["fish", "Fish Audio", "Monkey's voice. fish.audio → API keys."],
+  ["anthropic", "Your Claude key", "Required: this is Monkey's brain."],
+  ["fish", "Fish Audio key (optional)", "Monkey's real voice. fish.audio → API keys."],
   ["deepgram", "Deepgram (optional)", "Faster speech recognition. Leave empty to use free local Whisper."],
   ["youtube", "YouTube Data API (optional)", "For showing videos. Google Cloud → APIs → YouTube Data API v3 → API key."],
   ["brave", "Brave Search (optional)", "Better image search. Without it, images come from Wikimedia Commons."],
@@ -496,28 +520,41 @@ const KEY_INFO: [string, string, string][] = [
   ["canvas_token", "Canvas API token (optional)", "Unlocks points, grades & missing status for ranking. UW–Madison: request one via the Learn@UW 'Student Request for Canvas Access Token' form (kb.wisc.edu/156712), then activate it in Canvas."],
 ];
 
-async function openSettings() {
+const keyWarnings: Record<string, string> = {};   // keys saved but rejected by the service (shown in red until fixed)
+let settingsOpenDetails = new Set<string>();
+
+async function openSettings(section?: string) {
   appState = await api.get_state();
+  applyChrome(appState);
   const s = appState.settings;
   const dlg = $<HTMLDialogElement>("#settings");
+  // Re-rendering must not throw you back to the top (testers lost the Sign in button that way).
+  const prevScroll = dlg.open ? dlg.querySelector<HTMLElement>(".body")?.scrollTop ?? 0 : 0;
+  if (dlg.open) settingsOpenDetails = new Set([...dlg.querySelectorAll<HTMLDetailsElement>("details[id][open]")].map((d) => d.id));
   const status = (on: boolean) => h("span", { class: `dot ${on ? "on" : ""}` });
   const keyRow = ([name, label, help]: [string, string, string]) => {
     const hint = appState.key_hints?.[name];
     const inp = h("input", { type: "password", placeholder: appState.keys[name] ? `saved ••••${hint ?? ""}` : "paste key" });
-    const note = h("p", { class: "keynote" },
-      appState.keys[name] ? `✓ Saved${hint ? ` (ends in ${hint})` : ""}. Stays saved after restarts and updates.` : "");
+    const warn = keyWarnings[name];
+    const note = h("p", { class: warn ? "keynote bad" : "keynote" },
+      warn ? `⚠ This key didn't work: ${warn}` :
+      appState.keys[name] ? `✓ Saved and working${hint ? ` (ends in ${hint})` : ""}. Stays saved after restarts and updates.` : "");
     const save = async () => {
       if (!inp.value.trim()) return;
       const r = await api.save_key(name, inp.value.trim());
       if (!r.ok) { note.className = "keynote bad"; note.textContent = `⚠ Not saved: ${r.error}`; return; }
       inp.value = "";
-      if (r.warning) { toast(`Saved, but: ${r.warning}`, 9000); }
-      else toast(r.note ? `✓ ${label} saved. ${r.note}` : `✓ ${label} saved. It'll be there next time you open Monkey.`, r.note ? 7000 : 4000);
+      if (r.warning) { keyWarnings[name] = r.warning; toast(`⚠ ${label}: ${r.warning}`, 9000); }
+      else {
+        delete keyWarnings[name];
+        toast(r.note ? `✓ ${label} saved. ${r.note}` : `✓ ${label} saved and working.`, r.note ? 7000 : 4000);
+      }
       await openSettings();
+      if (name === "anthropic" && !r.warning) updateWelcome();
     };
     inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") { e.preventDefault(); save(); } });
-    return h("div", {},
-      h("div", { class: "field" }, status(!!appState.keys[name]), h("span", {}, label), inp,
+    return h("div", { "data-key": name },
+      h("div", { class: "field" }, h("span", { class: `dot ${warn ? "bad" : appState.keys[name] ? "on" : ""}` }), h("span", {}, label), inp,
         h("button", { class: "ghost", type: "button", onclick: save }, "Save"),
         appState.keys[name] && h("button", { class: "ghost", type: "button", title: "Remove this key", onclick: async () => {
           if (!confirm(`Remove the saved ${label} key?`)) return;
@@ -525,7 +562,7 @@ async function openSettings() {
         } }, "✕")),
       note,
       h("p", { class: "help" }, help),
-      name === "anthropic" && h("div", { class: "field" }, h("span", {}, "Claude workspace ID"),
+      name === "anthropic" && h("div", { class: "field", id: "workspaceRow" }, h("span", {}, "Claude workspace ID"),
         (() => {
           const ws = h("input", { value: appState.settings.anthropic_workspace_id ?? "", placeholder: "found automatically if your key needs one (wrkspc_…)" });
           ws.addEventListener("change", async () => { appState = await api.save_settings({ anthropic_workspace_id: ws.value.trim() }); toast("Saved"); });
@@ -537,8 +574,8 @@ async function openSettings() {
           toast(r.ok ? `✓ Claude key works.${r.note ? " " + r.note : ""}` : `⚠ ${r.error}`, r.ok ? 5000 : 10000);
           if (r.ok) openSettings();
         } }, "Test")),
-      name === "anthropic" && h("p", { class: "help maxhelp" },
-        "Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
+      name === "anthropic" && h("details", { class: "help maxhelp", id: "maxHelp" }, h("summary", {}, "Where do I get a Claude key? (and using Claude Max credits)"),
+        "Make one at platform.claude.com → API keys (it starts with sk-ant-). Have Claude Max? It includes $100/month of API credits, so Monkey costs you nothing extra. claude.ai → Settings → Billing → ",
         h("b", {}, "API credits"), " → link a Console org, then create a key at platform.claude.com → API keys and paste it here. ",
         h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); api.open_url("https://claude.ai/settings/billing"); } }, "Open billing settings"),
         " · ",
@@ -598,7 +635,7 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ fish_model: sel.value, fish_paid_confirmed: sel.value === "s2.1-pro" }); toast("Saved"); });
           return sel;
         })()),
-        h("label", { class: "field toggle" }, (() => {
+        h("label", { class: "field toggle", id: "fishFreeShare" }, (() => {
           const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
           cb.checked = s.fish_allow_free !== false;
           cb.addEventListener("change", async () => { appState = await api.save_settings({ fish_allow_free: cb.checked }); toast("Saved"); });
@@ -638,30 +675,67 @@ async function openSettings() {
           return sel;
         })())),
       h("section", {}, h("h4", {}, "Accounts"),
-        h("p", { class: "help" }, "Gmail/Google Calendar: paste your Google OAuth Desktop-client JSON, then Sign in. wisc.edu: needs classic Outlook signed in on this PC. Canvas: Calendar → Calendar Feed → copy link."),
+        h("p", { class: "help" }, "Connect what you use. Everything here is optional, and Monkey only reads; it never sends anything without you clicking Send."),
+        h("h5", {}, "📅 Your class schedule"),
         (() => {
-          const ta = h("textarea", { rows: 2, placeholder: appState.keys.google_client ? "Google client JSON saved" : "Google OAuth client JSON" });
-          return h("div", { class: "field" }, status(!!appState.keys.google_client), h("span", {}, "Google client"), ta,
-            h("button", { class: "ghost", type: "button", onclick: async () => {
-              if (!ta.value.trim()) return;
-              const r = await api.save_key("google_client", ta.value.trim());
-              toast(r.ok ? "✓ Saved" : `⚠ Not saved: ${r.error}`); openSettings();
-            } }, "Save"));
+          const ta = h("textarea", { rows: 2, placeholder: appState.connections.calendar_ics ? "Calendar link saved (paste to replace)" : "https://calendar.google.com/calendar/ical/…/private-…/basic.ics" }) as HTMLTextAreaElement;
+          return h("div", {},
+            h("div", { class: "field" }, status(!!appState.connections.calendar_ics), h("span", {}, "Calendar link (easiest, no sign-in)"), ta,
+              h("button", { class: "ghost", type: "button", onclick: async () => {
+                if (!ta.value.trim()) return;
+                const r = await api.save_key("calendar_ics", ta.value.trim());
+                toast(r.ok ? (r.warning ? `⚠ ${r.warning}` : `✓ ${r.note ?? "Saved"}`) : `⚠ ${r.error}`);
+                if (r.ok) openSettings();
+              } }, "Save")),
+            h("p", { class: "help" }, "Google Calendar (on the web) → ⚙ Settings → click your calendar on the left → Integrate calendar → copy “Secret address in iCal format”. Keep it private."));
         })(),
-        h("div", { class: "field" }, h("span", {}, ""),
-          h("button", { class: "ghost", type: "button", onclick: async () => {
-            const r = await api.google_client_file(); resultToast(r, "✓ Google client loaded. Now click Sign in."); if (r.ok) openSettings();
-          } }, "Load JSON file…")),
-        googleSetupGuide(),
-        h("div", { class: "field" }, status(!!appState.connections.gmail), h("span", {}, "Gmail + Google Calendar"),
-          h("button", { class: "primary", type: "button", onclick: async () => {
+        h("h5", {}, "🎒 Canvas (what's due)"),
+        (() => {
+          const inp = h("input", { type: "url", value: s.canvas_ics_url ?? "", placeholder: "https://canvas.wisc.edu/feeds/calendars/user_….ics" }) as HTMLInputElement;
+          const note = h("p", { class: "keynote" }, s.canvas_ics_url ? "✓ Saved. Click ✓ Homework at the top to see what's due." : "");
+          const save = async () => {
+            const v = inp.value.trim();
+            if (v && !/^(https|webcal):\/\//i.test(v)) { note.className = "keynote bad"; note.textContent = "⚠ That doesn't look like the Canvas link. It starts with https:// and ends in .ics."; return; }
+            appState = await api.save_settings({ canvas_ics_url: v });
+            note.className = "keynote";
+            note.textContent = v ? "✓ Saved. Click ✓ Homework at the top to see what's due." : "Removed.";
+            toast(v ? "✓ Canvas connected" : "Canvas link removed");
+            openSettings();
+          };
+          inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") { e.preventDefault(); void save(); } });
+          return h("div", {},
+            h("div", { class: "field" }, status(!!s.canvas_ics_url), h("span", {}, "Canvas calendar link"), inp,
+              h("button", { class: "ghost", type: "button", onclick: save }, "Save")),
+            note,
+            h("p", { class: "help" }, "In Canvas: Calendar (left menu) → “Calendar Feed” (bottom right) → copy the link."));
+        })(),
+        h("h5", {}, "✉️ Gmail + Google Calendar"),
+        (() => {
+          const hasClient = !!appState.keys.google_client, connected = !!appState.connections.gmail;
+          const st = h("span", { class: "meta", id: "googleStatus" }, connected ? "✓ Connected" : "");
+          const pick = h("button", { class: hasClient ? "ghost" : "primary", type: "button", onclick: async () => {
+            const r = await api.google_client_file();
+            if (!r.ok) { if (r.error && !/nothing picked/i.test(r.error)) toast(`⚠ ${r.error}`); return; }
+            toast("✓ Google setup file loaded. Now click Sign in with Google.");
+            await openSettings();
+            document.getElementById("googleSignIn")?.focus();
+          } }, hasClient ? "Change setup file…" : "Choose file…");
+          const signIn = h("button", { class: hasClient ? "primary" : "ghost", type: "button", id: "googleSignIn", disabled: !hasClient, onclick: async () => {
             const r = await api.google_sign_in();
-            const st = document.getElementById("googleStatus");
-            if (!r.ok) { if (st) st.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); if (r.needs_client) (document.getElementById("googleGuide") as HTMLDetailsElement | null)?.setAttribute("open", ""); return; }
-            if (st) st.textContent = "Opening Google sign-in in your browser…";
-          } }, appState.connections.gmail ? "Reconnect" : "Sign in"),
-          appState.connections.gmail && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
-        h("div", { class: "field" }, h("span", {}, ""), h("span", { class: "meta", id: "googleStatus" }, "")),
+            if (!r.ok) { st.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
+            st.textContent = "Opening Google sign-in in your browser…";
+          } }, connected ? "Sign in again" : "Sign in with Google");
+          return h("div", {},
+            h("p", { class: "help" }, connected ? "Monkey can read your Gmail and Google Calendar." :
+              "Needs a one-time Google setup (about 5 minutes, steps below). Only want your schedule? The calendar link above is enough."),
+            !connected && h("div", { class: "field" }, status(hasClient), h("span", {}, "Step 1: your Google setup file"), pick,
+              h("span", { class: "meta" }, hasClient ? "✓ Loaded" : "client_secret_….json from your Downloads")),
+            h("div", { class: "field" }, status(connected), h("span", {}, connected ? "Google account" : "Step 2: sign in"), signIn,
+              connected && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
+            h("div", { class: "field" }, h("span", {}, ""), st),
+            !connected && googleSetupGuide());
+        })(),
+        h("h5", {}, "🏫 School email (wisc.edu)"),
         h("div", { class: "field" }, status(!!appState.connections.outlook), h("span", {}, "wisc.edu Outlook"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
@@ -681,7 +755,6 @@ async function openSettings() {
               } }, "Save")),
             h("p", { class: "help" }, "Easiest way to give Monkey your class schedule: Google Calendar (web) → ⚙ Settings → click your calendar on the left → Integrate calendar → copy “Secret address in iCal format” and paste it here. Read-only; one link per line for several calendars. Keep it private: anyone with the link can see that calendar."));
         })(),
-        field("Canvas calendar feed URL", "canvas_ics_url", "url", { placeholder: "https://canvas.wisc.edu/feeds/calendars/user_….ics" }),
         field("Canvas site", "canvas_base_url", "url"),
         h("div", { class: "field" }, h("span", {}, "Email writing style"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
@@ -766,13 +839,13 @@ async function openSettings() {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ juice_level: sel.value }); applyLook(appState.settings); toast("Saved"); });
           return sel;
         })()),
-        h("div", { class: "field" }, h("span", {}, "Monkey's voice volume"), (() => {
+        h("div", { class: "field", id: "voiceVolume" }, h("span", {}, "Monkey's voice volume"), (() => {
           const r = h("input", { type: "range", min: "25", max: "200", step: "5", value: String(s.voice_volume ?? 100),
             title: "100% = as loud as YouTube and music at the same Windows volume" }) as HTMLInputElement;
           r.addEventListener("change", async () => { appState = await api.save_settings({ voice_volume: Number(r.value) }); toast(`Voice ${r.value}%`); });
           return r;
         })()),
-        h("div", { class: "field" }, h("label", {}, (() => {
+        h("div", { class: "field", id: "voiceLoudness" }, h("label", {}, (() => {
           const c = h("input", { type: "checkbox" }) as HTMLInputElement;
           c.checked = s.voice_match_loudness ?? true;
           c.addEventListener("change", async () => { appState = await api.save_settings({ voice_match_loudness: c.checked }); toast("Saved"); });
@@ -786,7 +859,7 @@ async function openSettings() {
         field("Doze off after (minutes idle)", "sleep_after_min", "number", { min: "1", max: "120", step: "1" })),
       soundSection(s),
       h("section", {}, h("h4", {}, "Images & updates"),
-        h("div", { class: "field" }, h("span", {}, "Image model"), (() => {
+        h("div", { class: "field", id: "imageModelRow" }, h("span", {}, "Image model"), (() => {
           const sel = h("select", {},
             h("option", { value: "gpt-image-2.6-sunburst" }, "GPT Image 2.6 Sunburst (best detail)"),
             h("option", { value: "gpt-image-2.6-flare" }, "GPT Image 2.6 Flare (faster drafts)"));
@@ -817,17 +890,90 @@ async function openSettings() {
         })()),
       briefSettings(s),
       h("section", {}, h("h4", {}, "Memory"),
-        h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain markdown you can edit.`),
-        field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),
-        h("div", { class: "field" }, h("span", {}, ""),
-          h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open memory folder")),
-        moveToNewPc(),
+        h("p", { class: "help" }, "Everything Monkey remembers about you stays on this PC. You can see it, fix it or delete it here."),
         memoryInspector(),
         contextImport(),
-        historyControls(s)),
+        moveToNewPc(),
+        historyControls(s),
+        h("details", {}, h("summary", {}, "Memory files on disk"),
+          h("p", { class: "help" }, `Files: ${appState.memory_files.join(", ")}. Plain text you can edit.`),
+          field("Sync folder (optional, e.g. OneDrive)", "memory_dir_override", "text", { placeholder: "C:\\Users\\you\\OneDrive\\Monkey" }),
+          h("div", { class: "field" }, h("span", {}, ""),
+            h("button", { class: "ghost", type: "button", onclick: () => api.open_memory_folder() }, "Open memory folder")))),
       h("p", { class: "help" }, `Monkey ${appState.version}`),
     )));
+  organizeSettings(dlg);
+  for (const id of settingsOpenDetails) dlg.querySelector<HTMLDetailsElement>(`details#${id}`)?.setAttribute("open", "");
   if (!dlg.open) dlg.showModal();
+  const body = dlg.querySelector<HTMLElement>(".body")!;
+  if (section) jumpTo(dlg, section);
+  else body.scrollTop = prevScroll;
+}
+
+/** Settings layout: the everyday things first, developer things folded away under Advanced, and a menu to jump around. */
+const SETTINGS_SECTIONS: [string, string][] = [["start", "Start"], ["accounts", "Accounts"], ["sound", "Voice & sound"],
+  ["brief", "Morning brief"], ["memory", "Memory"], ["feel", "Look & mic"], ["advanced", "Advanced"]];
+function organizeSettings(dlg: HTMLDialogElement) {
+  const body = dlg.querySelector<HTMLElement>(".body")!;
+  const sec = (title: string) => [...body.querySelectorAll<HTMLElement>(":scope > section")]
+    .find((x) => x.querySelector(":scope > h4")?.textContent?.trim() === title);
+  const move = (el: Element | null | undefined, to: Element | null | undefined, first = false) => {
+    if (el && to) { if (first) to.querySelector(":scope > h4")?.after(el); else to.append(el); }
+  };
+  const health = sec("Is everything working?"), you = sec("You"), keysSec = sec("API keys"), fishSec = sec("Monkey's voice (Fish Audio)");
+  const mic = sec("Wake word & mic"), accounts = sec("Accounts"), garmin = sec("Garmin"), brain = sec("Brain & budget");
+  const look = sec("Look & feel"), sound = sec("Sound"), images = sec("Images & updates"), brief = sec("Morning brief"), memory = sec("Memory");
+  // Start: name + the two keys that matter (Claude required, Fish optional)
+  if (you) {
+    you.id = "set-start"; you.querySelector("h4")!.textContent = "Start here";
+    move(keysSec?.querySelector('[data-key="anthropic"]'), you);
+    move(keysSec?.querySelector('[data-key="fish"]'), you);
+    you.append(h("p", { class: "help" }, "Only the Claude key is required. The Fish Audio key gives Monkey his real voice; without it he uses a free backup voice."));
+  }
+  if (accounts) { accounts.id = "set-accounts"; move(keysSec?.querySelector('[data-key="canvas_token"]'), accounts); }
+  if (sound) {
+    sound.id = "set-sound"; sound.querySelector("h4")!.textContent = "Voice & sound";
+    move(look?.querySelector("#voiceLoudness"), sound, true);
+    move(look?.querySelector("#voiceVolume"), sound, true);
+    move(fishSec?.querySelector("#fishFreeShare"), sound);
+  }
+  if (brief) brief.id = "set-brief";
+  if (memory) memory.id = "set-memory";
+  if (look) { look.id = "set-feel"; look.querySelector("h4")!.textContent = "Look & mic"; }
+  if (mic && look) { for (const el of [...mic.children].slice(1)) look.append(el); mic.remove(); }
+  // Updates stay visible (in Look & mic); the image model goes to Advanced
+  const imgModel = images?.querySelector("#imageModelRow");
+  if (images && look) { for (const el of [...images.children].slice(1)) if (el !== imgModel) look.append(el); }
+  // Advanced: optional keys, Fish voice design, Garmin, brain/budget/benchmark, image model, tech details
+  const adv = h("details", { id: "set-advanced", class: "advanced" }, h("summary", {}, "⚙️ Advanced (optional keys, voice design, Garmin, AI models & budget, developer tools)")) as HTMLDetailsElement;
+  if (keysSec) { keysSec.querySelector("h4")!.textContent = "Optional keys"; adv.append(keysSec); }
+  const ws = you?.querySelector("#workspaceRow");
+  if (ws && keysSec) keysSec.append(ws);
+  for (const x of [fishSec, garmin, brain]) if (x) adv.append(x);
+  if (imgModel) adv.append(h("section", {}, h("h4", {}, "Images"), imgModel));
+  if (images) images.remove();
+  adv.append(h("section", {}, h("h4", {}, "Developer"), (() => {
+    const cb = h("input", { type: "checkbox" }) as HTMLInputElement;
+    cb.checked = !!appState.settings.show_tech_details;
+    cb.addEventListener("change", async () => { appState = await api.save_settings({ show_tech_details: cb.checked }); applyChrome(appState); toast("Saved"); });
+    return h("label", { class: "field toggle" }, cb, h("span", {}, "Show technical details (AI model per answer, memory file names, Avatar Lab)"));
+  })()));
+  // Order
+  const order = [health, you, accounts, sound, brief, memory, look].filter(Boolean) as HTMLElement[];
+  const tail = [...body.children].filter((x) => !order.includes(x as HTMLElement) && x !== adv);
+  body.replaceChildren(...order, adv, ...tail.filter((x) => x.tagName !== "SECTION"));
+  const nav = h("nav", { class: "settingsnav" }, ...SETTINGS_SECTIONS.map(([id, label]) =>
+    h("button", { type: "button", class: "ghost mini", onclick: () => jumpTo(dlg, id) }, label)));
+  dlg.querySelector(".settings > header")!.after(nav);
+}
+
+function jumpTo(dlg: HTMLDialogElement, id: string) {
+  const el = dlg.querySelector<HTMLElement>(`#set-${id}`);
+  if (!el) return;
+  if (el instanceof HTMLDetailsElement) el.open = true;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.add("attention");
+  setTimeout(() => el.classList.remove("attention"), 1600);
 }
 
 // ------------------------------------------------------------------ Google sign-in + routing benchmark
@@ -838,38 +984,37 @@ function extLink(href: string, text: string) {
 
 function googleSetupGuide() {
   const a = (href: string, text: string) => extLink(href, text);
-  return h("details", { id: "googleGuide" }, h("summary", {}, "Set up Google (one time, ~5 min): what the Sign in button needs"),
+  return h("details", { id: "googleGuide" }, h("summary", {}, "How to get the Google setup file (one time, about 5 minutes)"),
     h("ol", { class: "help" },
       h("li", {}, "Open ", a("https://console.cloud.google.com/projectcreate", "Google Cloud → New project"), " (any name, e.g. Monkey)."),
       h("li", {}, "Enable the ", a("https://console.cloud.google.com/apis/library/gmail.googleapis.com", "Gmail API"), " and the ", a("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com", "Google Calendar API"), "."),
       h("li", {}, a("https://console.cloud.google.com/apis/credentials/consent", "OAuth consent screen"), ": External → fill the app name and your email."),
       h("li", {}, a("https://console.cloud.google.com/auth/audience", "Audience"), " → Publish app → Confirm. Monkey is only for you, so Google doesn't need to review it, and this keeps you signed in (in Testing mode Google signs you out every 7 days). Prefer Testing? Add your Gmail under Test users instead, or Google shows “Access blocked”."),
       h("li", {}, a("https://console.cloud.google.com/apis/credentials", "Credentials"), " → Create credentials → OAuth client ID → Application type: Desktop app → Create → Download JSON."),
-      h("li", {}, "Back here: Load JSON file… (above), then Sign in. Your browser opens; pick your account. On “Google hasn't verified this app”, click Advanced → Go to Monkey (it's your own app), then allow Gmail and Calendar.")),
-    h("p", { class: "help" }, "Only need your calendar for the morning brief? Skip all this and use the Calendar link below instead."));
+      h("li", {}, "Back here: Step 1 → Choose file… (the client_secret_….json you just downloaded), then Sign in with Google. On “Google hasn't verified this app”, click Advanced → Go to Monkey (it's your own app), then allow Gmail and Calendar.")),
+    h("p", { class: "help" }, "Only need your class schedule? Skip all this and use the Calendar link above."));
 }
 
 function googleEvent(p: any) {
   const st = document.getElementById("googleStatus");
   if (p.stage === "opening") {
     if (st) st.replaceChildren(
-      h("span", {}, "Finish signing in in your browser. Nothing opened? ",
-        extLink(p.url, "Open Google sign-in"), " or ",
-        h("button", { class: "ghost", type: "button", onclick: async () => {
-          try { await navigator.clipboard.writeText(p.url); toast("Link copied: paste it into your browser"); }
-          catch { toast("⚠ Couldn't copy; use the Open link"); }
-        } }, "Copy link"), " ",
-        h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_in_cancel(); } }, "Cancel")),
-      h("span", { class: "help", style: "display:block;margin-top:4px" },
-        "Google says “Access blocked … has not completed the Google verification process”? In ",
-        extLink("https://console.cloud.google.com/auth/audience", "Google Cloud → Audience"),
-        ", click Publish app (or add your Gmail under Test users), then Cancel here and Sign in again."));
+      h("span", {}, "Finish signing in in your browser. ",
+        h("button", { class: "ghost mini", type: "button", onclick: async () => { await api.google_sign_in_cancel(); } }, "Cancel")),
+      h("details", { class: "help" }, h("summary", {}, "Browser didn't open, or Google showed an error?"),
+        h("p", {}, "Nothing opened: ", extLink(p.url, "open the Google sign-in page"), " or ",
+          h("button", { class: "ghost mini", type: "button", onclick: async () => {
+            try { await navigator.clipboard.writeText(p.url); toast("Link copied: paste it into your browser"); }
+            catch { toast("⚠ Couldn't copy; use the open link"); }
+          } }, "copy the link"), "."),
+        h("p", {}, "Google says “Access blocked … has not completed the Google verification process”? In ",
+          extLink("https://console.cloud.google.com/auth/audience", "Google Cloud → Audience"),
+          ", click Publish app (or add your Gmail under Test users), then Cancel here and sign in again.")));
   } else if (p.stage === "done") {
-    if (st) st.textContent = "✓ Google connected";
     toast("✓ Google connected");
-    void api.get_state().then((s) => { appState = s; });
+    void openSettings();
   } else if (p.stage === "cancelled") {
-    if (st) st.textContent = "Sign-in cancelled. Fix the Google setting, then click Sign in again.";
+    if (st) st.textContent = "Sign-in cancelled. Click Sign in with Google to try again.";
   } else if (p.stage === "error") {
     if (st) st.textContent = `⚠ ${p.message}`;
     toast(`⚠ ${p.message}`);
@@ -902,7 +1047,7 @@ function healthEvent(p: any) {
     h("p", {}, h("strong", {}, bad ? `${bad} problem${bad > 1 ? "s" : ""}` : "No problems"),
       warn ? `, ${warn} thing${warn > 1 ? "s" : ""} to look at` : "", ". ",
       h("button", { class: "ghost", type: "button", onclick: async () => {
-        try { await navigator.clipboard.writeText(lastHealthReport); toast("Report copied: paste it to Claude"); }
+        try { await navigator.clipboard.writeText(lastHealthReport); toast("Report copied: paste it anywhere (a text, Discord, or to Claude)"); }
         catch { toast("⚠ Couldn't copy"); }
       } }, "Copy report")),
     h("ul", { class: "healthlist" }, ...checks.map((c) => h("li", { class: `h-${c.status}` },
@@ -922,16 +1067,18 @@ function benchEvent(p: any) {
 }
 
 // ------------------------------------------------------------------ morning brief
-async function showMorningBrief() {
-  const r = await api.brief_preview(true).catch(() => null);
+async function showMorningBrief(refresh = false) {
+  const r = await api.brief_preview(!refresh, refresh).catch(() => null);
   if (!r?.ok || !r.brief) return;
+  cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if ((c.dataset.title ?? "").startsWith("☀️")) c.remove(); });
   briefCard(r.brief);
 }
 
 function briefCard(b: Brief) {
   const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (late start)" : "☀️ Morning brief";
   card(title,
-    b.kind === "draft" ? h("p", { class: "help" }, "Confirm your class schedule in Settings → Morning brief to get it timed 90 minutes before your first class.") : "",
+    b.kind === "draft" ? h("p", { class: "help" }, "Tell Monkey when your first class is each day and he'll have this ready 90 minutes before. ",
+      h("button", { class: "ghost mini", type: "button", onclick: () => void openSettings("brief") }, "Set my class times")) : "",
     h("p", {}, h("strong", {}, "Top priority: "), b.top),
     h("p", { class: "help" }, "Next: " + b.next_step),
     ...b.sections.map((s) => h("div", { class: `briefsec ${s.status}` },
@@ -959,17 +1106,20 @@ function briefSettings(s: Record<string, any>) {
     setTimeout(() => grid.classList.remove("attention"), 2500);
     (grid.querySelector("input") as HTMLInputElement | null)?.focus();
   };
+  const friendly = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "none this week";
+  const taskState = h("span", { class: "meta" }, "");
   const refresh = async () => {
     const st = await api.brief_status();
     status.textContent = (st.verified
-      ? `✓ Timed from your confirmed schedule: ${st.lead_min} min before your earliest class. Next: ${st.next_run ? new Date(st.next_run).toLocaleString() : "none this week"}.`
-      : "Not timed yet: confirm your earliest class each weekday (Monkey won't guess from old notes or Canvas due dates).")
+      ? `✓ Set. Your next brief: ${friendly(st.next_run)} (${st.lead_min} min before your first class).`
+      : "Not set yet: type the start time of your first class on each school day, then click Confirm schedule.")
       + ` ${st.canvas.message}`;
+    taskState.textContent = st.task ? `✓ On${st.verified ? `: ready at ${friendly(st.next_run)} even if Monkey is closed` : ""}` : "Off";
   };
   void refresh();
   const detect = h("button", { class: "ghost", type: "button", onclick: async () => {
     const r = await api.brief_candidates();
-    if (!r.ok) return toast(`⚠ ${r.error}`);
+    if (!r.ok) { taskHint.textContent = `⚠ ${r.error}`; return toast(`⚠ ${r.error}`); }
     const c = r.candidates ?? {};
     for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
     toast(Object.keys(c).length ? `Found ${Object.keys(c).length} day(s) from your calendar. Check them, then Confirm.` : "No recurring classes found in the next 2 weeks.");
@@ -977,9 +1127,10 @@ function briefSettings(s: Record<string, any>) {
   const confirmBtn = h("button", { class: "primary", type: "button", onclick: async () => {
     const byDay: Record<string, string> = {};
     for (const [d, inp] of Object.entries(inputs)) if (inp.value) byDay[d] = inp.value;
+    if (!Object.keys(byDay).length) { needSchedule("Type the start time of your first class on at least one day first (or click Detect from calendar)."); return; }
     const st = await api.brief_confirm(byDay, "confirmed in app");
     appState = await api.get_state();
-    toast(st.verified ? "Schedule confirmed" : "Schedule cleared");
+    toast(st.verified ? "✓ Schedule saved" : "Schedule cleared");
     void refresh();
   } }, "Confirm schedule");
   const speak = h("input", { type: "checkbox", checked: !!s.brief_speak_on_open }) as HTMLInputElement;
@@ -992,30 +1143,38 @@ function briefSettings(s: Record<string, any>) {
     h("label", { class: "field toggle" }, speak, h("span", {}, "Say a two-sentence version when I open Monkey")),
     h("div", { class: "field" }, h("span", {}, "Canvas token expires"), expires),
     h("label", { class: "field toggle" }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "meta" }, "Phone notifications: off (needs your approval before it can be turned on)")),
-    h("details", {}, h("summary", {}, "Prepare it even when Monkey is closed (Windows Task Scheduler)"),
-      h("p", { class: "help" }, "Creates a scheduled task that wakes the PC to build the brief (no sound, no notifications). Review it first; nothing is registered until you click Enable."),
-      h("div", { class: "field" },
-        h("button", { class: "ghost", type: "button", onclick: async () => {
-          const r = await api.brief_task_preview();
-          if (!r.ok && r.needs_schedule) { xmlOut.textContent = ""; needSchedule(r.error ?? ""); return; }
-          taskHint.textContent = "";
-          xmlOut.textContent = r.ok ? r.xml ?? "" : `⚠ ${r.error}`;
-        } }, "Preview task"),
-        h("button", { class: "ghost", type: "button", onclick: async () => {
-          const r = await api.brief_task_enable();
-          if (!r.ok && r.needs_schedule) { needSchedule(r.error ?? ""); return; }
-          taskHint.textContent = r.ok ? "✓ Scheduled task enabled" : `⚠ ${r.error}`;
-          toast(r.ok ? "Scheduled task enabled" : `⚠ ${r.error}`);
-        } }, "Enable"),
-        h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); taskHint.textContent = ""; toast("Scheduled task removed"); } }, "Disable")),
-      taskHint, xmlOut));
+    h("div", { class: "field" }, h("span", {}, "Also make it when Monkey is closed"),
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        const r = await api.brief_task_enable();
+        if (!r.ok && r.needs_schedule) { needSchedule(r.error ?? ""); return; }
+        taskHint.textContent = r.ok ? "" : `⚠ ${r.error}`;
+        toast(r.ok ? "✓ On: the brief gets made even when Monkey is closed" : `⚠ ${r.error}`);
+        void refresh();
+      } }, "Turn on"),
+      h("button", { class: "ghost", type: "button", onclick: async () => { await api.brief_task_disable(); taskHint.textContent = ""; toast("Turned off"); void refresh(); } }, "Turn off"),
+      taskState),
+    h("p", { class: "help" }, "Windows wakes your PC a little early to build it (silently, no notifications)."),
+    taskHint,
+    appState.settings.show_tech_details ? h("details", {}, h("summary", {}, "Technical details (Windows Task Scheduler)"),
+      h("button", { class: "ghost", type: "button", onclick: async () => {
+        const r = await api.brief_task_preview();
+        if (!r.ok && r.needs_schedule) { xmlOut.textContent = ""; needSchedule(r.error ?? ""); return; }
+        xmlOut.textContent = r.ok ? r.xml ?? "" : `⚠ ${r.error}`;
+      } }, "Preview task"), xmlOut) : "");
 }
 
 // ------------------------------------------------------------------ memory: inspector, import, history
 /** Which memories/episodes informed the current answer: a small chip under the reply, details on click. */
+const FRIENDLY_SOURCE: Record<string, string> = {
+  "profile.md": "about you", "classes.md": "your classes", "preferences.md": "your preferences", "projects.md": "your projects",
+  "people.md": "people you know", "writing_style.md": "your writing style",
+};
 function memoryUsed(items: { kind: string; ref: string; date: string; source: string; status: string }[]) {
+  const tech = !!appState.settings.show_tech_details;
+  // Internal notes (model policy, site shortcuts) aren't "memories" a person cares about.
+  items = items.filter((i) => tech || i.kind !== "fact" || i.source in FRIENDLY_SOURCE);
   if (!items.length) return;
-  const label = items.map((i) => `${i.kind === "fact" ? i.source : i.kind === "episode" ? "earlier chat" : "conversation"} · ${i.date}`);
+  const label = items.map((i) => `${i.kind === "fact" ? (tech ? i.source : FRIENDLY_SOURCE[i.source]) : i.kind === "episode" ? "an earlier chat" : "this conversation"} · ${i.date}`);
   const chip = h("details", { class: "memchip" }, h("summary", {}, `🧠 used ${items.length} memor${items.length === 1 ? "y" : "ies"}`),
     h("ul", {}, ...label.map((t) => h("li", {}, t))));
   log.append(chip);
@@ -1023,53 +1182,91 @@ function memoryUsed(items: { kind: string; ref: string; date: string; source: st
 }
 
 function memoryInspector() {
-  const q = h("input", { type: "search", placeholder: "Search what Monkey remembers (facts + past conversations)" }) as HTMLInputElement;
-  const hist = h("input", { type: "checkbox" }) as HTMLInputElement;
-  const out = h("div", { class: "memresults" });
-  const run = async () => {
-    const r = await api.memory_search(q.value, "all", hist.checked);
-    if (!r.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${r.error}`)); return; }
-    const hits = r.hits ?? [];
-    out.replaceChildren(...(hits.length ? hits.map((x) => h("div", { class: `memhit ${x.status}` },
-      h("span", { class: "meta" }, `${x.kind === "fact" ? x.source : x.kind} · ${x.date}${x.status !== "current" ? " · " + x.status : ""}${x.sensitive ? " · sensitive" : ""}`),
-      h("span", {}, x.text),
-      x.kind === "fact" && x.status === "current" ? h("button", { class: "ghost", type: "button", title: "Delete this fact from memory", onclick: async (e: Event) => {
-        const res = await api.memory_forget(x.ref);
-        toast(res.ok ? "Forgotten" : `⚠ ${res.error}`);
-        if (res.ok) (e.target as HTMLElement).closest(".memhit")?.remove();
-      } }, "Forget") : "")) : [h("p", { class: "help" }, "Nothing found.")]));
+  const FILE_LABEL: Record<string, string> = { "profile.md": "About you", "classes.md": "Classes", "preferences.md": "Preferences",
+    "projects.md": "Projects", "people.md": "People", "writing_style.md": "Writing style" };
+  const q = h("input", { type: "search", placeholder: "Filter (e.g. roommate, math)" }) as HTMLInputElement;
+  const out = h("div", { class: "memlist" });
+  const row = (f: { id: string; file: string; text: string; date: string }) => {
+    const r: HTMLElement = h("div", { class: "memhit" },
+      h("span", {}, f.text),
+      h("span", { class: "memrow-actions" },
+        h("button", { class: "ghost mini", type: "button", title: "Correct this", onclick: () => {
+          const inp = h("input", { value: f.text }) as HTMLInputElement;
+          const save = async () => {
+            const res = await api.memory_edit(f.id, inp.value);
+            if (!res.ok) { toast(`⚠ ${res.error}`); return; }
+            toast("Updated: Monkey keeps the old version as history");
+            void load();
+          };
+          inp.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") void save(); });
+          r.replaceChildren(inp, h("span", { class: "memrow-actions" },
+            h("button", { class: "primary mini", type: "button", onclick: save }, "Save"),
+            h("button", { class: "ghost mini", type: "button", onclick: () => void load() }, "Cancel")));
+          inp.focus();
+        } }, "Edit"),
+        h("button", { class: "ghost mini", type: "button", title: "Delete this from Monkey's memory", onclick: async () => {
+          const res = await api.memory_forget(f.id);
+          toast(res.ok ? "Forgotten" : `⚠ ${res.error}`);
+          if (res.ok) r.remove();
+        } }, "Forget")));
+    return r;
   };
-  q.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") void run(); });
-  return h("details", {}, h("summary", {}, "🔎 Memory inspector: see, search and correct what Monkey knows"),
-    h("div", { class: "field" }, q, h("button", { class: "ghost", type: "button", onclick: run }, "Search")),
-    h("label", { class: "field toggle" }, hist, h("span", {}, "Include older (superseded) versions")), out);
+  const load = async () => {
+    const r = await api.memory_list();
+    if (!r.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${r.error}`)); return; }
+    const needle = q.value.trim().toLowerCase();
+    const facts = (r.facts ?? []).filter((f) => !needle || f.text.toLowerCase().includes(needle));
+    if (!facts.length) {
+      out.replaceChildren(h("p", { class: "help" }, needle ? "Nothing matches." :
+        "Monkey doesn't know anything about you yet. Tell him things in chat (\"remember my roommate is Sam\") or add your notes below."));
+      return;
+    }
+    const groups = new Map<string, typeof facts>();
+    for (const f of facts) groups.set(f.file, [...(groups.get(f.file) ?? []), f]);
+    out.replaceChildren(h("p", { class: "help" }, `${facts.length} thing${facts.length === 1 ? "" : "s"} Monkey knows about you:`),
+      ...[...groups.entries()].map(([file, fs]) => h("div", { class: "memgroup" },
+        h("strong", {}, FILE_LABEL[file] ?? file.replace(/\.md$/, "")), ...fs.map(row))));
+  };
+  q.addEventListener("input", () => void load());
+  const box = h("details", { id: "memoryInspector" }, h("summary", {}, "🧠 What Monkey knows about you (see, edit, forget)"),
+    h("div", { class: "field" }, q), out) as HTMLDetailsElement;
+  box.addEventListener("toggle", () => { if (box.open) void load(); });
+  return box;
 }
 
 function contextImport() {
-  const out = h("div", { class: "memresults" });
+  const out = h("div", {});
   const preview = async () => {
     const r = await api.import_preview();
-    if (!r.ok) { toast(`⚠ ${r.error}`); return; }
+    if (!r.ok) { if (r.error && !/nothing picked|no file/i.test(r.error)) toast(`⚠ ${r.error}`); return; }
     const files = r.files ?? [];
+    const lines = files.reduce((n, f) => n + f.add.length, 0);
     const apply = h("button", { class: "primary", type: "button", onclick: async () => {
       const a = await api.import_apply();
       if (!a.ok) return toast(`⚠ ${a.error}`);
-      out.replaceChildren(h("p", { class: "help" }, `✓ Imported. Backup of your previous files: ${a.backup}`),
+      out.replaceChildren(h("p", { class: "keynote" }, `✓ Done: Monkey now knows ${lines} new thing${lines === 1 ? "" : "s"} about you. Your old notes were backed up.`),
         h("button", { class: "ghost", type: "button", onclick: async () => {
           const u = await api.import_undo();
-          toast(u.ok ? `Undone (${(u.restored ?? []).join(", ")})` : `⚠ ${u.error}`);
+          toast(u.ok ? "Import undone" : `⚠ ${u.error}`);
+          if (u.ok) out.replaceChildren(h("p", { class: "help" }, "Import undone. Nothing from those files is in Monkey's memory now."));
         } }, "Undo import"));
-    } }, "Apply import (backs up first)");
-    out.replaceChildren(h("p", { class: "help" }, `Preview: ${r.label}. Nothing is written until you click Apply.`),
-      ...files.map((f) => h("div", { class: "memhit" },
-        h("strong", {}, `${f.name}: ${f.action === "new" ? "new file" : f.action === "merge" ? `add ${f.add.length} line(s)` : "no changes"}`),
-        ...f.conflicts.map((c) => h("span", { class: "meta" }, `⚠ possible conflict: “${c.existing}” vs “${c.incoming}” (both kept; fix in the file)`)),
-        h("details", {}, h("summary", {}, "lines"), h("pre", {}, f.add.join("\n").replace(/\s*<!--.*?-->/g, ""))))),
-      apply);
+      toast(`✓ Monkey learned ${lines} thing${lines === 1 ? "" : "s"} about you`);
+      out.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } }, `Add ${lines} thing${lines === 1 ? "" : "s"} to Monkey's memory`);
+    const cancel = h("button", { class: "ghost", type: "button", onclick: () => out.replaceChildren() }, "Cancel");
+    // The buttons sit ABOVE the list (testers never found an Apply button at the bottom of a scroll box).
+    out.replaceChildren(
+      h("p", { class: "help" }, `Here's what will be added from ${files.length} file${files.length === 1 ? "" : "s"}. Nothing is saved until you click the yellow button.`),
+      h("div", { class: "field" }, apply, cancel),
+      h("div", { class: "memresults" }, ...files.map((f) => h("div", { class: "memhit" },
+        h("strong", {}, `${f.name}: ${f.action === "new" ? "new" : f.action === "merge" ? `${f.add.length} new line(s)` : "nothing new"}`),
+        ...f.conflicts.map((c) => h("span", { class: "meta" }, `⚠ might clash with what Monkey already knows: “${c.existing}” vs “${c.incoming}” (both kept; fix it in “What Monkey knows”)`)),
+        h("details", {}, h("summary", {}, "show lines"), h("pre", {}, f.add.join("\n").replace(/\s*<!--.*?-->/g, "")))))));
+    out.scrollIntoView({ behavior: "smooth", block: "center" });
   };
-  return h("details", {}, h("summary", {}, "📥 Import context files (e.g. your ChatGPT profile pack)"),
-    h("p", { class: "help" }, "Pick profile.md, preferences.md, projects.md, classes.md. You'll see exactly what changes; your current files are backed up first and you can undo."),
-    h("button", { class: "ghost", type: "button", onclick: preview }, "Choose files and preview…"), out);
+  return h("details", { id: "addNotes" }, h("summary", {}, "📥 Add notes about you (from files)"),
+    h("p", { class: "help" }, "Pick text or .md files about you (like profile.md, classes.md). You'll see what gets added first; your current notes are backed up and you can undo."),
+    h("button", { class: "ghost", type: "button", onclick: preview }, "Choose files…"), out);
 }
 
 function historyControls(s: Record<string, any>) {
@@ -1120,8 +1317,9 @@ function moveToNewPc(): HTMLElement {
     out.textContent = "Packing everything up…";
     const r = await api.export_memory(pw.value, withKeys.checked);
     if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
-    out.replaceChildren(`Saved ${r.path} (${r.mb} MB${r.keys?.length ? `, ${r.keys.length} keys inside` : ", no keys"}). Copy it to a USB drive or your personal Google Drive. `,
-      h("button", { class: "ghost", type: "button", onclick: () => api.open_documents_folder() }, "Open folder"));
+    const size = (r.mb ?? 0) >= 1 ? `${r.mb} MB` : "under 1 MB";
+    out.replaceChildren(`Saved ${r.path} (${size}: your memory, chats, settings, voice${r.keys?.length ? ` and ${r.keys.length} keys` : ""}). Copy it to a USB drive or your personal Google Drive. `,
+      h("button", { class: "ghost", type: "button", onclick: () => { void api.open_documents_folder(); toast("Opened your Documents folder"); } }, "Open folder"));
     toast("Transfer file ready");
   } }, "Export for new PC");
   const importBtn = h("button", { class: "ghost", type: "button", onclick: async () => {
@@ -1157,6 +1355,7 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
   (window as any).__monkeyBooted = true;
   appState = await api.get_state();
   applyLook(appState.settings);
+  applyChrome(appState);
   attachSounds(appState.settings);
   setState("idle");
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
@@ -1165,9 +1364,19 @@ function welcomeAfterMove(t: NonNullable<AppState["transfer"]>): void {
   if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {
-    addMsg("sys", "Welcome! Add your Anthropic and Fish Audio keys in Settings to get started.");
-    openSettings();
+    welcomeEl = addMsg("sys", "Welcome! Paste your Claude key in Settings → Start here to get going (that's the only thing you need).");
+    openSettings("start");
   } else {
     addMsg("sys", "Monkey's ready.");
   }
+  // Whatever you changed in Settings (accounts, schedule, Canvas) shows up on the brief card right away.
+  $<HTMLDialogElement>("#settings").addEventListener("close", () => { void showMorningBrief(true); });
 })();
+
+let welcomeEl: HTMLElement | null = null;
+function updateWelcome() {
+  if (!welcomeEl) return;
+  welcomeEl.textContent = appState.keys.fish
+    ? "You're all set! Ask Monkey anything: \"what's due this week?\""
+    : "You're all set! Ask Monkey anything: \"what's due this week?\" (Optional: add a Fish Audio key in Settings → Start here for Monkey's real voice.)";
+}

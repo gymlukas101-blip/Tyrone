@@ -185,10 +185,16 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
     due_soon: list[dict] = []
     if st == "ok" and board and board.get("source") != "none":
         horizon = now + timedelta(hours=72)
+        overdue: list[dict] = []
         for a in board.get("todo", []):
             d = _due(a)
-            if d and now - timedelta(hours=1) <= d <= horizon and not a.get("done"):
+            if a.get("done") or not d:
+                continue
+            if now - timedelta(hours=1) <= d <= horizon:
                 due_soon.append(a)
+            elif now - timedelta(days=14) <= d < now - timedelta(hours=1):
+                overdue.append(a)                       # still open and past due: testers expected these first
+        overdue.sort(key=_due)
         # grade impact (% of final grade, from Canvas weights) first, then points, then the deadline
         due_soon.sort(key=lambda a: (-(a.get("impact_pct") or 0), -(a.get("points") or 0), _due(a)))
         items = []
@@ -200,6 +206,10 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
             else:
                 pts = "points unknown"
             items.append(f"{a.get('title', '?')} ({a.get('course', '')}) due {_due(a):%a %I:%M %p}, {pts}")
+        if overdue:
+            sections.append(Section("Overdue", "warn", [f"{a.get('title', '?')} ({a.get('course', '')}) was due {_due(a):%a %I:%M %p}"
+                                                         for a in overdue[:5]],
+                                    "Still open. Check them off in Homework if you already turned them in."))
         note = "" if items else "Nothing due in the next 3 days."
         if board.get("source") == "feed":
             note = (note + " " if note else "") + "From the Canvas calendar feed (no points or grades)."
@@ -281,14 +291,15 @@ class MorningRoutine:
                 "today": today["kind"] if today else None,
                 "weekend": DAYS[now.weekday()] not in SCHOOL_DAYS}
 
-    def run(self, now: datetime, trigger: str = "scheduled") -> dict | None:
-        """trigger: 'scheduled' (Task Scheduler / timer) or 'app_open'. Returns the brief dict, or None."""
+    def run(self, now: datetime, trigger: str = "scheduled", rebuild: bool = False) -> dict | None:
+        """trigger: 'scheduled' (Task Scheduler / timer) or 'app_open'. Returns the brief dict, or None.
+        rebuild=True (the app, after you change your setup) refreshes today's brief instead of reusing it."""
         now = now.astimezone(TZ)
         day = now.date()
         if DAYS[day.weekday()] not in SCHOOL_DAYS:
             return None                                                 # no weekend briefs by default
         have = self.cached(day)
-        if have is not None:
+        if have is not None and not (rebuild and trigger == "app_open"):
             return have                                                 # never build (or show as new) twice
         sched = self.schedule()
         if not sched.verified:
