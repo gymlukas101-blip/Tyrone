@@ -108,13 +108,20 @@ async function see() {
 
 async function el(n) {
   const loc = page.locator(`[data-pt="${n}"]`);
+  if (!(await loc.count()) && !(await page.locator("[data-pt]").count())) await page.evaluate(SEE);  // never looked yet
   if (!(await loc.count())) throw new Error(`no control #${n} on screen (look again with /see)`);
   return loc.first();
 }
 
 async function act(pathname, q) {
   const t0 = Date.now();
-  const mut0 = await page.evaluate(() => window.__ptMut).catch(() => 0);
+  const SIG = () => {
+    const modal = [...document.querySelectorAll("dialog[open]")].pop();
+    const root = modal || document.body;
+    const vals = [...root.querySelectorAll("input,select,textarea,details")].map((e) => e.value ?? String(e.open)).join("|");
+    return (modal ? "M:" : "B:") + root.innerText.length + ":" + root.innerText.slice(0, 4000) + vals;
+  };
+  const sig0 = await page.evaluate(SIG).catch(() => "");
   let label = "";
   if (q.get("n")) label = await page.locator(`[data-pt="${q.get("n")}"]`).first().innerText({ timeout: 500 }).catch(() => "");
   let note = "";
@@ -144,7 +151,8 @@ async function act(pathname, q) {
     note = files.length ? `picked ${files.length}` : "cancelled picker";
   } else return null;
   await page.waitForTimeout(450);
-  const changed = (await page.evaluate(() => window.__ptMut).catch(() => 0)) !== mut0;
+  const changed = (await page.evaluate(SIG).catch(() => "")) !== sig0
+    || (await page.evaluate(() => (window.__ptToasts || []).length).catch(() => 0)) > 0;
   const rec = { t: new Date().toISOString(), action: pathname.slice(1), args: Object.fromEntries(q), target: label.slice(0, 60),
                 ms: Date.now() - t0, screen_changed: changed, note };
   const recent = actions.filter((a) => a.action === "click" && a.target === rec.target && Date.now() - Date.parse(a.t) < 4000);
@@ -158,7 +166,7 @@ async function act(pathname, q) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+  const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
   page = await ctx.newPage();
   page.__errs = [];
@@ -172,9 +180,9 @@ async function act(pathname, q) {
       for (const m of muts) for (const n of m.addedNodes) {
         if (n.nodeType === 1 && (n.classList?.contains("toast") || n.id === "toast")) window.__ptToasts.push(n.innerText.trim());
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    }).observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
   });
-  await page.goto(base + "/");
+  await page.goto(base + "/?svg");   // 2D avatar: the 3D one renders at ~1 fps on a CPU-only server and starves the page
   await page.waitForTimeout(4000);
   http.createServer(async (req, res) => {
     const q = new URL(req.url, "http://x");

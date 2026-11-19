@@ -371,8 +371,17 @@ def build_app(data: Path, profile: str, bridge: Bridge):
     class _Listener:                          # idle microphone: testers type instead of talking
         muted, vad, mode = False, object(), "wake"
 
-        def enter_conversation(self, *x, **k):
+        def enter_conversation(self, idle_s=8, *x, **k):
+            """Like the real mic: nobody speaks (no microphone here), so listening ends after the idle time."""
             self.mode = "conversation"
+
+            def silent():
+                if self.mode == "conversation":
+                    self.mode = "wake"
+                    a.end_conversation("silence")
+            t = threading.Timer(float(idle_s or 8), silent)
+            t.daemon = True
+            t.start()
 
         def end_conversation(self, *x, **k):
             self.mode = "wake"
