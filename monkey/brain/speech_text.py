@@ -25,19 +25,37 @@ def speakable(text: str) -> str:
 
 
 _BOUNDARY = re.compile(r"(?<=[.!?])[\"')\]]?\s+|\n{1,}")
+_CLAUSE = re.compile(r"(?<=[,;:—])\s+")
 
 
 class SentenceChunker:
     """Feed streaming text deltas; get back complete sentences to send to TTS."""
 
-    def __init__(self, min_chars: int = 24):
+    def __init__(self, min_chars: int = 24, early_clause: bool = True):
         self.buf = ""
         self.min_chars = min_chars
         self._in_code = False
+        # The first piece of a reply may end at a clause ("Sure, here's what's due") instead of waiting for the whole
+        # sentence: the voice starts sooner and the break falls where a speaker pauses anyway. Only the first piece:
+        # later ones keep whole sentences for the most natural prosody.
+        self.early_clause = early_clause
+        self._emitted = False
 
     def feed(self, delta: str) -> list[str]:
         self.buf += delta
         out: list[str] = []
+        if self.early_clause and not self._emitted and not self._in_code and "```" not in self.buf:
+            for m in _CLAUSE.finditer(self.buf):
+                if _BOUNDARY.search(self.buf[:m.start()]):
+                    break                                 # a sentence ended first: the normal path handles it
+                head = self.buf[:m.end()]
+                if len(head.split()) >= 4 and len(head.strip()) >= 20:
+                    s = speakable(head)
+                    if s:
+                        self.buf = self.buf[m.end():]
+                        self._emitted = True
+                        out.append(s)
+                    break
         while True:
             m = _BOUNDARY.search(self.buf)
             if not m:
@@ -58,6 +76,7 @@ class SentenceChunker:
                 s = speakable(piece)
                 if s:
                     out.append(s)
+                    self._emitted = True
         return out
 
     def flush(self) -> list[str]:

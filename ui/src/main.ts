@@ -873,6 +873,12 @@ async function openSettings(section?: string) {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ end_silence: sel.value }); toast("Saved"); });
           return sel;
         })()),
+        h("div", { class: "field", id: "earlyCommit" }, h("label", {}, (() => {
+          const c = h("input", { type: "checkbox" }) as HTMLInputElement;
+          c.checked = s.early_commit ?? true;
+          c.addEventListener("change", async () => { appState = await api.save_settings({ early_commit: c.checked }); toast("Saved"); });
+          return c;
+        })(), " Answer sooner when I've clearly finished (a question or a short command ends my turn after about half a second; trailing off like “and…” waits longer)")),
         h("div", { class: "field" }, h("span", {}, "Something not working?"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.open_log();

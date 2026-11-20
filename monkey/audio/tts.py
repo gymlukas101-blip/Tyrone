@@ -63,8 +63,12 @@ MONKEY_PREVIEW_TEXT = "Yo, what's good? I got you. Your exam's Thursday at nine,
 
 class FishTTS:
     def __init__(self, api_key_getter, voice_id_getter, model_getter, allow_free=lambda: True,
-                 on_model_change=None):
+                 on_model_change=None, http=None, latency=lambda: "balanced"):
         self._key, self._voice, self._model = api_key_getter, voice_id_getter, model_getter
+        # One kept-alive HTTPS connection for every sentence and turn: a new connection per sentence paid the TCP +
+        # TLS handshake (often 100–300 ms) before every sentence's first audio.
+        self._http = http
+        self._latency = latency                    # "balanced" | "low" (Fish's API schema; A/B before defaulting)
         self._allow_free = allow_free
         self._on_model_change = on_model_change   # persist an automatic paid -> free switch
         self._forced_free = False
@@ -79,13 +83,21 @@ class FishTTS:
         return FREE_MODEL if self._forced_free else m
 
     def _request(self, text: str, model: str):
-        body = {"text": text, "format": "pcm", "sample_rate": TTS_RATE, "latency": "balanced", "normalize": True}
+        mode = self._latency() if callable(self._latency) else "balanced"
+        body = {"text": text, "format": "pcm", "sample_rate": TTS_RATE,
+                "latency": mode if mode in ("balanced", "low", "normal") else "balanced", "normalize": True}
         voice = normalize_voice_id(self._voice())
         if voice:
             body["reference_id"] = voice
         # The model is chosen by this HEADER (a body field is ignored); unknown values fall back to paid s2.1-pro.
         headers = {"Authorization": f"Bearer {self._key()}", "model": model}
-        return httpx.stream("POST", f"{FISH_API}/v1/tts", json=body, headers=headers, timeout=30)
+        return self._client().stream("POST", f"{FISH_API}/v1/tts", json=body, headers=headers, timeout=30)
+
+    def _client(self):
+        if self._http is None:
+            self._http = httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0),
+                                      limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=120))
+        return self._http
 
     def stream_pcm(self, text: str) -> Iterator[np.ndarray]:
         """Yield int16 mono PCM chunks at TTS_RATE as they arrive.

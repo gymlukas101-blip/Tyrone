@@ -159,9 +159,10 @@ def test_fish_paid_402_falls_back_to_free(monkeypatch):
         return _FakeStream(402, b'{"detail":"payment required"}') if headers["model"] == "s2.1-pro" \
             else _FakeStream(200, b"\x01\x00\x02\x00")
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    import types
+
     f = tts.FishTTS(lambda: "k", lambda: "https://fish.audio/m/4a396e7e91a640a2b1e0f06249cbcd14/", lambda: "s2.1-pro",
-                    on_model_change=switched.append)
+                    on_model_change=switched.append, http=types.SimpleNamespace(stream=fake_stream))
     chunks = list(f.stream_pcm("hi"))
     assert seen == ["s2.1-pro", "s2.1-pro-free"] and switched == ["s2.1-pro-free"] and len(chunks) == 1
     assert f.model() == "s2.1-pro-free"
@@ -173,9 +174,11 @@ def test_fish_429_retries_then_raises(monkeypatch):
     from monkey.audio import tts
 
     calls = []
-    monkeypatch.setattr(httpx, "stream", lambda *a, **k: calls.append(1) or _FakeStream(429, b"busy"))
+    import types
+
     monkeypatch.setattr("time.sleep", lambda s: None)
-    f = tts.FishTTS(lambda: "k", lambda: "", lambda: "s2.1-pro-free")
+    f = tts.FishTTS(lambda: "k", lambda: "", lambda: "s2.1-pro-free",
+                    http=types.SimpleNamespace(stream=lambda *a, **k: calls.append(1) or _FakeStream(429, b"busy")))
     import pytest
     with pytest.raises(RuntimeError, match="429"):
         list(f.stream_pcm("hi"))
