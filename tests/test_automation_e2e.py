@@ -50,3 +50,11 @@ def test_real_platform_shapes_sign_in_canvas_player_iframe_quiz():
     assert any(a.startswith("allowed localhost") for a in r["user_acts"])
     assert any(a.startswith("said start") for a in r["user_acts"]) and any(a.startswith("said submit") for a in r["user_acts"])
     assert not r["unauthorized"]
+
+
+
+def test_rejected_quiz_submit_goes_back_through_the_questions():
+    """Wrong picks on a quiz page → the site rejects the submit → Monkey re-asks each one (showing your pick)."""
+    r = run_one({"quizpage"}, media=1.0, seed=16, timeout=220, relay=True, wrong_first=True)
+    assert r["verified_success"], r
+    assert sum(1 for a in r["user_acts"] if a.startswith("said submit")) == 2

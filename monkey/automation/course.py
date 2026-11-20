@@ -66,6 +66,8 @@ LOCKED = re.compile(r"hasn't been unlocked yet|is locked until|lessons must be c
                     r"must pass quiz before continuing|currently unavailable", re.I)
 QUIZ_START = re.compile(r"^\W*(take the quiz|take the quiz again|resume quiz|start quiz|begin quiz|start attempt|"
                         r"take quiz|start test|start exam|begin)\W*$", re.I)
+QUIZ_BAD = re.compile(r"not all correct|try again|incorrect|not quite|you scored \d+ (?:out )?of \d+|did not pass|"
+                      r"must pass", re.I)
 REQ_ITEMS = re.compile(r"\b(\d+) of (\d+) required items\b", re.I)
 
 
@@ -221,15 +223,29 @@ class CourseSkill:
             if e.role in ("radio", "checkbox") and e.name:
                 groups.setdefault(e.qkey or "_", []).append(e)
         if len(groups) > 1:                                      # a quiz page: one question at a time, then submit
+            all_answered = all(any(e.checked for e in items) for items in groups.values())
+            if all_answered and memo.get("quiz_submitted") and QUIZ_BAD.search(obs.text):
+                memo["quiz_submitted"] = False                    # the site didn't accept it: go through them again
+                memo["quiz_reask"] = list(groups)
+                memo["quiz_failures"] = memo.get("quiz_failures", 0) + 1
+                if memo["quiz_failures"] >= 3:
+                    memo["quiz_reask"] = []
+                    return Step("user", user_kind="user_turn", wait_change=True, timeout_s=1800,
+                                subgoal="the quiz isn't accepted",
+                                message="The site still doesn't accept the answers after 3 tries. Take a look yourself.")
+            reask = memo.get("quiz_reask") or []
             for key, items in groups.items():
-                if not any(e.checked for e in items):
+                if key in reask or not any(e.checked for e in items):
                     opts = [e.name for e in items]
                     qtext = _clean_q(items[0].qtext) or question_text(obs)
                     if len(opts) <= 8:
                         n = list(groups).index(key) + 1
-                        return Step("user", user_kind="question", wait_change=True, timeout_s=1800,
+                        cur = next((chr(65 + i) for i, e in enumerate(items) if e.checked), "")
+                        again = f"The site says not all are right. You picked {cur}; keep it or pick again. " \
+                            if key in reask and cur else ""
+                        return Step("user", user_kind="question", wait_change=key not in reask, timeout_s=1800,
                                     subgoal=f"question {n} of {len(groups)}",
-                                    message=f"Question {n} of {len(groups)}: {qtext} " +
+                                    message=f"{again}Question {n} of {len(groups)}: {qtext} " +
                                             " ".join(f"{chr(65 + i)}) {o}." for i, o in enumerate(opts)) +
                                             " Say or type a letter.",
                                     info={"question": qtext, "options": opts, "check": "", "group": key})

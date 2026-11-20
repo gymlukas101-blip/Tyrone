@@ -562,6 +562,7 @@ class TaskManager:
             btn = next((e for e in obs.elements if e.role in ("button", "link") and e.name == step.info.get("button")
                         and not e.disabled), None)
             if btn is not None and click_granted(btn, "submit"):
+                memo["quiz_submitted"] = (step.info.get("word") or "submit") == "submit"
                 t.checkpoint("submitted", url, "you said submit", {"count": step.info.get("count")})
                 s.wait_change(obs.signature, 8, lambda: self._should_stop(f))
             return
@@ -575,6 +576,11 @@ class TaskManager:
         group = step.info.get("group")
         el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opt
                    and (not group or e.qkey == group)), None)
+        if group and group in (memo.get("quiz_reask") or []):
+            memo["quiz_reask"].remove(group)                   # answered again (same or different pick)
+        if el is not None and el.checked:
+            t.checkpoint("answered", url, f"you kept {chr(65 + r['index'])}", {"choice": chr(65 + r["index"])})
+            return
         if el is None or not click_granted(el, "answer"):
             t.error("answer_failed", opt)
             return
