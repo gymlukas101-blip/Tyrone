@@ -7,6 +7,11 @@ import time
 from pathlib import Path
 
 import pytest
+import importlib.util
+
+# Tests that drive a real browser need Playwright (the Linux unit-test CI job doesn't install it; ui-browser and the
+# Windows bench do). Same rule as the other browser tests: skip, don't error, when it's missing.
+needs_playwright = pytest.mark.skipif(importlib.util.find_spec("playwright") is None, reason="needs Playwright")
 
 from monkey.automation.computer import Computer, Trace
 from monkey.automation.computer.coords import BrowserWindowGeometry, ImageMap, convert
@@ -127,6 +132,7 @@ from tools.computer_bench.scripts import SCRIPTS  # noqa: E402
 
 
 @pytest.mark.parametrize("name", list(SCRIPTS))
+@needs_playwright
 def test_browser_fixture_reaches_the_servers_end_state(site, name):
     from tools.computer_bench.run_browser import run_fixture
 
@@ -147,6 +153,7 @@ def test_browser_fixture_reaches_the_servers_end_state(site, name):
         assert r["resumed"] and r["server"]["saved"] == {"name": "Ada", "year": "2027"}
 
 
+@needs_playwright
 def test_hybrid_browser_app_browser_without_losing_state(tmp_path):
     from tools.computer_bench import run_hybrid
 
@@ -177,6 +184,7 @@ def test_intents_without_a_completed_op_are_reported_as_uncertain():
     assert c.ledger == {"k2": "s2"}                                   # rebuilt from checkpoints after a restart
 
 
+@needs_playwright
 def test_action_cache_replays_a_verified_step_without_a_model_call(site, tmp_path):
     from monkey.automation.browser import BrowserSession
     from monkey.automation.computer.cache import ActionCache
@@ -215,6 +223,7 @@ def test_action_cache_replays_a_verified_step_without_a_model_call(site, tmp_pat
 
 
 # ---------------------------------------------------------------------------------------------- TaskManager
+@needs_playwright
 def test_general_task_runs_through_the_task_manager_with_approvals(site, tmp_path):
     from monkey.automation.browser import BrowserSession
     from monkey.automation.manager import TaskManager
