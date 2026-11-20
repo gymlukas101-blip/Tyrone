@@ -1,0 +1,1272 @@
+{
+ "_about": "Sprint 1 candidates. B and C per cue; sources relative to the sfx_sources dir (see docs/audio/SOURCE_LEDGER.md). target_db = the shipped cue's median loudest-10 ms level, so the engine's per-cue trims stay valid.",
+ "ui_click@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/click-soft-1.wav",
+      "sha256": "c4cf09b03f355afe8eac5feb9a290f9caf95157174dc9901291aba62f85fdf46",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/click-soft-2.wav",
+      "sha256": "893f52a37be395e3a6538c1f217a016d536da65016aaedecb4127470769e4ae3",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/click-soft-3.wav",
+      "sha256": "726ebd05a86c05d1bfad9655e31ab6054151665454b1ac2491f1d584d55085ca",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/click-soft-4.wav",
+      "sha256": "2f4d85327c5009b1ba7219fc1aa013429d395442175efa4f3773e6a26aa8c4af",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -8.7,
+  "max_ms": 150,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 20
+ },
+ "ui_click@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney-ui-audio/addons/kenney_ui_audio/click1.wav",
+      "sha256": "dd90b97f38b0ec7d52161d7c3bf8d61a66655766fd0af06439963351b4853a83",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney-ui-audio/addons/kenney_ui_audio/click2.wav",
+      "sha256": "a8b35cb35ff45738a9d7fe008490ad21a3ad30417dadd544a435d8b0ea84d841",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney-ui-audio/addons/kenney_ui_audio/click3.wav",
+      "sha256": "8d0676a5bcbfedad3e65b7b73e93a044216d7f192c99a3a05caf21e2aa4a8dda",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney-ui-audio/addons/kenney_ui_audio/click5.wav",
+      "sha256": "8a6f69fef5d241794a98d0b71baf0c7f51743c9e54ee4dd010a0323a8edeca83",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -8.7,
+  "max_ms": 150,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 20
+ },
+ "check@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/success-1.wav",
+      "sha256": "22ef4638aa8c62e1aa555bf01da50effbe27018325bc45ec807d377b19901f74",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/success-2.wav",
+      "sha256": "19886ff3c14098e51cf23f180561e3296038608dc7479ecde3a6892cf1dd0cba",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/success-3.wav",
+      "sha256": "5b16c97e846ab21b1f7a6b2b594599431375117a0c643b5704f97bdb062ca2b1",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/success-4.wav",
+      "sha256": "1b0788a8233bcd23620bbc7d2c5784ca9de02d0b82f0f31f19e34e3467f3014f",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -9.5,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "check@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/confirmation_001.ogg",
+      "sha256": "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/confirmation_002.ogg",
+      "sha256": "33b17a9a9a2397c62b285c52c33a907fdffb476909c99e42dde603f6a7a8b12c",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/confirmation_003.ogg",
+      "sha256": "3091bf0be0497f825769ee0733ca7bdc3bcd59bd6c6e8f2ba8f93d580ff38022",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/confirmation_004.ogg",
+      "sha256": "568967a3d9f8a8f6af54ea01729c4882284308f2a27d78c07ffd7ee0d6951661",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -9.5,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_open@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/open_001.ogg",
+      "sha256": "a27c6bb0df7da1e6af5dd5937593c98bc58b6e513f42fe6a3254cd6a6949c648",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/open_002.ogg",
+      "sha256": "24ff224fe2c09c6aed1b41249825382dc74cf324b887ff279d8494912ce2beee",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/open_003.ogg",
+      "sha256": "bcdca6b5c9c33aa15ca3fb18a1fa8d98a01b528b85be08c5a610e57c75fc022d",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/open_004.ogg",
+      "sha256": "4e02b8287bc4d9e7bf7a889cb9e48613c8eb22a310dfb0bf29c2bfd0a1e4bea5",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -10.4,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_open@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-open-1.wav",
+      "sha256": "970a62867d7178b8f777708ba595e87fc798c172204c088f3a4a7978b69b56a8",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-open-2.wav",
+      "sha256": "de8d2cb916fe772d98d13bf440236861b753affe903d44c7a72a014919ff050d",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-open-3.wav",
+      "sha256": "1aa93a6e4e895ea1059b27af970d92746f888a28115b438993b18d240f30c016",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-open-4.wav",
+      "sha256": "9cb0d849a98640c6e35908efed85210199de7487f03fbfe44f64195bb0351f90",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -10.4,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_close@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/close_001.ogg",
+      "sha256": "44af8249b933e0fd35ec957a638bb1a0b01f85b53fbe9674bf77bd3ca3168ef4",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/close_002.ogg",
+      "sha256": "bc4279d2bb2bf86592473eab6a8eab55e51b54a8619315000dbd780a83b102d8",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/close_003.ogg",
+      "sha256": "39a1a7f3bc001766c1881841e9903c6b16f5a10b5666e0791d7f6444677d8b05",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/close_004.ogg",
+      "sha256": "41b41e01ac75f4bc5a9c8dc3b0de744fa7f877757463692783c12a8ae4bfae6b",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -7.0,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_close@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-close-1.wav",
+      "sha256": "b888bc69474f281421fd868e3b1f6a44888bdd7db58429441a17f0d18bc97a57",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-close-2.wav",
+      "sha256": "ee7e43291e07579bddff60d85524363965c34854c27264e588d8b70469f1cad7",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-close-3.wav",
+      "sha256": "c1461190f7dddd157b15a3848293d3ebc2ce01cfb4f1859a72282754dc1750ed",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/menu-close-4.wav",
+      "sha256": "4019552f17dfaaba9864f79ee85d9e2e54ca951eae331936ef1a253c9da28262",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -7.0,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_error@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/deny-1.wav",
+      "sha256": "766d4a178cfc1cd40df4ebaf41cd34fd73c9b346326139efbb38c98a53e51354",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/deny-2.wav",
+      "sha256": "7f5ce22fc92b46e7f11fd2c3cfd599fdc7ad1e2eeaf67b5c420df5956810e3cc",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/deny-3.wav",
+      "sha256": "9cb2e07fe91503b1e8b0d7a4ccc34b5bab2da574c48b1c5ce7c2940843352c24",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/deny-4.wav",
+      "sha256": "3499b096504f9e170f81d2d4ad5849070d0897cfe4e3298a07687c57c375c051",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -8.0,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "ui_error@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/error_001.ogg",
+      "sha256": "46e67425d16339772e8d328fb36a49426c9467418686e11beeb71ff84b0f6433",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/error_002.ogg",
+      "sha256": "76810ec365f41078fd0507101da5bb7b8730fe011dde43908329fdabd8575e79",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/error_003.ogg",
+      "sha256": "885b28175c7b511118bcffab95675b48bbac9005cf6514656ebdad979276b3ab",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_interfacesounds/Audio/error_004.ogg",
+      "sha256": "0b574cea597d96507e782ae9764f88482ce49f46e931e57054bf7150047f2d69",
+      "hp_hz": 120,
+      "fade_out_ms": 15
+     }
+    ]
+   }
+  ],
+  "target_db": -8.0,
+  "max_ms": 350,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 40
+ },
+ "notify@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/notify-1.wav",
+      "sha256": "30ab591d44a916b1b15401ae020759cd9d41781287e7529623e78c80863f7574",
+      "hp_hz": 100
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/notify-2.wav",
+      "sha256": "7311d9d8b314d224bf87abb1fb4980e5c6369abc9d698278ad1c45445cce80c7",
+      "hp_hz": 100
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/notify-3.wav",
+      "sha256": "b680a89e78211f0be1680f416ee6c9ec6f23208f7b69f0b27d6f70d863bc8e74",
+      "hp_hz": 100
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/ui/notify-4.wav",
+      "sha256": "b93e81059125b3b4c54b5253599ca6b6597cca7ed93c33893b85a78ead130348",
+      "hp_hz": 100
+     }
+    ]
+   }
+  ],
+  "target_db": -13.9,
+  "max_ms": 600,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "notify@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "uisfx/packages/uisfx/sounds/organic/notification.ogg",
+      "sha256": "b92c946c7840b831c80e3c38930c77bd2ffa97ec08662a533a45c0ddb3822b6c",
+      "hp_hz": 100,
+      "pitch": 1.0
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "uisfx/packages/uisfx/sounds/organic/notification.ogg",
+      "sha256": "b92c946c7840b831c80e3c38930c77bd2ffa97ec08662a533a45c0ddb3822b6c",
+      "hp_hz": 100,
+      "pitch": 0.97
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "uisfx/packages/uisfx/sounds/organic/notification.ogg",
+      "sha256": "b92c946c7840b831c80e3c38930c77bd2ffa97ec08662a533a45c0ddb3822b6c",
+      "hp_hz": 100,
+      "pitch": 1.03
+     }
+    ]
+   }
+  ],
+  "target_db": -13.9,
+  "max_ms": 600,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "thump@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_000.ogg",
+      "sha256": "49e7ca88743fca974bb8676ea138b751cfd8f9033b5e7af8736c2a215d6edbc1",
+      "hp_hz": 40
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_001.ogg",
+      "sha256": "4d0096364ba9e46119d2ff6df493fdc101bd2e1efae061da5e5f77a53b3fdcb6",
+      "hp_hz": 40
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_002.ogg",
+      "sha256": "d130ae541951243d3f6ed963d0057450a445ffe117fbf9a084d34eb1635cb563",
+      "hp_hz": 40
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_003.ogg",
+      "sha256": "d00286a2dc62ee5cb4d42bf56120e7050a855f69e655fc1294410aadd337eba3",
+      "hp_hz": 40
+     }
+    ]
+   }
+  ],
+  "target_db": -9.1,
+  "max_ms": 450,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "thump@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_medium_000.ogg",
+      "sha256": "7d3ba0bb5e60a11b5d3e558c141303dcf494256675fbf753c0d252d2cf0481e3",
+      "hp_hz": 40,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_medium_001.ogg",
+      "sha256": "7642a4fd43e547afe4f7adfadb3dabb681c0ff512f52c1674bae30a726841faf",
+      "hp_hz": 40,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_medium_002.ogg",
+      "sha256": "5069e3571a77d7f7aae9ef71d0364aa245fb7d64a7c8cc9956f221d03088c089",
+      "hp_hz": 40,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_medium_003.ogg",
+      "sha256": "5c4a1f35fde7e14046931da7bc3d1b23736541b7190ba107e08a379c4ca43cd6",
+      "hp_hz": 40,
+      "pitch": 0.85
+     }
+    ]
+   }
+  ],
+  "target_db": -9.1,
+  "max_ms": 450,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "chest_thump@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_000.ogg",
+      "sha256": "49e7ca88743fca974bb8676ea138b751cfd8f9033b5e7af8736c2a215d6edbc1",
+      "hp_hz": 50,
+      "pitch": 0.9
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_000.ogg",
+      "sha256": "b33a8f14068aec24ec69ba85e5e87fdc41228975f6a1a3e44a6e7d6fc3d9f8d8",
+      "gain_db": -9,
+      "lp_hz": 3500
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_001.ogg",
+      "sha256": "4d0096364ba9e46119d2ff6df493fdc101bd2e1efae061da5e5f77a53b3fdcb6",
+      "hp_hz": 50,
+      "pitch": 0.9
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_001.ogg",
+      "sha256": "f92f5cb6ba4ff2766497292ffd90865654317eeca976f5652e0708dbdcdc0dd9",
+      "gain_db": -9,
+      "lp_hz": 3500
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_002.ogg",
+      "sha256": "d130ae541951243d3f6ed963d0057450a445ffe117fbf9a084d34eb1635cb563",
+      "hp_hz": 50,
+      "pitch": 0.9
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_002.ogg",
+      "sha256": "7993dd4c156b9979ad69f17be5ebe31850b16039a3857f8477141be54dfee1b3",
+      "gain_db": -9,
+      "lp_hz": 3500
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_003.ogg",
+      "sha256": "d00286a2dc62ee5cb4d42bf56120e7050a855f69e655fc1294410aadd337eba3",
+      "hp_hz": 50,
+      "pitch": 0.9
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_003.ogg",
+      "sha256": "4ab53b26f4ea575120dcc1348526c9e0db2afc6af7a442aa0489bdead2ca80b6",
+      "gain_db": -9,
+      "lp_hz": 3500
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_004.ogg",
+      "sha256": "e008f0b6b14f62339c8fe9f9b45cbd6317ba4f66604c4899053b8017020a36f0",
+      "hp_hz": 50,
+      "pitch": 0.9
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_004.ogg",
+      "sha256": "f4c0c3eb8ab6517583b8218ed03f28923d1b687379aab4c1d5a6d4c10cf8e500",
+      "gain_db": -9,
+      "lp_hz": 3500
+     }
+    ]
+   }
+  ],
+  "target_db": -8.1,
+  "max_ms": 450,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "chest_thump@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_000.ogg",
+      "sha256": "b33a8f14068aec24ec69ba85e5e87fdc41228975f6a1a3e44a6e7d6fc3d9f8d8",
+      "hp_hz": 50,
+      "lp_hz": 5000,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_001.ogg",
+      "sha256": "f92f5cb6ba4ff2766497292ffd90865654317eeca976f5652e0708dbdcdc0dd9",
+      "hp_hz": 50,
+      "lp_hz": 5000,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_002.ogg",
+      "sha256": "7993dd4c156b9979ad69f17be5ebe31850b16039a3857f8477141be54dfee1b3",
+      "hp_hz": 50,
+      "lp_hz": 5000,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_003.ogg",
+      "sha256": "4ab53b26f4ea575120dcc1348526c9e0db2afc6af7a442aa0489bdead2ca80b6",
+      "hp_hz": 50,
+      "lp_hz": 5000,
+      "pitch": 0.85
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactPunch_heavy_004.ogg",
+      "sha256": "f4c0c3eb8ab6517583b8218ed03f28923d1b687379aab4c1d5a6d4c10cf8e500",
+      "hp_hz": 50,
+      "lp_hz": 5000,
+      "pitch": 0.85
+     }
+    ]
+   }
+  ],
+  "target_db": -8.1,
+  "max_ms": 450,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "flop@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_000.ogg",
+      "sha256": "49e7ca88743fca974bb8676ea138b751cfd8f9033b5e7af8736c2a215d6edbc1",
+      "hp_hz": 40,
+      "pitch": 0.8
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth1.ogg",
+      "sha256": "ddb93a3671233f95da0e0b10367f082f7eb42fa6caaddcf776410aa8833c747d",
+      "gain_db": -6,
+      "at_ms": 25,
+      "hp_hz": 200
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_001.ogg",
+      "sha256": "4d0096364ba9e46119d2ff6df493fdc101bd2e1efae061da5e5f77a53b3fdcb6",
+      "hp_hz": 40,
+      "pitch": 0.8
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth2.ogg",
+      "sha256": "8a7451193c38bc05483aec25dd193e163a15d44cf7fff04ac7912573231b0201",
+      "gain_db": -6,
+      "at_ms": 25,
+      "hp_hz": 200
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_impactsounds/Audio/impactSoft_heavy_002.ogg",
+      "sha256": "d130ae541951243d3f6ed963d0057450a445ffe117fbf9a084d34eb1635cb563",
+      "hp_hz": 40,
+      "pitch": 0.8
+     },
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth3.ogg",
+      "sha256": "a48632d17a4f1416541d261a32a31612e01267144c407fa3ecab3ff410f0085b",
+      "gain_db": -6,
+      "at_ms": 25,
+      "hp_hz": 200
+     }
+    ]
+   }
+  ],
+  "target_db": -6.6,
+  "max_ms": 700,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 120
+ },
+ "flop@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/hit/body-fall-1.wav",
+      "sha256": "26c447c3cdbdf8fbdaf43d52f66c38309b4e0fdd8547ae935d52981f002508db",
+      "hp_hz": 40
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/hit/body-fall-2.wav",
+      "sha256": "3a75d90f8205b356974c7ee7aafd1a5dcae6928fce7bbad38e53ed7a5f1d43d2",
+      "hp_hz": 40
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/hit/body-fall-3.wav",
+      "sha256": "4e1d0d8058484686dcab192dcfca04095f53b9cc38f554012f4effdd704f133e",
+      "hp_hz": 40
+     }
+    ]
+   }
+  ],
+  "target_db": -6.6,
+  "max_ms": 700,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 120
+ },
+ "rustle@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth1.ogg",
+      "sha256": "ddb93a3671233f95da0e0b10367f082f7eb42fa6caaddcf776410aa8833c747d",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth2.ogg",
+      "sha256": "8a7451193c38bc05483aec25dd193e163a15d44cf7fff04ac7912573231b0201",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth3.ogg",
+      "sha256": "a48632d17a4f1416541d261a32a31612e01267144c407fa3ecab3ff410f0085b",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "kenney.nl-ETdoFresh/kenney_rpgaudio/Audio/cloth4.ogg",
+      "sha256": "e7ab9a6c4466dea874196c61f59bf1da05cfe58748f42fadd695d441a154a99b",
+      "hp_hz": 150
+     }
+    ]
+   }
+  ],
+  "target_db": -22.9,
+  "max_ms": 750,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 120
+ },
+ "rustle@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/nature/leaf-rustle-1.wav",
+      "sha256": "4be4f144420c21a87fe109dd0fcaca2f215862ccaea81531d67c10a590cded4a",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/nature/leaf-rustle-2.wav",
+      "sha256": "1c9ca0d207b2462f92b5dba4daa2f97cc22acde533b0697e44d7d9b64d14ebb6",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/nature/leaf-rustle-3.wav",
+      "sha256": "6ba415ba195d8ddb3991f37cf777eb9a95947be2526f43aa2e18708e4b95717f",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/nature/leaf-rustle-4.wav",
+      "sha256": "63111ff5504fb62abff3c3cb9ff9073bae7e7876708a344c4c8a6ad4b153d674",
+      "hp_hz": 150
+     }
+    ]
+   }
+  ],
+  "target_db": -22.9,
+  "max_ms": 750,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 120
+ },
+ "boing@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/spring-1.wav",
+      "sha256": "e41825a6088997644bbb0ed7c2787b3229322f05c85bad5324569ae2134f822f",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/spring-2.wav",
+      "sha256": "eb47b5870d5a2c21a897bc7682e1c950060b0eb7801b6ba14aeaffb65b2a2df5",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/spring-3.wav",
+      "sha256": "aa48adaba587afe96174c98b8bbceba5c63c6a282a969cdf903b3fd018fb7459",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/spring-4.wav",
+      "sha256": "cd1b50f08a2bd15f2df4abfa336ea088ac0b5d01dbe86788218d7e0297cda17c",
+      "hp_hz": 80
+     }
+    ]
+   }
+  ],
+  "target_db": -10.8,
+  "max_ms": 600,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "boing@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/jump-cartoon-1.wav",
+      "sha256": "bc6395d5fb50784e841d6a3ac010ebadc44a886cf4a56eaf7304f59d5a539942",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/jump-cartoon-2.wav",
+      "sha256": "f409a96e1e5f96336c0923d60e847e63e771a88ad9c7b98a09047e444a8b0103",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/jump-cartoon-3.wav",
+      "sha256": "3cc4364273e46ed33b0d195c8ff848ada649b59d47f716d65e93e50e8e2f7cda",
+      "hp_hz": 80
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/jump/jump-cartoon-4.wav",
+      "sha256": "a49c210d78f9702a7e4731d5d261e2c3c10c2d3754f17df41414571083286874",
+      "hp_hz": 80
+     }
+    ]
+   }
+  ],
+  "target_db": -10.8,
+  "max_ms": 600,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "whoosh@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swipes/swipe-fast-soft.wav",
+      "sha256": "aeafbf705dd62cd55d55b3a99e14bf508d09cbd244b004da0c40d3f9bf8377a8",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swipes/swipe-medium-soft.wav",
+      "sha256": "283b80027d256476b872fe711d116c5c7ac0f2c1095953bc6d0458c85276e5eb",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swipes/swipe-fast-firm.wav",
+      "sha256": "0a3583738e28e72309aa25902d6ad57fc891f71ec94ee3a56cc26b514a1a6554",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swipes/swipe-medium-firm.wav",
+      "sha256": "e446cca2958bba55429d66dbfb7397bd1b448a16fa313ecc1a546f45a6385518",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swipes/swipe-slow-soft.wav",
+      "sha256": "037b1cde932e2c2d390143822b5d86cbeb0377924868ccec53a22aaad03f9894",
+      "hp_hz": 150
+     }
+    ]
+   }
+  ],
+  "target_db": -10.1,
+  "max_ms": 400,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "whoosh@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swishes-and-zips/swish-hard.wav",
+      "sha256": "9001fbba7c50c7a3a60841fc35936f59b53d42257cb505cf1f16d40963bb5a9f",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swishes-and-zips/swish-medium.wav",
+      "sha256": "41a97a849f311cdb0da2de185386fc88e74db2df54d214bc8d9ff931b5e83c9c",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swishes-and-zips/swish-soft.wav",
+      "sha256": "c18c581c43ac848b10c946e2a3c402b79370d99b057c2399b832d39f9d9236ab",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swishes-and-zips/zip-in-hard.wav",
+      "sha256": "cc7ac891e6c5859ded16b886445e2891aad0067a8fce5c53e1153c661eccd219",
+      "hp_hz": 150
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/swishes-and-zips/zip-in-medium.wav",
+      "sha256": "9df62ced1c90dc50943829c8fdd8e804a7add2d6e92b4b219a586f066dedf559",
+      "hp_hz": 150
+     }
+    ]
+   }
+  ],
+  "target_db": -10.1,
+  "max_ms": 400,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 80
+ },
+ "sparkle@B": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/shimmers/shimmer-short-sparkle.wav",
+      "sha256": "e0a5e97ece9d4787bb6bd50fd88546d673f96c4b46938de0fb82b43b24b28af5",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/shimmers/shimmer-short-bright.wav",
+      "sha256": "58e22873154c4c993387b15754ddfedb44c6c676b648633483a29a46ff9577a1",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/shimmers/shimmer-short-soft.wav",
+      "sha256": "c0cdc8cc61e6b1dd0b16732161ff3967ad6242e2f673957bef88a49805c6286e",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "wyzowl-sfx-kit/sounds/shimmers/shimmer-medium-sparkle.wav",
+      "sha256": "26c108bdb2e41b70a1b57f2c4700b40bce7d0e78a327e6b5e3bf0355d0510263",
+      "hp_hz": 300
+     }
+    ]
+   }
+  ],
+  "target_db": -14.4,
+  "max_ms": 1000,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 200
+ },
+ "sparkle@C": {
+  "takes": [
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/magic/sparkle-1.wav",
+      "sha256": "0e595aaf3267aa8632b30823e1abc6ee06aefe23bde9ec65cb6a994dbf8feca8",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/magic/sparkle-2.wav",
+      "sha256": "0f995adb3ffddba8065fd5f8ea76790925816cc06056a981d056cb4a9010874a",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/magic/sparkle-3.wav",
+      "sha256": "0f5bba28946875d6bbf21669fb1f9198bf5e9a3c1c63b4462c1173f36d190927",
+      "hp_hz": 300
+     }
+    ]
+   },
+   {
+    "layers": [
+     {
+      "src": "dl_plinkfx/x/magic/sparkle-4.wav",
+      "sha256": "959add587e829fe37132ff3b87344084c3d0e4f126f099993303d1da9e29faa9",
+      "hp_hz": 300
+     }
+    ]
+   }
+  ],
+  "target_db": -14.4,
+  "max_ms": 1000,
+  "ceiling_dbtp": -3,
+  "tail_fade_ms": 200
+ }
+}

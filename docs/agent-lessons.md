@@ -23,6 +23,8 @@ How it's kept up to date:
 - **Before shipping a filter that drops or refuses user input (echo guard, conflict check, "is this a correction"), test it against legitimate near-misses first.** Prefer a hint over a refusal. *Why:* the first echo guard ignored "the short version", and the first conflict check refused "plays piano" next to "plays guitar".
 
 ### Testing
+- **Measure audio processing in the real engine before trusting its settings.** *Why:* the Web Audio `DynamicsCompressor` adds automatic makeup gain (+2.9 dB in Chromium), so a "safety limiter" quietly made every sound louder until an OfflineAudioContext render caught it (`tools/sfx/mixcheck.py`).
+- **Search for a cue's real call sites, not its name.** *Why:* a plain text search counted the CSS class `reward` and the settings id `check` as sound triggers; only lines that also involve `sfx` count.
 - **Serve `ui/dist` over HTTP in Playwright, never `file://`.** *Why:* `file://` blocks fetching `monkey.glb`, so the 3D avatar silently falls back to SVG and tests pass against the wrong renderer.
 - **Browser tests wait for the app to finish starting (`window.__monkeyReady`), not just for the event hook,** and poll for an expected state instead of sleeping a fixed time. *Why:* boot's late `setState("idle")` overwrote test events on slower CI machines.
 - **Software-rendered Chromium draws a few fps.** Assert which render tier was chosen and its target, not measured frame rates. *Why:* fps assertions were meaningless and flaky here.
@@ -36,6 +38,8 @@ How it's kept up to date:
 ### Cloud container
 - **`huggingface.co` is blocked here,** so Whisper/Pocket model timings must come from the Dell (turn traces, Check everything → Speed). *Why:* a benchmark attempt failed on the proxy.
 - **The GitHub API (`gh api`) only reaches this repo.** Read other repos' tags with `git ls-remote`. *Why:* pinning action SHAs.
+- **GraphQL is blocked here, so `gh release list` and `gh pr list` fail with 403.** Use REST: `gh api repos/OWNER/REPO/releases?per_page=2`. *Why:* a release check reported a failure for a run that was all green.
+- **A test that imports a library needs it in the lock that CI's job installs (`requirements/linux-test-py312.lock`, via `requirements/test-extras.in` + `tools/lock.sh`).** Run the job's own install line in a fresh venv before pushing a new test. *Why:* the sound-off playtest passed locally and failed in CI on a missing Pillow.
 
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
