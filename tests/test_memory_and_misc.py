@@ -261,4 +261,5 @@ def test_speaker_watchdog_resets_stuck_speaking(monkeypatch):
         if not sp.speaking:
             break
         time.sleep(0.1)
+    sp.wait_idle_notified()
     assert not sp.speaking and states[-1] is False and sp._pending == 0

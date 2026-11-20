@@ -895,7 +895,13 @@ async function openSettings(section?: string) {
           sel.value = s.brain_profile ?? "best";
           sel.addEventListener("change", async () => { appState = await api.save_settings({ brain_profile: sel.value }); toast("Saved"); });
           return sel;
-        })())),
+        })()),
+        h("div", { class: "field", id: "traceText" }, h("label", {}, (() => {
+          const c = h("input", { type: "checkbox" }) as HTMLInputElement;
+          c.checked = !!s.trace_text;
+          c.addEventListener("change", async () => { appState = await api.save_settings({ trace_text: c.checked }); toast("Saved"); });
+          return c;
+        })(), " Keep what I ask in local traces (on this PC only; lets Claude check routing on your own requests)"))),
       h("section", {}, h("h4", {}, "Look & feel"),
         h("p", { class: "help" }, "How much Monkey animates and makes noise. Auto follows Windows' “Animation effects” setting. " +
           "Calm keeps the fun but quieter and with fewer effects; Minimal turns off idle antics and sound effects."),
@@ -1119,7 +1125,7 @@ const FIX_LABEL: Record<string, string> = { start: "Add Claude key", sound: "Ope
   accounts: "Open Accounts", advanced: "Open Advanced", memory: "See what Monkey knows", brief: "Set class times" };
 const FIX_SECTION: Record<string, string> = { Brain: "start", Voice: "sound", Listening: "feel", Google: "accounts",
   Calendar: "accounts", Canvas: "accounts", Outlook: "accounts", Garmin: "advanced", Memory: "memory",
-  "Morning brief": "brief", Budget: "advanced", App: "feel" };
+  "Morning brief": "brief", Budget: "advanced", App: "feel", Speed: "sound" };
 function healthEvent(p: any) {
   const out = document.getElementById("checkAllOut");
   if (!out) return;

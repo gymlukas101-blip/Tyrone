@@ -137,6 +137,12 @@ def repair_history(history: list[dict]) -> tuple[list[dict], bool]:
     return out, changed
 
 
+def _route_kind(reason: str) -> str:
+    """A label for how the route was chosen ("rule", "sticky", "classifier", ...), never the request text."""
+    head = re.split(r"[:(\-–—]", reason or "", maxsplit=1)[0].strip().lower()
+    return head[:32] or "unknown"
+
+
 def _out_of_credits(exc: Exception) -> bool:
     text = f"{getattr(exc, 'message', '')} {exc}".lower()
     return "credit balance" in text or ("billing" in text and "too low" in text)
@@ -192,7 +198,16 @@ class Agent:
         self.on_workspace_error: Callable[[], bool] | None = None   # app hook: find + save workspace ID
         self.persist = persist           # False for throwaway agents (calibration) - never touch the saved chat
         self._haiku_web_direct = False   # set if the API wants Haiku's web search called directly
+        self.trace = None                # TurnTracer (app): stage timestamps and routing labels, no speech text
         self._restore()
+
+    def _mark(self, name: str) -> None:
+        if self.trace is not None:
+            self.trace.mark(name)
+
+    def _note(self, **meta) -> None:
+        if self.trace is not None:
+            self.trace.note(**meta)
 
     # ------------------------------------------------------------ public
     def cancel(self) -> None:
@@ -262,11 +277,14 @@ class Agent:
         with self._lock:
             self._cancel.clear()
             self.emit("user", {"text": text})
+            if self.trace is not None:
+                self.trace.user_text(text)
 
             # 1. Pending email approval? Handled deterministically, never by the model.
             approval = self.tools.s.approval.handle_voice(text)
             if approval:
                 action, msg = approval
+                self._note(task="approval", outcome=f"approval_{action}")
                 self.emit("approval", {"action": action})
                 self._say_full(msg)
                 return msg
@@ -295,10 +313,16 @@ class Agent:
                 self.tools.session_id = self.session_id  # memory search skips this chat; it's already in context
                 begin(text, self.user_texts)
 
+            self._mark("route_start")
             route = self.router.route(text, importance, sticky=sticky)  # type: ignore[arg-type]
+            self._mark("route_end")
+            self._note(task=route.task, model=route.model, effort=route.effort,
+                       route_kind=_route_kind(route.reason), classifier="classifier" in (route.reason or ""))
             self._emit_route(route)
 
+            self._mark("context_start")
             ctx = self._context(route, first=not self.history, query=text)
+            self._mark("context_end")
             holding = self._holding_line(route)
             if holding:
                 ctx += f"(You already said \"{holding}\" out loud; continue without repeating it.)\n"
@@ -465,12 +489,16 @@ class Agent:
             first_text = True
             chunker = SentenceChunker()
             self.emit("state", {"state": "thinking"})
+            self._note(rounds=1)
             try:
+                self._mark("llm_request")
                 with self.client.beta.messages.stream(**self._params(route)) as stream:
                     for event in stream:
                         if self._cancel.is_set():
                             break
                         if event.type == "text":
+                            if event.text:
+                                self._mark("first_token")
                             if first_text and tail and event.text and not tail[-1].isspace() \
                                     and not event.text[0].isspace():
                                 self.emit("delta", {"text": " "})          # new round: separate from the last one
@@ -478,9 +506,11 @@ class Agent:
                                 first_text, tail = False, event.text
                             self.emit("delta", {"text": event.text})
                             for sentence in chunker.feed(event.text):
+                                self._mark("first_speakable")
                                 spoken_all.append(sentence)
                                 self.speak(sentence)
                     if self._cancel.is_set():
+                        self._note(outcome="cancelled")
                         # Keep history valid: drop the unfinished user turn's tail cleanly.
                         self.history.append({"role": "assistant", "content": [{"type": "text", "text": "(interrupted)"}]})
                         self.emit("state", {"state": "idle"})
@@ -543,6 +573,7 @@ class Agent:
 
             self._restored = False
             for s in chunker.flush():
+                self._mark("first_speakable")
                 spoken_all.append(s)
                 self.speak(s)
 
@@ -567,6 +598,7 @@ class Agent:
             self.history.append({"role": "user", "content": results})
             if escalate_reason is not None:
                 route = self.router.escalate(route)
+                self._note(escalated=True, model=route.model)
                 self._emit_route(route)
         self.emit("done", {"text": " ".join(spoken_all)})
         self.emit("state", {"state": "idle"})
@@ -620,6 +652,7 @@ class Agent:
         usd = self.ledger.record(getattr(final, "model", route.model) or route.model, route.effort,
                                  self.purpose or f"chat:{route.task}",
                                  Usage.from_response(getattr(final, "usage", None)))
+        self._note(cost_usd=usd)
         self.emit("cost", {"usd": round(usd, 5), "month": round(self.ledger.month_to_date(), 2)})
 
     def _emit_sources(self, final) -> None:

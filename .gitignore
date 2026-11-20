@@ -17,3 +17,4 @@ wakeword/sherpa-kws/
 monkey/_version.py
 wakeword/vad/
 monkey/automation/cursor/ref/
+*.egg-info/
