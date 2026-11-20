@@ -33,16 +33,22 @@ jobs:
         run: python -m tools.computer_bench.profile_uia
         timeout-minutes: 10
         continue-on-error: true
+      - name: Leftover fixture processes (diagnostic)
+        shell: pwsh
+        run: Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object Id, ProcessName, MainWindowTitle, Responding | Format-Table -AutoSize
       - name: Windows UIA driver tests (WinForms fixture)
         env:
           MONKEY_UIA_TESTS: "1"
-        run: pytest -q -s tests/test_uia_driver_windows.py
+        run: pytest -q -s -o faulthandler_timeout=45 tests/test_uia_driver_windows.py
         timeout-minutes: 6
         continue-on-error: true
       - name: Browser fixtures (real Chromium on Windows)
         run: python -m tools.computer_bench.run_browser --out bench-browser-windows.json
         timeout-minutes: 12
         continue-on-error: true
+      - name: Leftover windows before the desktop bench (diagnostic)
+        shell: pwsh
+        run: Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object Id, ProcessName, MainWindowTitle, Responding | Format-Table -AutoSize
       - name: Desktop backends compared (monkey / agent-desktop / windows-mcp)
         env:
           ANONYMIZED_TELEMETRY: "false"

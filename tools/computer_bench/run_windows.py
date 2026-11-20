@@ -84,7 +84,8 @@ def compile_fixture(workdir: Path) -> Path | None:
     for fw in ("Framework64", "Framework"):
         csc = root / fw / "v4.0.30319" / "csc.exe"
         if csc.is_file():
-            out = Path(tempfile.gettempdir()) / "MonkeyWinFixture.exe"
+            subprocess.run(["taskkill", "/F", "/IM", "MonkeyWinFixture*"], capture_output=True)
+            out = Path(tempfile.gettempdir()) / f"MonkeyWinFixture{os.getpid()}.exe"
             r = subprocess.run([str(csc), "/nologo", "/target:winexe", f"/out:{out}", "/r:System.Windows.Forms.dll",
                                 "/r:System.Drawing.dll", str(HERE / "WinFixture.cs")], capture_output=True, text=True)
             if r.returncode == 0 and out.is_file():
@@ -391,6 +392,11 @@ def _bounded(fn, b, timeout: float):
     def watch():
         if not done.wait(timeout):
             fired.set()
+            import faulthandler
+            import sys
+
+            print("---- stuck: stacks of all threads ----", flush=True)
+            faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
             fx = getattr(b, "fx", None)
             if fx is not None and fx.proc is not None:
                 fx.proc.kill()
