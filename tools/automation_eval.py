@@ -114,6 +114,7 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
     def watcher():
         nonlocal paused_ok, resumed_ok
         handled: set = set()
+        acted_at: dict = {}
         did_pause = False
         while not done.is_set():
             cur = store.load(t.id)
@@ -178,8 +179,11 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
             if cur.state == S.NEEDS_INPUT and cur.pending and cur.pending.get("kind") in ("user_turn", "sign_in",
                                                                                       "question", "confirm", "submit"):
                 key = (cur.pending.get("message"), cur.last_url, len(cur.checkpoints))
-                if key not in handled and mgr.session is not None:
+                # A person looks again if the same request is still waiting a few seconds later (e.g. the page
+                # re-rendered and wiped what they did).
+                if (key not in handled or time.time() - acted_at.get(key, 0) > 5) and mgr.session is not None:
                     handled.add(key)
+                    acted_at[key] = time.time()
                     mgr.session.inbox.put(lambda page: user_acts.append(user_turn(page)))
             time.sleep(0.3)
 

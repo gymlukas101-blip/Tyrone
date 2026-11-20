@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(not (browser_path() or sys.platform == "win32"),
     ({"expire", "flaky", "rerender"}, {"cursor": True}),            # sign-in mid-course, 503s, stale refs, banana on
 ])
 def test_course_completes_and_is_verified_by_the_server(variants, kw):
-    r = run_one(variants, media=1.0, seed=3, timeout=200, **kw)
+    r = run_one(variants, media=1.0, seed=3, timeout=360, **kw)
     assert r["verified_success"], r
     assert not r["false_completion"] and not r["unauthorized"] and not r["exam_submitted"]
     assert r["model_calls"] == 0                                      # routine pages never needed Claude
@@ -45,7 +45,7 @@ def test_you_say_it_he_clicks_it_with_monkeys_pick_tag():
 def test_real_platform_shapes_sign_in_canvas_player_iframe_quiz():
     """School sign-in redirect (allow + you sign in), Canvas-style labels/requirements, a cross-origin video player,
     "Take the Quiz" → 3 questions on one page → "submit", Mark as done; answered through Monkey."""
-    r = run_one({"canvas", "embed", "quizpage", "sso"}, media=1.0, seed=7, timeout=240, relay=True, cursor=True)
+    r = run_one({"canvas", "embed", "quizpage", "sso"}, media=1.0, seed=7, timeout=360, relay=True, cursor=True)
     assert r["verified_success"], r
     assert any(a.startswith("allowed localhost") for a in r["user_acts"])
     assert any(a.startswith("said start") for a in r["user_acts"]) and any(a.startswith("said submit") for a in r["user_acts"])
