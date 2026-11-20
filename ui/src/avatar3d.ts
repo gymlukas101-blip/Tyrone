@@ -633,11 +633,11 @@ export class Avatar3D implements AvatarLike {
     this.stats.why = why;
     const busy = why !== "";
     let fps: number;
-    if (busy) { this.stats.tier = "full"; fps = 60; }
+    if (busy) { this.stats.tier = "full"; fps = this.maxFps || 1000; }   // full = the display's own rate (75/120/144 Hz)
     else if (this.sleeping) { this.stats.tier = "asleep"; fps = 15; }
     else { this.stats.tier = "idle"; fps = 30; }
     if (this.maxFps) fps = Math.min(fps, this.maxFps);
-    this.stats.fps = fps;
+    this.stats.fps = fps >= 1000 ? 0 : fps;      // 0 = uncapped
     return fps;
   }
 
@@ -645,7 +645,7 @@ export class Avatar3D implements AvatarLike {
     const now = performance.now();
     const fps = this.tierFps(now);
     if (fps === 0) return;
-    if (now - this.lastFrame < 1000 / fps - 1) return;
+    if (fps < 1000 && now - this.lastFrame < 1000 / fps - 1) return;
     this.lastFrame = now;
     this.stats.frames++;
     if (this.frozen) { this.renderer.render(this.scene, this.camera); return; }

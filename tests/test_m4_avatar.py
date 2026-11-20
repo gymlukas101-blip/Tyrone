@@ -128,6 +128,6 @@ def test_idle_avatar_draws_at_30_fps_and_full_rate_when_busy():
     idle = [x for x in samples if x["tier"] == "idle"]
     assert idle and all(x["fps"] == 30 for x in idle), samples
     assert all(x["tier"] == "idle" or x["why"] in ("emote", "transition", "effects") for x in samples), samples
-    assert busy["tier"] == "full" and busy["fps"] == 60, busy             # (why: speaking, or a fidget at that moment)
+    assert busy["tier"] == "full" and busy["fps"] == 0, busy                  # 0 = the display's own rate             # (why: speaking, or a fidget at that moment)
     assert cursor["tier"] == "full" and cursor["why"] in ("cursor", "emote"), cursor   # follows your cursor smoothly
 

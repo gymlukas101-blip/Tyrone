@@ -160,7 +160,7 @@ def _copula(text: str) -> tuple[str, str] | None:
 
 
 def conflicts(root: Path, rel: str, text: str) -> list[Fact]:
-    """Current facts in the same file about the same thing that say something different.
+    """Current facts in the same file that a new fact may replace (a hint, never a refusal).
 
     "Their advisor is Dr. Rivera" vs "Their advisor is Dr. Chen": most of the shorter fact's content words are
     shared, but not all of them. A new fact like that should replace the old one (update_fact), not sit beside it
@@ -182,7 +182,7 @@ def conflicts(root: Path, rel: str, text: str) -> list[Fact]:
             continue
         shared = len(new & old)
         smaller = min(len(new), len(old))
-        if shared >= 1 and shared / smaller >= 0.5 and (new - old) and (old - new):
+        if shared >= 2 and shared / smaller >= 0.5 and (new - old) and (old - new):
             out.append(f)
     return out
 

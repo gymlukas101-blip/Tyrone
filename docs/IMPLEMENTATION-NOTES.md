@@ -430,3 +430,28 @@ Now (`monkey/memory/export.py`):
 - **Data:** `Api.dashboard()` reads the cached brief and the cached assignment board, so drawing it needs no network. Every section reports ok / empty / not_connected / unavailable and shows that instead of placeholder rows. No XP, levels or other invented data.
 - **Narrow windows:** header buttons become icon-only, with labels kept for screen readers, so all six fit at 420 px.
 - **Tests (`tests/test_m6_ui.py`):** zero rows when nothing is connected, no network while drawing, first draw under 300 ms (in the container), the tab keyboard pattern (arrows, Home/End, wraparound, roving tabindex), mark done and Undo, and no animations with reduced motion. axe shows no serious or critical findings at 1280 and 420 px.
+
+## 2026-11-20: independent review of Milestones 2–6, fixed before merging
+- **Echo guard (blocker):** answers that repeat his words ("the short version", "add it to my calendar") were dropped as echoes. Now an echo needs the timing of one (it starts within 0.6 s of his voice ending) plus 4 or more words, 90% of them in order from what he just said. The reviewer's cases are tests.
+- **Remember (blocker):** the conflict check refused true facts ("plays piano" after "plays guitar", two allergies). `remember` never refuses now: it saves, and adds a "may replace" hint only for same-subject, new-value facts or ones sharing 2+ key words.
+- **Branch base (blocker):** rebased onto `main`, so the Outlook fix (v0.3.71) is kept.
+- **Turn traces:** a barge-in no longer finishes the new turn with the old reply's state, and each request finishes its own turn. "Interrupt → silence" is now recorded.
+- **Speaker:** queued audio is tagged with its reply, so a late end-of-sentence marker from an interrupted reply can't end the next one.
+- **Recall:** questions about you ("what's my advisor's name?") use normal matching even when routed as quick facts.
+- **Today view:**
+  - It says "and on your Canvas planner" when the tick also synced to Canvas.
+  - It never fetches while drawing; it loads in the background with a "Loading…" state.
+  - Yesterday's brief is never shown as today.
+  - It closes when a reply, card or draft arrives.
+  - Stale draws are ignored and errors are caught.
+  - Focus moves to Undo and back to the Today button.
+  - Undo lasts 10 s.
+- **Render tiers:** the busy tier runs at the display's own rate (75/120/144 Hz), not 60.
+- **Privacy:** request text kept in traces (opt-in) is removed when history is deleted or the option is turned off.
+- **Tracer:** file writes happen outside the lock, and "no thanks" no longer counts as a correction.
+- **Tests:** the reduced-motion test checks the whole page; the network test lost an always-true condition. A new non-gating CI job (`ui-browser`) runs the browser UI tests on every push.
+
+## 2026-11-20: self-improvement loop for agents working on Monkey
+- `docs/agent-lessons.md`: short rules, each with its reason, seeded from this project's own failures, wasted context and owner corrections. CLAUDE.md tells every agent to read it before starting and to fix or retire a rule that proves wrong.
+- `tools/lessons/collect.py` finds corrections, failures and waste in run logs (JSONL), redacted.
+- A weekly scheduled review (Sundays 7:32 PM Central) reads the week's sessions and updates only that file. A push that changes only that file doesn't build a release (`paths-ignore`).

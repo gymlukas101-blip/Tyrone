@@ -254,7 +254,7 @@ class Speaker:
             got = True
             if gen != self._gen:
                 return
-            self._audio.put(item)
+            self._audio.put((gen, item))
 
     def _watchdog(self) -> None:
         import time
@@ -287,8 +287,7 @@ class Speaker:
             finally:
                 self._in_engine = False
                 self._last_audio = __import__("time").monotonic()
-            if gen == self._gen:
-                self._audio.put(None)  # end-of-sentence marker
+            self._audio.put((gen, None))  # end-of-sentence marker (the callback ignores ones from an old reply)
 
     def _speak_one(self, engines, sentence: str, gen: int, forced) -> None:  # noqa: ARG002
         for engine in engines:
@@ -317,11 +316,15 @@ class Speaker:
                     nxt = self._audio.get_nowait()
                 except queue.Empty:
                     break
-                if nxt is None:
+                gen, chunk = nxt
+                if gen != self._gen:
+                    continue                      # from a reply that was interrupted: never play it or count it
+                if chunk is None:
                     with self._lock:
-                        self._pending = max(0, self._pending - 1)
+                        if gen == self._gen:
+                            self._pending = max(0, self._pending - 1)
                     continue
-                self._buf = nxt
+                self._buf = chunk
             self._last_audio = __import__("time").monotonic()
             if self._await_first:
                 self._await_first = False

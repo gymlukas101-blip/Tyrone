@@ -25,7 +25,9 @@ export let lastDrawMs = 0;                       // first draw time (checked by 
 
 const WHY: Record<string, string> = {
   not_connected: "Not connected", unavailable: "Not available right now", empty: "Nothing here", expired: "Sign-in expired",
+  loading: "Loading…",
 };
+let drawSeq = 0;                                 // only the latest draw may write to the panel
 
 function statusLine(s: Sec | undefined) {
   if (!s) return h("p", { class: "meta" }, "Not loaded yet.");
@@ -52,18 +54,20 @@ function focusPanel(d: Dash) {
   } else {
     const done = h("div", { class: "focusactions" });
     const markBtn = h("button", { class: "primary", type: "button" }, "✓ Mark done in Monkey") as HTMLButtonElement;
-    markBtn.title = "Ticks it off in Monkey only. It doesn't submit anything on Canvas.";
+    markBtn.title = "Ticks it off your list. It never submits anything; with a Canvas token it also ticks Canvas's planner.";
     markBtn.onclick = async () => {
       markBtn.disabled = true;
       const r = await api.toggle_assignment(it.id, true);
       if (!r.ok) { markBtn.disabled = false; toast(`⚠ ${r.error ?? "Couldn't mark it"}`); return; }
       hero.classList.add("is-done");
+      const where = r.synced ? "Marked done in Monkey and on your Canvas planner." : "Marked done in Monkey.";
       const undo = h("button", { class: "ghost", type: "button" }, "Undo") as HTMLButtonElement;
       undo.onclick = async () => {
         const u = await api.toggle_assignment(it.id, false);
         if (u.ok) { hero.classList.remove("is-done"); void draw(); } else toast(`⚠ ${u.error ?? "Couldn't undo"}`);
       };
-      done.replaceChildren(h("span", { class: "donemsg", role: "status" }, "Marked done in Monkey."), undo);
+      done.replaceChildren(h("span", { class: "donemsg", role: "status" }, where), undo);
+      undo.focus();                               // keyboard focus stays on the card, not lost with the old button
       setTimeout(() => { if (done.isConnected && hero.classList.contains("is-done")) void draw(); }, 10000);   // undo window
     };
     done.append(markBtn);
@@ -99,14 +103,24 @@ function schedulePanel(d: Dash) {
     h("div", {}, list(s.items), s.note ? h("p", { class: "meta" }, s.note) : "")));
 }
 
-async function draw() {
+async function draw(attempt = 0) {
   if (!root) return;
+  const seq = ++drawSeq;
   const t0 = performance.now();
-  const d = await api.dashboard();
   const panel = root.querySelector<HTMLElement>("#todayPanel")!;
+  let content: HTMLElement;
+  let d: Dash | null = null;
+  try {
+    d = await api.dashboard();
+    content = tab === "focus" ? focusPanel(d) : tab === "schedule" ? schedulePanel(d) : await homeworkPanel();
+  } catch (e) {
+    content = h("p", { class: "meta" }, "Couldn't load this right now. Try again in a moment.");
+  }
+  if (seq !== drawSeq || !root) return;          // a newer tab/draw started meanwhile: don't overwrite it
   panel.setAttribute("aria-labelledby", `todayTab-${tab}`);
-  panel.replaceChildren(tab === "focus" ? focusPanel(d) : tab === "schedule" ? schedulePanel(d) : await homeworkPanel());
+  panel.replaceChildren(content);
   lastDrawMs = performance.now() - t0;
+  if ((d as any)?.loading && attempt < 10) setTimeout(() => { if (seq === drawSeq && !root!.hidden) void draw(attempt + 1); }, 1500);
   if ((window as any).__todayDrawMs === undefined) (window as any).__todayDrawMs = lastDrawMs;
 }
 
@@ -143,11 +157,16 @@ export function initToday(a: TodayApi, host: HTMLElement, before: Element) {
   host.insertBefore(root, before);
 }
 
-export function toggleToday(open?: boolean) {
+export function toggleToday(open?: boolean, returnFocus = true) {
   if (!root) return;
   const show = open ?? root.hidden;
+  if (show === !root.hidden) return;
   root.hidden = !show;
   document.body.classList.toggle("today-open", show);
-  document.getElementById("todayBtn")?.setAttribute("aria-pressed", String(show));
+  const btn = document.getElementById("todayBtn");
+  btn?.setAttribute("aria-pressed", String(show));
   if (show) select(tab, true);
+  else if (returnFocus) btn?.focus();
 }
+
+export function todayOpen() { return !!root && !root.hidden; }

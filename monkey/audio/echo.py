@@ -13,6 +13,7 @@ from collections import deque
 from difflib import SequenceMatcher
 
 _WORD = re.compile(r"[a-z0-9']+")
+ECHO_WINDOW_S = 0.6          # an echo starts within this long after his voice stopped (the mic opens ~0.4 s after)
 
 
 def _words(text: str) -> list[str]:
@@ -35,14 +36,19 @@ class EchoGuard:
         with self._lock:
             self._said.clear()
 
-    def is_echo(self, transcript: str, now: float | None = None) -> bool:
-        """True when the transcript is (nearly) a piece of what he just said.
+    def is_echo(self, transcript: str, now: float | None = None, started_after_voice_s: float | None = None) -> bool:
+        """True when the transcript is (nearly) a piece of what he just said AND it began right as his voice ended.
 
-        A real reply that quotes him ("what do you mean 'by Friday'?") adds its own words, so it stays below the bar:
-        at least 80% of the heard words must appear, in order, in one recent sentence (or two joined)."""
+        People answer by repeating his words all the time ("the short version", "add it to my calendar"), so the
+        words alone never decide it. An echo is the tail of his own sound reaching the mic: it starts within about a
+        second of his playback ending. `started_after_voice_s` is how long after his voice stopped the utterance
+        began (None = unknown, treated as not an echo). It also needs 4+ words, 90% of them in order from one
+        recent sentence (or two joined)."""
+        if started_after_voice_s is None or started_after_voice_s > ECHO_WINDOW_S:
+            return False
         heard = _words(transcript)
-        if len(heard) < 2:
-            return False                     # "yes", "no", "stop": too short to tell, and usually the user's
+        if len(heard) < 4:
+            return False                     # short answers ("the short version", "yes") are the user's
         now = time.monotonic() if now is None else now
         with self._lock:
             recent = [w for t, w in self._said if now - t <= self.window_s]
@@ -52,6 +58,6 @@ class EchoGuard:
         for said in candidates:
             m = SequenceMatcher(a=heard, b=said, autojunk=False)
             matched = sum(b.size for b in m.get_matching_blocks())
-            if matched / len(heard) >= 0.8:
+            if matched / len(heard) >= 0.9:
                 return True
         return False

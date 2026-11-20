@@ -39,8 +39,9 @@ SPANS: list[tuple[str, str, str]] = [
     ("interrupt → silence", "interrupt_request", "playback_stopped"),
 ]
 
-_CORRECTION = re.compile(r"^\s*(no[,.! ]|nope|not that|that'?s (not|wrong)|i (meant|said)|wrong\b|actually[, ])",
-                         re.I)
+# "No, I meant…" is a correction; "no", "no thanks" and "nope, that's all" are just answers.
+_CORRECTION = re.compile(r"^\s*(no[,.!]?\s+(?!thanks?\b|thank you|that'?s all|that'?s it|i'?m good)\w+|not that|"
+                         r"that'?s (not|wrong)|i (meant|said)|wrong\b|actually[, ])", re.I)
 
 
 def percentile(values: list[float], p: float) -> float | None:
@@ -164,9 +165,37 @@ class TurnTracer:
 
     def _flag_previous_correction(self) -> None:
         with self._lock:
-            if self._recent:
-                self._recent[-1]["corrected_next_turn"] = True
-                self._append(self._recent[-1]["id"], {"corrected_next_turn": True})
+            if not self._recent:
+                return
+            self._recent[-1]["corrected_next_turn"] = True
+            turn_id = self._recent[-1]["id"]
+        self._append(turn_id, {"corrected_next_turn": True})      # file write outside the lock (audio callback)
+
+    def forget_text(self) -> int:
+        """Remove any kept request text from the trace files (history deleted, or "keep what I ask" turned off)."""
+        with self._lock:
+            for r in self._recent:
+                r.pop("text", None)
+        n = 0
+        if self.folder is None or not Path(self.folder).exists():
+            return 0
+        for f in Path(self.folder).glob("turns-*.jsonl"):
+            try:
+                lines = f.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            out = []
+            for line in lines:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if "text" in d:
+                    d.pop("text")
+                    n += 1
+                out.append(json.dumps(d, ensure_ascii=False))
+            f.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
+        return n
 
     # ---- storage --------------------------------------------------------------------------------------------
     def _file(self) -> Path | None:

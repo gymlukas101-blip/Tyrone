@@ -197,7 +197,13 @@ class AssignmentBoard:
             ))
         return out
 
+    last: dict | None = None             # the most recent board, kept in memory for views that must not fetch
+
     def load(self, refresh: bool = False) -> dict:
+        self.last = self._load(refresh)
+        return self.last
+
+    def _load(self, refresh: bool = False) -> dict:
         from ..brain.assignments import rank
 
         if self.api.available():

@@ -117,6 +117,7 @@ class Listener:
         self.on_stop = on_stop             # "Monkey, stop" while he talks: silence him, don't start recording
         self.on_mark = on_mark             # turn tracer: speech_start / last_voiced / endpoint timestamps
         self._speech_marked = False
+        self.last_speech_start = 0.0       # monotonic time the latest utterance began (echo guard timing)
         self.ww = wakeword_model
         self.threshold = threshold
         self.is_speaking = is_speaking
@@ -315,6 +316,7 @@ class Listener:
         now = time.monotonic()
         if self._ep.started and not self._speech_marked:
             self._speech_marked = True
+            self.last_speech_start = now
             self._mark("speech_start", now)
         if state == "done":
             from .endpoint import FRAME_MS

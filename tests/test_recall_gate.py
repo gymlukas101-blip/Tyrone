@@ -53,6 +53,7 @@ CASES = [
     ("study_help", "help me prep my stats 240 lab", "Tuesdays"),
     ("study_help", "how long does my persuasive speech need to be?", "5 to 7 minutes"),
     ("quick_fact", "who's my advisor?", "Rivera"),
+    ("quick_fact", "what's my advisor's name?", "Rivera"),          # reviewer N3
     ("general", "where were we on the marketing case study?", "three sections"),
     ("chat", "put on my usual study music", "lo-fi"),
     ("command", "play my study music like always", "lo-fi"),
@@ -113,20 +114,24 @@ def test_injected_amount_is_logged_per_turn(tmp_path):
 
 # ---------------------------------------------------------------- one write path
 CONFLICTS = [
-    # (existing fact, new fact, conflicts?)
+    # (existing fact, new fact, flagged as "may replace"?) - the new fact is saved either way
     ("Their advisor is Dr. Rivera", "Their advisor is Dr. Chen", True),
     ("Statistics 240 lab is on Tuesdays", "Statistics 240 lab is on Wednesdays", True),
     ("Their roommate is Sam", "Their roommate is Jordan", True),
     ("Favorite study music is lo-fi beats", "Favorite study music is jazz piano", True),
+    # several can be true at once (the reviewer's cases): saved, no hint
+    ("Plays guitar", "Plays piano", False),
+    ("Likes pizza", "Likes sushi", False),
+    ("Allergic to peanuts", "Allergic to shellfish", False),
+    ("Has a CS 400 exam on Friday", "Has a CS 400 project due Friday", False),
     ("Takes Statistics 240 on Tuesdays", "Takes Chemistry 103 on Mondays", False),
     ("Their roommate is Sam", "Their roommate likes hiking", False),
-    ("Prefers short spoken answers", "Prefers short spoken answers", False),      # same fact: dedup, not conflict
     ("Plays pickup basketball on Fridays", "Works at the campus library", False),
 ]
 
 
-@pytest.mark.parametrize("old,new,clash", CONFLICTS)
-def test_conflicting_fact_becomes_an_update_not_a_second_truth(tmp_path, old, new, clash):
+@pytest.mark.parametrize("old,new,hint", CONFLICTS)
+def test_remember_never_refuses_and_flags_possible_replacements(tmp_path, old, new, hint):
     from monkey.brain.tools import Services, ToolRunner
     from monkey.memory import facts as F
 
@@ -138,11 +143,10 @@ def test_conflicting_fact_becomes_an_update_not_a_second_truth(tmp_path, old, ne
     r.begin_turn(said, [said])
     out, _ = r.run("remember", {"fact": new, "file": "profile.md", "evidence": new.lower()})
     current = [f.text for f in F.parse_file(root, "profile.md") if f.status == "current"]
-    if clash:
-        assert out.startswith("Not saved: it may contradict") and "update_memory" in out, out
-        assert old in current and new not in current
-    else:
-        assert "contradict" not in out, out
+    assert out.startswith("Saved") and new in current and old in current, out       # both kept until the user decides
+    assert ("may replace" in out) == hint, out
+    if hint:
+        assert "update_memory" in out and "ask" in out
 
 
 def test_memory_tool_is_view_only_so_nothing_is_mislabelled_as_typed_by_you(tmp_path):

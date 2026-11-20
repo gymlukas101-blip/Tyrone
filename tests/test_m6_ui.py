@@ -115,7 +115,7 @@ def test_today_draws_fast_from_cached_data_without_network(browser):
     p.on("request", lambda r: requests.append(r.url))
     p.click("#todayBtn")
     p.wait_for_selector("#todayPanel .focustitle")
-    ms = p.evaluate("() => performance.getEntriesByType('mark').length >= 0 && window.__todayDrawMs")
+    ms = p.evaluate("() => window.__todayDrawMs")
     ctx.close()
     fetches = [u for u in requests if not u.endswith((".ogg", ".png", ".webp", ".glb", ".json", ".woff2"))]
     assert fetches == [], fetches                     # drawing needs no network (sounds may still load)
@@ -158,12 +158,14 @@ def test_focus_mark_done_has_undo_and_open_on_canvas(browser):
     assert done and undone
 
 
-def test_today_respects_reduced_motion(browser):
+def test_reduced_motion_stops_every_running_animation(browser):
+    """With "reduce motion" on, nothing on the page keeps animating (vines, shine, pulses), including after actions."""
     ctx, p = _today(browser, reduced=True)
     p.click("#todayBtn")
     p.wait_for_selector("#todayPanel .focustitle")
     p.click("text=Mark done in Monkey")
-    p.wait_for_timeout(100)
-    n = p.evaluate("() => document.getElementById('today').getAnimations({subtree: true}).length")
+    p.wait_for_timeout(300)
+    running = p.evaluate("""() => document.getAnimations().filter(a => a.playState === 'running')
+        .map(a => (a.effect && a.effect.target && (a.effect.target.id || a.effect.target.className)) + ':' + (a.animationName || ''))""")
     ctx.close()
-    assert n == 0
+    assert running == [], running

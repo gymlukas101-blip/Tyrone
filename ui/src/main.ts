@@ -12,7 +12,7 @@ import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
-import { initToday, toggleToday } from "./today";
+import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
@@ -418,6 +418,10 @@ function healthCard(hd: any) {
 
 // ------------------------------------------------------------------ events from Python
 function onEvent(name: string, p: any) {
+  // A reply, a new card or a draft to approve must never land behind the Today view: go back to the chat.
+  if (todayOpen() && ["user", "delta", "panel", "draft", "emails", "calendar", "images", "approval"].includes(name)) {
+    toggleToday(false, false);
+  }
   switch (name) {
     case "state":
       setState(p.state);

@@ -69,7 +69,8 @@ def already_in_context(hit: Hit, recent_text: str) -> bool:
 
 def select(hits: list[Hit], query: str, recent_text: str = "", limit: int = 5, task: str = "general") -> list[Hit]:
     out = []
-    strict = task in STRICT_TASKS
+    # Strict only when nothing points at you: "what's my advisor's name?" routed as a quick fact is about you.
+    strict = task in STRICT_TASKS and not (PERSONAL.search(query or "") or MY.search(query or ""))
     for h in hits:
         if h.kind == "message":
             continue

@@ -92,8 +92,8 @@ def test_next_reply_after_an_interrupt_starts_within_a_second():
     got = False
     while time.monotonic() - t1 < 3 and not got:
         try:
-            chunk = sp._audio.get(timeout=0.05)
-            got = chunk is not None and int(chunk[0]) == 2
+            gen, chunk = sp._audio.get(timeout=0.05)
+            got = gen == sp._gen and chunk is not None and int(chunk[0]) == 2
         except Exception:  # noqa: BLE001
             pass
     assert got and time.monotonic() - t1 < 1.0
@@ -107,7 +107,8 @@ def test_sentences_queued_before_an_interrupt_are_never_spoken():
     sp.stop()
     time.sleep(0.8)
     while not sp._audio.empty():
-        assert sp._audio.get_nowait() is None or False, "stale audio from before the interrupt"
+        gen, chunk = sp._audio.get_nowait()
+        assert chunk is None or gen != sp._gen, "stale audio from before the interrupt would play"
 
 
 def test_first_audio_is_reported_once_per_reply():
@@ -124,19 +125,36 @@ def test_first_audio_is_reported_once_per_reply():
 
 
 # ---------------------------------------------------------------- echo guard and "Monkey, stop"
-def test_echo_of_his_own_sentence_is_rejected_but_real_replies_are_not():
+def test_echo_needs_both_his_words_and_the_timing_of_an_echo():
     from monkey.audio.echo import EchoGuard
 
     g = EchoGuard()
     g.remember("Your essay for English is due Friday at midnight.", now=100.0)
     g.remember("Want me to open it?", now=101.0)
-    assert g.is_echo("due Friday at midnight", now=103.0)            # the tail bled into the mic
-    assert g.is_echo("essay for english is due friday", now=103.0)
-    assert g.is_echo("at midnight want me to open it", now=103.0)    # spans two sentences
-    assert not g.is_echo("yes open it", now=103.0)
-    assert not g.is_echo("wait, is it due Friday or Saturday for history?", now=103.0)
-    assert not g.is_echo("yes", now=103.0)                            # too short to judge: the user's
-    assert not g.is_echo("due Friday at midnight", now=200.0)        # long after he said it
+    right_after = 0.3
+    assert g.is_echo("essay for english is due friday", now=103.0, started_after_voice_s=right_after)
+    assert g.is_echo("due friday at midnight want me to open it", now=103.0, started_after_voice_s=right_after)
+    # the same words, but you started talking a while after he stopped: that's you, not an echo
+    assert not g.is_echo("essay for english is due friday", now=103.0, started_after_voice_s=2.5)
+    assert not g.is_echo("essay for english is due friday", now=103.0, started_after_voice_s=None)
+    assert not g.is_echo("due friday at midnight", now=200.0, started_after_voice_s=right_after)   # long ago
+    assert not g.is_echo("wait, is it due Friday or Saturday for history?", now=103.0, started_after_voice_s=right_after)
+
+
+def test_answers_that_repeat_his_options_are_never_echoes():
+    """The reviewer's cases: picking one of his options repeats his words, even right after he stops."""
+    from monkey.audio.echo import EchoGuard
+
+    for said, answer in [("Do you want the short version or the long version?", "the short version"),
+                         ("Should I add it to your calendar or just remind you?", "add it to my calendar"),
+                         ("Want me to draft a reply to Professor Lee?", "yes draft a reply to professor lee"),
+                         ("Want me to open it?", "yes open it")]:
+        g = EchoGuard()
+        g.remember(said, now=100.0)
+        assert not g.is_echo(answer, now=101.0, started_after_voice_s=1.8), answer      # a normal reply gap
+    g = EchoGuard()
+    g.remember("Want me to draft a reply to Professor Lee?", now=100.0)
+    assert not g.is_echo("yes draft a reply to professor lee", now=101.0, started_after_voice_s=0.3)   # adds "yes"
 
 
 class _FakeWW:
@@ -316,3 +334,68 @@ def test_speed_shows_up_in_check_everything(tmp_path):
     row = next(c for c in rows if c.name == "you stop → he speaks")
     assert row.status == health.OK and "median 2.00 s" in row.detail
     assert health._speed_checks(SimpleNamespace(tracer=TurnTracer(None)))[0].status == health.SKIP
+
+
+def test_a_stale_end_marker_cannot_end_the_next_reply():
+    """N2: an end-of-sentence marker from an interrupted reply must not count against the new one."""
+    sp = spk.Speaker([], on_level=lambda v: None, on_state=lambda v: None)
+    with sp._lock:
+        old = sp._gen
+    sp.stop()                                   # interrupt: generation moves on
+    sp.say("new reply")                         # pending = 1 for the new generation
+    sp._audio.put((old, None))                  # the old sentence's marker arrives late
+    _drain(sp)
+    assert sp._pending == 1 and sp.speaking     # still speaking the new reply
+
+
+def test_barge_in_trace_lands_on_the_new_turn(tmp_path):
+    """N1: interrupting a reply must not finish the new turn early, and the silence time is recorded."""
+    import types
+
+    from monkey.app import MonkeyApp
+    from monkey.trace import TurnTracer
+
+    tr = TurnTracer(tmp_path)
+    sp = spk.Speaker([_Engine(chunks=50, gap=0.01)], on_level=lambda v: None, on_state=lambda v: None)
+    app = types.SimpleNamespace(tracer=tr, speaker=sp, agent=types.SimpleNamespace(cancel=lambda: None),
+                                _reply_done=True, _in_conversation=False, _listening=False, _waved=True,
+                                ui=types.SimpleNamespace(emit=lambda *a: None), cfg=types.SimpleNamespace(
+                                    settings=types.SimpleNamespace(conversation_mode=False)),
+                                _publish_state=lambda: None, _start_conversation=lambda: None,
+                                _maybe_continue_conversation=lambda: None)
+    sp.timing = lambda name, at=None: tr.mark(name, at)
+    first = tr.begin("voice")
+    sp.say("a long answer")
+    t0 = time.monotonic()
+    while sp._audio.empty() and time.monotonic() - t0 < 3:
+        time.sleep(0.005)
+    _drain(sp)
+    MonkeyApp._on_wake(app)                     # "Hey Monkey" while he talks
+    new = tr.current()
+    MonkeyApp._on_speaker_state(app, False)     # the interrupted reply's "stopped speaking" arrives
+    _drain(sp)                                  # the next device block is silent
+    assert new is not first and not new.done
+    assert "interrupt_request" in new.marks and "playback_stopped" in new.marks
+    assert first.done and first.meta.get("outcome") == "superseded"
+
+
+def test_kept_request_text_is_removed_when_history_is_deleted_or_the_option_is_turned_off(tmp_path):
+    from monkey.trace import TurnTracer, load_traces
+
+    tr = TurnTracer(tmp_path, keep_text=lambda: True)
+    tr.begin("voice")
+    tr.user_text("open my history notes")
+    tr.finish()
+    assert load_traces(tmp_path)[0]["text"] == "open my history notes"
+    assert tr.forget_text() == 1
+    assert "text" not in load_traces(tmp_path)[0] and all("text" not in r for r in tr.recent())
+    assert "history notes" not in "".join(f.read_text() for f in tmp_path.glob("*.jsonl"))
+
+
+def test_plain_no_is_not_a_correction(tmp_path):
+    from monkey.trace import _CORRECTION
+
+    for answer in ("no", "no thanks", "No, thanks.", "nope", "no that's all", "No, I'm good"):
+        assert not _CORRECTION.match(answer), answer
+    for fix in ("no, I meant the history notes", "No open the other one", "that's wrong", "I said Tuesday"):
+        assert _CORRECTION.match(fix), fix

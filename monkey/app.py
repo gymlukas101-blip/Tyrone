@@ -99,10 +99,10 @@ def _tmark(app, name: str, at: float | None = None) -> None:
         tr.mark(name, at)
 
 
-def _tfinish(app, outcome: str = "ok") -> None:
+def _tfinish(app, outcome: str = "ok", turn=None) -> None:
     tr = getattr(app, "tracer", None)
     if tr is not None:
-        tr.finish(outcome)
+        tr.finish(outcome, turn=turn)
 
 class MonkeyApp:
     def __init__(self, data_dir: Path | None = None, headless: bool = False):
@@ -536,6 +536,10 @@ class MonkeyApp:
         tr.mark(name, at)
 
     def _on_speaker_state(self, speaking: bool) -> None:
+        if not speaking:
+            import time as _t
+
+            self._spoke_until = _t.monotonic() + (getattr(self.speaker, "output_latency", 0.1) if self.speaker else 0.1)
         if not speaking and self._reply_done:
             _tmark(self, "last_audio_played")
             _tfinish(self)
@@ -590,6 +594,7 @@ class MonkeyApp:
     def _on_wake(self) -> None:
         # Cancel the reply first, *then* silence the speaker: the other order lets a sentence the agent finishes in
         # between get queued again, and he talks over what you're saying.
+        self._reply_done = False              # the reply being interrupted must not finish the new turn
         tr = getattr(self, "tracer", None)
         if tr is not None:
             tr.begin("wake")
@@ -609,6 +614,7 @@ class MonkeyApp:
 
     def _on_stop_keyword(self) -> None:
         """"Monkey, stop" while he talks: stop the reply and the voice, then wait for the wake word again."""
+        self._reply_done = False
         tr = getattr(self, "tracer", None)
         if tr is not None:
             tr.begin("stop_keyword")
@@ -648,7 +654,10 @@ class MonkeyApp:
         text = conversation.strip_wake(text or "")
         self.ui.emit("heard", {"text": text})
         echo = getattr(self, "echo", None)
-        if source == "conversation" and echo is not None and echo.is_echo(text):
+        started = getattr(self.listener, "last_speech_start", 0.0) or 0.0
+        voice_end = getattr(self, "_spoke_until", 0.0) or 0.0
+        after = (started - voice_end) if started and voice_end else None
+        if source == "conversation" and echo is not None and echo.is_echo(text, started_after_voice_s=after):
             log.info("ignored an echo of Monkey's own voice")   # never log speech
             text = ""
             _tfinish(self, "echo")
@@ -692,11 +701,9 @@ class MonkeyApp:
 
     def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
         tr = getattr(self, "tracer", None)
+        turn = None
         if tr is not None:
-            if typed:
-                tr.begin("typed")
-            else:
-                tr.ensure("voice")
+            turn = tr.begin("typed") if typed else tr.ensure("voice")
         # A letter ("B") or "I confirm" while a computer task is waiting on a question/confirmation goes to the task.
         reply = self.automation.handle_reply(text) if getattr(self, "automation", None) else None
         if reply is not None:
@@ -732,9 +739,9 @@ class MonkeyApp:
             try:
                 self.agent.handle(text, importance, source="typed" if typed else "voice")
                 if self.speaker is None or not self.speaker.speaking:
-                    _tfinish(self)               # nothing (left) to say: the turn ends here
+                    _tfinish(self, turn=turn)    # nothing (left) to say: this turn (not a newer one) ends here
             except Exception as exc:  # noqa: BLE001 - the agent rolls itself back; just make sure we're usable
-                _tfinish(self, "error")
+                _tfinish(self, "error", turn=turn)
                 log.exception("agent failed")
                 self._listening = False
                 if self.speaker is not None and self.speaker.speaking:
@@ -1059,6 +1066,8 @@ class Api:
 
             allowed["fish_voice_id"] = normalize_voice_id(str(allowed["fish_voice_id"]))
         self._app.cfg.update(**allowed)
+        if allowed.get("trace_text") is False and getattr(self._app, "tracer", None) is not None:
+            self._app.tracer.forget_text()        # turning it off removes what was kept
         if "start_with_windows" in allowed and getattr(sys, "frozen", False):
             from . import cleanup
 
@@ -1221,19 +1230,31 @@ class Api:
         return {"ok": True, "brief": b}
 
     def dashboard(self):
-        """The Today view: real data only, from what's already loaded (no network while it draws).
+        """The Today view: real data only, from what's already in memory (never a network call while it draws;
+        if nothing is loaded yet it starts a background load and reports "loading").
 
         Every section reports ok | empty | not_connected | unavailable, and nothing is ever made up: a section with
         no data says why instead of showing placeholder rows."""
         a = self._app
         out: dict = {"ok": True, "sections": {}}
         sec = out["sections"]
-        try:
-            board = a.board.load(refresh=False)
-        except Exception:  # noqa: BLE001
-            board = None
+        board = getattr(a.board, "last", None)
         if board is None:
-            sec["focus"] = sec["due"] = {"status": "unavailable", "items": [], "note": "Couldn't read your assignments."}
+            # Nothing loaded yet this run: load it in the background (Canvas/the feed can take a few seconds) and
+            # tell the view to look again, instead of blocking the draw on the network.
+            if not getattr(self, "_board_loading", False):
+                self._board_loading = True
+
+                def load():
+                    try:
+                        a.board.load(refresh=False)
+                    except Exception:  # noqa: BLE001
+                        log.warning("assignment board load failed", exc_info=True)
+                    finally:
+                        self._board_loading = False
+                threading.Thread(target=load, name="board-load", daemon=True).start()
+            out["loading"] = True
+            sec["focus"] = sec["due"] = {"status": "loading", "items": [], "note": "Loading your assignments…"}
         elif board["source"] == "none":
             sec["focus"] = sec["due"] = {"status": "not_connected", "items": [],
                                          "note": "Add your Canvas calendar link in Settings → Accounts."}
@@ -1246,10 +1267,13 @@ class Api:
             sec["due"] = {"status": "ok" if items else "empty", "items": items[1:3] if items else [],
                           "note": ""}
             out["stats"] = board.get("stats", {})
-        b = getattr(a, "_last_brief", None)
-        if b is None:
-            from datetime import date as _date
+        from datetime import date as _date
 
+        today = _date.today().isoformat()
+        b = getattr(a, "_last_brief", None)
+        if b is not None and b.get("day") != today:
+            b = None                                # yesterday's brief: never show old classes as today
+        if b is None:
             b = a.morning.cached(_date.today()) if a.cfg.settings.brief_enabled else None
         by_title = {x["title"]: x for x in (b or {}).get("sections", [])}
         for key, title in (("schedule", "Today"), ("unread", "Unread email"), ("weather", "Weather")):
@@ -1401,6 +1425,8 @@ class Api:
         if a.history is None:
             return {"ok": False, "error": "History is off."}
         n = a.history.delete_all() if scope == "all" else a.history.prune(int(days))
+        if getattr(a, "tracer", None) is not None:
+            a.tracer.forget_text()                 # request text kept in turn traces goes with your history
         return {"ok": True, "deleted": n}
 
     def history_export(self):
@@ -1668,7 +1694,12 @@ class Api:
 
     def toggle_assignment(self, item_id: str, done: bool):
         try:
-            return {"ok": True, **self._app.board.toggle(str(item_id), bool(done))}
+            r = self._app.board.toggle(str(item_id), bool(done))
+            try:
+                self._app.board.load(refresh=False)   # keep the in-memory board (Today view) in step with the check
+            except Exception:  # noqa: BLE001
+                log.debug("board reload after toggle failed", exc_info=True)
+            return {"ok": True, **r}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
