@@ -64,6 +64,7 @@ class CourseState:
     offsite_clicked: bool = False
     skipped_video: set = field(default_factory=set)   # "scorm": moved past the lesson before the video ended
     exited_course: bool = False                        # "scorm": pressed the player's EXIT COURSE
+    sl_answers: dict = field(default_factory=dict)     # "storyline": module -> the answer button that was chosen
     rejected_spoofs: int = 0
     log: list = field(default_factory=list)
 
@@ -180,6 +181,23 @@ padding:16px;min-height:100vh}}nav a{{color:#fff}}main{{padding:24px 32px;max-wi
                     f"{html.escape(MODULES[m - 1].lower())}. It has a short lesson, a practice question and a "
                     f"confirmation.</p>{btn(L['continue'], nxt)}{modal}")
             return self._page(title, body)
+        if p == 2 and "storyline" in self.variants:
+            # The owner's real Module 2 (from their screen recording): a Rise lesson with an embedded Storyline course
+            # in a cross-origin frame, and Rise's lock until that course reports complete.
+            done = m in self.state.video_done
+            lock = (f'<p><button id="next" onclick="location.href=\'{nxt}\'">CONTINUE</button></p>' if done else
+                    '<div id="lock" style="border:1px solid #999;padding:8px;width:320px">&#128274; Complete the content '
+                    'above before moving on.</div>')
+            body = (f'<header><button onclick="fetch(\'/api/exit\',{{method:\'POST\'}})">EXIT COURSE</button></header>'
+                    f'<h1>{html.escape(title)}</h1><h2>Complete the following interactive video</h2>'
+                    f'<iframe title="Storyline content" src="http://localhost:{self.port}/sl/{m}" width="620" '
+                    f'height="400" style="border:0"></iframe><div id="below">{lock}</div>')
+            script = f"""
+setInterval(async () => {{ const r = await fetch('/api/state/{m}'); const s = await r.json();
+  const b = document.getElementById('below');
+  if (s.video_done && document.getElementById('lock'))
+    b.innerHTML = '<p><button id="next" onclick="location.href=\\'{nxt}\\'">CONTINUE</button></p>'; }}, 500);"""
+            return self._page(title, body, script)
         if p == 2 and "scorm" in self.variants:
             # Shaped like a Rustici/SCORM "Complete the following interactive video" page: the player is in a
             # cross-origin frame, its ▶ is a plain <div> over the <video>, and Continue works from the start.
@@ -301,6 +319,57 @@ b.onclick = () => {{ fetch('/api/play/{m}', {{method: 'POST'}}); v.play(); b.set
 v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute('aria-label', 'Start over'); }};
 </script></body></html>""")
 
+    def storyline_player(self, m: int) -> str:
+        """A Storyline-like player: poster with an unnamed ▶, Start Course, narrated slides (Continue disabled until the
+        narration ends), and a question whose answers are buttons ("Please select a response to move on")."""
+        n = max(0.8, self.media_seconds / 2)
+        return (f"""<!doctype html><html><head><meta charset=utf-8><title>Storyline</title><style>
+body{{margin:0;font:14px system-ui;background:#f4e3c3}} #stage{{height:300px;padding:16px}} .bar{{display:flex;gap:6px;
+padding:6px;background:#fff}} .choice{{display:block;margin:6px 0;background:#8b1d4f;color:#fff;border:0;padding:6px 10px}}
+.choice.picked{{outline:3px solid #000}} #poster{{height:360px;display:flex;align-items:center;justify-content:center}}
+#poster button{{width:84px;height:84px;border-radius:50%;background:#222;color:#fff;border:0;font-size:0}}
+#modal{{position:absolute;left:160px;top:120px;background:#fff;border:1px solid #333;padding:16px}}</style></head><body>
+<div id=poster><button id=launch onclick="launch()"><svg width=30 height=30><path d="M5 0 L30 15 L5 30Z" fill="#fff"/></svg></button></div>
+<div id=player hidden><div id=stage></div><div class=bar>
+<button id=pp aria-label="Pause">II</button><button aria-label="Mute">🔊</button><button aria-label="Closed captions">CC</button>
+<button aria-label="Settings">⚙</button><button aria-label="Full screen">⛶</button>
+<button id=prev onclick="go(-1)">Previous</button><button id=cont title="Next (Ctrl+Alt+.)" disabled onclick="next()">Continue</button>
+</div></div><script>
+const M = {m}, NARR = {n * 1000:.0f};
+const slides = [
+ {{html: '<h2>U GOT THIS! Module ' + M + ': U Gotta Know When It’s Wrong</h2><p>(Please Turn Up Your Speakers)</p>' +
+   '<button onclick="go(1)">Start Course</button> <button>Accessibility Controls with Manual Play Audio option</button>',
+   title: true}},
+ {{html: '<h2>Welcome back!</h2>'}},
+ {{html: '<p>Toxic cultural messages make it harder for well-intentioned people to recognize it when it happens.</p>'}},
+ {{html: '<p>Every assault has one thing in common:</p>' + ['PHYSICAL FORCE.', 'LACK OF CONSENT.', 'USE OF ALCOHOL.',
+   'THE PERSON WAS A STRANGER.'].map(c => '<button class=choice onclick="pick(this)">' + c + '</button>').join(''), q: true}},
+ {{html: '<h2>Module complete</h2>', end: true}}];
+let i = 0, picked = null, narr = null;
+function launch() {{ document.getElementById('poster').style.display = 'none'; document.getElementById('player').hidden = false; show(); }}
+function show() {{
+  const s = slides[i], cont = document.getElementById('cont');
+  document.getElementById('stage').innerHTML = s.html; picked = null; clearTimeout(narr);
+  cont.disabled = !!s.title;
+  if (!s.title && !s.q) {{ cont.disabled = true; narr = setTimeout(() => {{ cont.disabled = false; }}, NARR); }}
+  if (s.end) fetch('/api/ended/' + M, {{method: 'POST'}});
+}}
+function go(d) {{ i = Math.max(0, Math.min(slides.length - 1, i + d)); show(); }}
+function pick(b) {{
+  document.querySelectorAll('.choice').forEach(c => c.classList.toggle('picked', c === b)); picked = b.textContent;
+  fetch('/api/sl_answer/' + M + '?a=' + encodeURIComponent(picked), {{method: 'POST'}});
+  const cont = document.getElementById('cont'); cont.disabled = true; setTimeout(() => {{ cont.disabled = false; }}, NARR);
+}}
+function next() {{
+  if (slides[i].q && !picked) {{
+    const d = document.createElement('div'); d.id = 'modal';
+    d.innerHTML = '<p>Please select a response to move on.</p><button onclick="this.parentNode.remove()">OK</button>';
+    document.body.appendChild(d); return; }}
+  go(1);
+}}
+fetch('/api/play/' + M, {{method: 'POST'}});
+</script></body></html>""")
+
     def scorm_player(self, m: int) -> str:
         return (f"""<!doctype html><html><head><meta charset=utf-8><title>U Got This</title><style>
 body{{margin:0;font:14px system-ui;background:#000}} header{{display:flex;justify-content:space-between;
@@ -361,6 +430,8 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); }};
                     return self._send(200, course._wav, "audio/wav")
                 if path.startswith("/embed/"):                         # the "video vendor" player (other origin)
                     return self._send(200, course.embed_page(int(path.rsplit("/", 1)[1])))
+                if path.startswith("/sl/"):                            # the Storyline-like player (other origin)
+                    return self._send(200, course.storyline_player(int(path.rsplit("/", 1)[1])))
                 if path.startswith("/scorm/"):                         # the SCORM course player (other origin)
                     return self._send(200, course.scorm_player(int(path.rsplit("/", 1)[1])))
                 if path.startswith("/api/state/"):
@@ -406,7 +477,7 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); }};
                         return self._send(404, "<h1>Not found</h1>")
                     if m > 1 and (m - 1) not in course.state.complete:
                         return self._send(302, "", headers={"Location": "/"})
-                    if "scorm" in course.variants and p == 3 and m not in course.state.video_done:
+                    if {"scorm", "storyline"} & course.variants and p == 3 and m not in course.state.video_done:
                         course.state.skipped_video.add(m)           # Continue pressed before the video ended
                     if "expire" in course.variants and m == 3 and p == 1 and not course.expired_once:
                         course.expired_once = True
@@ -440,6 +511,9 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); }};
                             ret = form.get("next", ["/"])[0]
                             return self._send(303, "", headers={"Location": ret + ("&" if "?" in ret else "?") + "sso=" + tok})
                         return self._send(200, course.login_page("/", sso=True))
+                    if u.path.startswith("/api/sl_answer/"):
+                        st.sl_answers[int(parts[2])] = parse_qs(u.query).get("a", [""])[0]
+                        return self._send(200, "{}", "application/json")
                     if u.path == "/api/exit":
                         st.exited_course = True                    # the player's EXIT COURSE: never Monkey's to press
                         return self._send(200, "{}", "application/json")

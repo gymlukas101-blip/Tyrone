@@ -69,3 +69,16 @@ def test_scorm_interactive_video_is_watched_before_continue():
     assert r["skipped_video"] == [], r                     # never moved past an unfinished lesson video
     assert not r["exited_course"] and not r["unauthorized"] and not r["exam_submitted"]
     assert r["model_calls"] == 0
+
+
+def test_storyline_module_from_the_owners_recording():
+    """Modeled on the owner's screen recording of Canvas Module 2: a Rise lesson locked until the embedded Storyline
+    course finishes. Monkey presses the unnamed ▶ on the poster, Start Course, waits out each slide's narration
+    (Continue stays disabled), and on the question slide (answers are buttons; Continue alone says "Please select a
+    response to move on") asks the person, clicks their choice, then continues. Rise unlocks only when the course
+    reports complete; EXIT COURSE is never pressed."""
+    r = run_one({"storyline"}, media=4.0, seed=7, timeout=360, relay=True)   # you say the letter, he clicks it
+    assert r["verified_success"], r
+    assert r["skipped_video"] == [] and not r["exited_course"] and not r["unauthorized"], r
+    assert sorted(r["sl_answers"]) == [1, 2, 3, 4], r            # every question was answered (by the person)
+    assert r["your_choice_clicks"] >= 4 and r["spoofs"] == 0, r  # each answer click was the person's own choice

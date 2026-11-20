@@ -71,6 +71,32 @@ QUIZ_BAD = re.compile(r"not all correct|try again|incorrect|not quite|you scored
 REQ_ITEMS = re.compile(r"\b(\d+) of (\d+) required items\b", re.I)
 
 
+# Articulate Storyline / Rise (the owner's Canvas Module 2): a question slide's answers are plain buttons, and pressing
+# Continue without one brings up "Please select a response to move on. [OK]".
+NEED_RESPONSE = re.compile(r"please (select|choose|make|pick) (a|an|your) (response|answer|selection|choice)|"
+                           r"you must (select|answer|choose|make)|select an? (response|answer) to (move on|continue)",
+                           re.I)
+# Player chrome around a slide: never an answer choice.
+PLAYER_CONTROL = re.compile(r"^\W*(previous|prev|back|continue|next|submit|play|pause|replay|restart|mute|unmute|volume|"
+                            r"settings|captions?|cc|closed captions?|full ?screen|exit( full ?screen| course)?|menu|"
+                            r"resources|glossary|transcript|notes|accessibility\b.*|seek(bar)?|ok|close|x|×|"
+                            r"start course|resume|skip( to)? .*|toggle .*|zoom .*|speed .*|playback .*)\W*"
+                            r"(\(ctrl\+alt\+[^)]*\))?\W*$", re.I)
+# Rise's lock under an embedded course: the content above (a Storyline block) must be finished first.
+CONTENT_LOCK = re.compile(r"complete the content above before moving on", re.I)
+
+
+def answer_buttons(obs: Observation) -> list[Element]:
+    """The answer choices on a slide whose answers are buttons: every enabled button that isn't player chrome."""
+    out = []
+    for e in obs.find(("button",), enabled_only=True):
+        name = (e.name or "").strip()
+        if 1 <= len(name) <= 140 and not PLAYER_CONTROL.match(name) and not CONTINUE.search(name) \
+                and not COMPLETE.search(name):
+            out.append(e)
+    return out
+
+
 def is_lesson_media(m: dict) -> bool:
     """A video or audio the module expects you to finish, not a decorative background loop or a short clip."""
     if m.get("loop") or (m.get("muted") and m.get("autoplay")):
@@ -171,6 +197,13 @@ class CourseSkill:
                         subgoal="waiting for you to sign in",
                         message="Please sign in in the Monkey browser window. I don't look at or type passwords; "
                                 "I'll continue when you're in.")
+        # 2b. "Please select a response to move on": this slide is a question whose answers are buttons. Close the
+        # message; the next look asks you the question (your answer, never Monkey's).
+        if NEED_RESPONSE.search(obs.text[:3000]):
+            memo["needs_choice"] = True
+            ok = next((e for e in obs.find(("button", "link")) if DISMISS.match(e.name or "") and not e.disabled), None)
+            if ok is not None:
+                return Step("act", Action("click"), ok, subgoal="this slide needs an answer first")
         # 3. A pop-up in the way: dismiss it if it has a harmless way out, otherwise ask.
         dlg, inside = _in_dialog(obs)
         if dlg is not None:
@@ -281,6 +314,22 @@ class CourseSkill:
                         subgoal="your answer to the question",
                         message="There's a question here that needs typing. Answer it in the browser and I'll "
                                 "continue when it's done.")
+        # 6b. A question slide with button answers (we know from "Please select a response"): you choose, he clicks.
+        if memo.get("needs_choice"):
+            opts = answer_buttons(obs)
+            if 2 <= len(opts) <= 8:
+                qtext = question_text(obs)
+                if qtext == "Here's the question.":         # stems like "Every assault has one thing in common:"
+                    qtext = next((ln.strip() for ln in obs.text.splitlines()
+                                  if 8 < len(ln.strip()) < 300 and ln.strip().endswith((":", "?"))), qtext)
+                return Step("user", user_kind="question", wait_change=True, timeout_s=1800,
+                            subgoal="your answer to the question",
+                            message=f"{qtext} " + " ".join(f"{chr(65 + i)}) {e.name.rstrip('. ')}."
+                                                          for i, e in enumerate(opts)) +
+                                    " Say or type a letter.",
+                            info={"question": qtext, "options": [e.name for e in opts], "check": "",
+                                  "choice_buttons": True})
+            memo.pop("needs_choice", None)                     # nothing to choose from here: carry on normally
         # 7. Media: press the page's own Play, then wait locally until it really ends (no tokens, no skipping).
         # A lesson video is finished before moving on even when Continue is already clickable: SCORM pages
         # ("Complete the following interactive video … then click continue") enable Continue from the start.
@@ -314,6 +363,16 @@ class CourseSkill:
             return Step("wait", wait_js="media_done", timeout_s=max(30.0, remaining * 1.5 + 30),
                         subgoal="the lesson is playing; I'll continue when it ends")
         memo.pop("play_tries", None)
+        # 7b. Rise's "Complete the content above" lock with nothing playing: the embedded course is still on its
+        # poster. Its ▶ is often an unnamed button: press it (twice at most, then let you or Claude look).
+        tries = memo.setdefault("launch_tries", {})
+        here = obs.url.split("#")[0]
+        if CONTENT_LOCK.search(obs.text) and not enabled_next and tries.get(here, 0) < 2:
+            launch = obs.find(("button", "link"), PLAY, enabled_only=True) or \
+                [e for e in obs.find(("button",), enabled_only=True) if not (e.name or "").strip()]
+            if launch:
+                tries[here] = tries.get(here, 0) + 1
+                return Step("act", Action("play"), launch[0], subgoal="starting the course player")
         # 8. Move on: finish the unit if that's offered, otherwise Continue.
         for group in (complete, cont):
             ok = [e for e in group if not e.disabled]

@@ -167,7 +167,7 @@ class TaskManager:
         if r["kind"] == "submit":
             return "Starting it." if (t.pending.get("info") or {}).get("word") == "start" else "Submitting it."
         opt = t.pending.get("info", {}).get("options", [])[r["index"]]
-        return f"{chr(65 + r['index'])}: {opt}. Checking it…"
+        return f"{chr(65 + r['index'])}: {opt.rstrip('. ')}. Checking it…"
 
     def approve(self, task_id: str, approval_id: str, token: str) -> None:
         self.gate.approve(approval_id, token)
@@ -639,8 +639,11 @@ class TaskManager:
             return
         opt = step.info["options"][r["index"]]
         group = step.info.get("group")
-        el = next((e for e in obs.elements if e.role in ("radio", "checkbox") and e.name == opt
+        roles = ("radio", "checkbox", "button") if step.info.get("choice_buttons") else ("radio", "checkbox")
+        el = next((e for e in obs.elements if e.role in roles and e.name == opt
                    and (not group or e.qkey == group)), None)
+        if step.info.get("choice_buttons"):
+            memo.pop("needs_choice", None)                     # answered: the slide moves on by itself or via Continue
         if group and group in (memo.get("quiz_reask") or []):
             memo["quiz_reask"].remove(group)                   # answered again (same or different pick)
         if el is not None and el.checked:
