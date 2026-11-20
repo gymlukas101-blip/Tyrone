@@ -22,12 +22,12 @@ def page():
     from playwright.sync_api import sync_playwright
     from pathlib import Path
 
-    if not (Path(__file__).resolve().parents[1] / "ui" / "dist" / "index.html").exists():
-        pytest.skip("UI not built")
+    if browser_path is None or browser_path() is None or not (Path(__file__).resolve().parents[1] / "ui" / "dist" / "index.html").exists():
+        pytest.skip("needs Chromium and a built UI (npm run build)")       # same rule as the other browser tests
     srv = _serve()
     with sync_playwright() as pw:
-        kw = {"executable_path": browser_path()} if browser_path and browser_path() else {}
-        b = pw.chromium.launch(args=["--use-gl=angle", "--use-angle=swiftshader", "--autoplay-policy=no-user-gesture-required"], **kw)
+        b = pw.chromium.launch(executable_path=browser_path(),
+                               args=["--use-gl=angle", "--use-angle=swiftshader", "--autoplay-policy=no-user-gesture-required"])
         p = b.new_page(viewport={"width": 1280, "height": 800})
         p.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html?demo")
         p.wait_for_function("() => window.__monkeyReady && window.__monkeyAvatarObj", timeout=60000)
