@@ -25,7 +25,7 @@ from . import workspace
 from .costs import HAIKU, SONNET, Ledger, Usage
 from .router import Route, Router
 from .speech_text import SentenceChunker
-from .tools import LOCAL_TOOLS, Escalate, ToolRunner
+from .tools import LOCAL_TOOLS, Escalate, ToolRunner, cap_strict
 
 log = logging.getLogger(__name__)
 
@@ -436,7 +436,7 @@ class Agent:
             "max_tokens": 16000,
             # 1-hour cache on the stable prefix (tools + persona): voice chats often pause > 5 minutes.
             "system": [{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
-            "tools": self._tools_for(route.model),
+            "tools": cap_strict(self._tools_for(route.model)),
             "messages": list(self.history),
             "output_config": {"effort": (self._conv_effort if self.per_message_effort and self._conv_effort
                                          else route.effort)},

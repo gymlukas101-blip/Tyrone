@@ -268,3 +268,12 @@ def test_a_letter_during_a_computer_task_goes_to_the_task_not_the_chat(mk, monke
     monkeypatch.setattr(a, "_say", lambda s: None)
     a.ask("B", typed=True)
     assert ("done", {"text": "B: Your roommate. Checking it…"}) in events
+
+
+def test_requests_never_carry_more_than_20_strict_tools():
+    """The API rejects a request with more than 20 strict tools (a live 400 on every message in v0.3.61)."""
+    from monkey.brain.tools import LOCAL_TOOLS, MAX_STRICT, cap_strict
+
+    assert sum(1 for t in LOCAL_TOOLS if t.get("strict")) <= MAX_STRICT
+    many = [{"name": f"t{i}", "strict": True} for i in range(30)]
+    assert sum(1 for t in cap_strict(many) if t.get("strict")) == 20

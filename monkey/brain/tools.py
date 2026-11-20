@@ -20,11 +20,19 @@ from .approval import ApprovalGate, PendingDraft
 from .ranking import TIER_ORDER, rank_items
 
 
+# The API accepts at most 20 tools with strict schemas per request. Strict decoding matters most where a wrong
+# argument has a side effect (drafts, memory edits, check-offs, tasks); read-only tools validate their inputs anyway.
+MAX_STRICT = 20
+STRICT_TOOLS = {"draft_email", "check_off_assignment", "propose_computer_task", "remember", "update_memory",
+                "forget_memory", "generate_image", "rank_items", "open_website", "escalate", "get_emails",
+                "read_email", "get_calendar", "show_on_screen"}
+
+
 def _tool(name: str, description: str, properties: dict, required: list[str] | None = None) -> dict:
     return {
         "name": name,
         "description": description,
-        "strict": True,
+        "strict": name in STRICT_TOOLS,
         "input_schema": {
             "type": "object",
             "properties": properties,
@@ -523,3 +531,15 @@ def resolve_site(target: str, shortcuts: dict[str, str]) -> str:
     if "." in t and " " not in t:
         return "https://" + t
     return f"https://www.google.com/search?q={quote_plus(t)}"
+
+
+def cap_strict(tools: list[dict], limit: int = MAX_STRICT) -> list[dict]:
+    """Guarantee a request never carries more strict tools than the API allows (extra ones are sent non-strict)."""
+    out, n = [], 0
+    for t in tools:
+        if t.get("strict"):
+            n += 1
+            if n > limit:
+                t = {k: v for k, v in t.items() if k != "strict"}
+        out.append(t)
+    return out
