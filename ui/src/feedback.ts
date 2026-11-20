@@ -8,6 +8,12 @@
 // With "reduce motion" on, pops and flashes fade in and out without scaling or shaking: still visible, never jumpy.
 import { h } from "./dom";
 
+/** The matching earcon for each kind of moment (set by main.ts once the sound engine is ready). Sound and sight
+ *  come from one place, so a moment that flashes also sounds, and a silent moment stays silent. */
+let sound: ((cue: string, intensity?: number) => void) | null = null;
+export function setFeedbackSound(fn: typeof sound) { sound = fn; }
+const FLASH_CUE: Record<"good" | "warn" | "bad", [string, number]> = { good: ["check", 0.8], warn: ["ui_error", 0.6], bad: ["ui_error", 1] };
+
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 let lastPop = "";
 let lastPopAt = 0;
@@ -31,6 +37,7 @@ export function flash(kind: "good" | "warn" | "bad") {
   stage.classList.remove("fbflash-good", "fbflash-warn", "fbflash-bad");
   void stage.offsetWidth;                                         // restart the animation
   stage.classList.add(`fbflash-${kind}`);
+  sound?.(...FLASH_CUE[kind]);
   setTimeout(() => stage.classList.remove(`fbflash-${kind}`), 900);
 }
 

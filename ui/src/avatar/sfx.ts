@@ -1,7 +1,10 @@
 // Monkey's little sound engine (Web Audio): buses, ducking under his voice, variation, cooldowns.
-// Until the recorded/ElevenLabs sound kit lands, cues are synthesized (tiny, zero asset bytes).
+// Recorded kit (ui/public/sfx) first; a few tiny synth recipes are the fallback when a cue has no takes.
 // Rules from docs/ANIMATION-UI-DIRECTION.md: frequent sounds are short and quiet, every play is slightly
 // different (pitch ±5%, volume ±2 dB), each cue has a cooldown, and SFX duck ~10 dB while Monkey talks.
+// Mix safety (docs/audio/SFX_AUDIT.md): takes are leveled to their cue on decode, interface sounds choke each
+// other (one UI sound at a time), a soft limiter on the master keeps stacked beats from clipping, and loops are
+// explicit handles that always stop.
 
 export type Juice = "full" | "calm" | "minimal";
 export type SynthCue =
@@ -19,7 +22,7 @@ export interface SoundSource {
 const COOLDOWN_MS: Record<string, number> = {
   "vocal/laugh": 4000, "vocal/yawn": 8000, "vocal/hmm": 15000, "vocal/woohoo": 6000, "vocal/hoohoo": 5000,
   "vocal/gasp": 3000, "vocal/snort_wake": 3000, "vocal/oh_banana": 600000, chest_thump: 90, footstep: 120,
-  reward: 3000, confetti: 1500, ui_click: 40, check: 60,
+  reward: 3000, confetti: 1500, ui_click: 40, check: 60, ui_open: 120, ui_close: 120, ui_error: 400, notify: 2000,
   pop: 80, zPop: 300, snore: 2500, startle: 3000, boing: 400, sparkle: 1500, whoosh: 150, yawn: 8000,
   thump: 120, tick: 70, sweat: 900,
 };
@@ -36,7 +39,51 @@ const ALLOWED: Record<Juice, Set<string> | "all"> = {
   minimal: new Set<string>(),
 };
 // Recorded samples are loudness-normalized offline, so they play near unity (per-cue trims only).
-const SAMPLE_DB: Record<string, number> = { snore: -6, zPop: -4, tick: -6, jungle_loop: -8, ui_click: -6, footstep: -4 };
+// UI trims come from the measured median short-term loudness (tools/sfx/inventory.py) so the interface has a
+// hierarchy: click (-15) < open/close (-15) < confirm (-14) < error (-13) < notification (-11), all under speech.
+const SAMPLE_DB: Record<string, number> = { snore: -6, zPop: -4, tick: -6, jungle_loop: -8, ui_click: -6, footstep: -4,
+  ui_open: -4.5, ui_close: -8, check: -4.5, ui_error: -5, notify: 2.5 };
+/** Interface sounds and their rank. One UI sound at a time: a new one cuts a ringing one of equal or lower rank
+ *  short (the click that opened Settings gives way to "open"); a lower one waits its turn (a dialog opening right
+ *  after the "needs you" chime doesn't cut the chime off, it's simply skipped). */
+const UI_RANK: Record<string, number> = { ui_click: 0, tick: 0, ui_open: 1, ui_close: 1, check: 2, ui_error: 3, notify: 4 };
+export const UI_GROUP = new Set(Object.keys(UI_RANK));
+/** Decoded first (the first click must not be silent); everything else loads a moment later; loops on demand. */
+const HOT = ["ui_click", "pop", "check", "ui_open", "ui_close", "ui_error", "notify"];
+const MAX_VOICES = 8;
+export const LIMITER_MAKEUP_DB = 2.91;
+const LEVEL_CLAMP_DB = 6;
+
+/** Unbiased shuffle (Fisher–Yates). `sort(() => Math.random() - 0.5)` favors keeping items near their start. */
+export function shuffle<T>(xs: T[], rnd: () => number = Math.random): T[] {
+  const a = [...xs];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Loudest 10 ms RMS of a buffer in dB (what a short sound "hits" at). */
+export function peakRmsDb(buf: { numberOfChannels: number; length: number; sampleRate: number; getChannelData(c: number): Float32Array }): number {
+  const w = Math.max(1, Math.round(buf.sampleRate * 0.01));
+  const n = buf.length;
+  const sq = new Float64Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) sq[i] += (d[i] * d[i]) / buf.numberOfChannels;
+  }
+  let sum = 0, best = 0;
+  for (let i = 0; i < n; i++) {
+    sum += sq[i];
+    if (i >= w) sum -= sq[i - w];
+    if (sum > best) best = sum;
+  }
+  return 10 * Math.log10(Math.max(best / Math.min(w, n), 1e-12));
+}
+
+/** A running loop (ambience or a state bed). stop() fades it out; calling it twice is harmless. */
+export interface LoopHandle { cue: string; stop(fadeS?: number): void; readonly playing: boolean }
 
 const db = (v: number) => Math.pow(10, v / 20);
 const jitter = (amt: number) => 1 + (Math.random() * 2 - 1) * amt;
@@ -48,6 +95,12 @@ export class Sfx {
   private last = new Map<Cue, number>();
   private noise: AudioBuffer | null = null;
   private live = 0;
+  private voices = new Set<{ src: AudioScheduledSourceNode; out: GainNode; cue: string }>();
+  private uiVoice: { src: AudioScheduledSourceNode; out: GainNode; rank: number } | null = null;
+  private previewSrc: AudioBufferSourceNode | null = null;
+  private loops = new Map<string, LoopHandle>();
+  private trim = new Map<string, number>();            // take -> dB that levels it to its cue's median
+  private makeContext: () => AudioContext;
   juice: Juice = "full";
   volume = 0.7;          // 0..1 from Settings
   private ducked = false;
@@ -58,6 +111,7 @@ export class Sfx {
   private lastTake = new Map<string, string>();
   rejects = new Set<string>();                          // takes turned off in the Sound Lab ("laugh_2")
   private source: SoundSource | null = null;
+  private fetcher: (src: string) => Promise<ArrayBuffer>;
 
   /** Plug in the recorded kit (called once the bridge is ready). */
   async attach(src: SoundSource) {
@@ -67,7 +121,7 @@ export class Sfx {
     };
     try { add(await src.bundled()); } catch { /* no bundled kit */ }
     try { add(await src.user(), "user:"); } catch { /* none made yet */ }
-    this.prefetch();
+    await this.prefetch();
   }
 
   cues(): Record<string, string[]> { return Object.fromEntries(this.kit); }
@@ -88,27 +142,59 @@ export class Sfx {
     this.prefetch();
   }
 
-  /** Sound Lab: play one exact take, ignoring juice level and cooldowns. */
+  /** Sound Lab: play one exact take, ignoring juice level and cooldowns. A new preview stops the previous one, so
+   *  auditioning takes quickly never stacks them (and the Sound Lab buttons don't click, see main.ts). */
   async preview(src: string) {
     const ctx = this.ensure();
     if (!ctx) return;
     await ctx.resume().catch(() => {});
     const buf = await this.load(src);
     if (!buf) return;
+    try { this.previewSrc?.stop(); } catch { /* already ended */ }
     const s = ctx.createBufferSource();
     s.buffer = buf;
-    s.connect(this.master);
+    const g = ctx.createGain();
+    g.gain.value = db(this.trim.get(src) ?? 0);       // heard as it plays in the app (leveled), not raw
+    s.connect(g).connect(this.master);
     s.start();
+    this.previewSrc = s;
+    s.onended = () => { if (this.previewSrc === s) this.previewSrc = null; g.disconnect(); };
   }
 
   takeOf(src: string) { return this.takeName(src); }
 
   private takeName(src: string) { return src.split("/").pop()!.replace(/\.(ogg|wav)$/, ""); }
 
+  /** Hot cues decode right away; the rest a moment later in small batches; loops only when first played. */
   private async prefetch() {
     const ctx = this.ensure();
     if (!ctx) return;
-    for (const files of this.kit.values()) for (const f of files) void this.load(f);
+    const isLoop = (c: string) => c.endsWith("_loop");
+    await Promise.all(HOT.flatMap((c) => this.kit.get(c) ?? []).map((f) => this.load(f)));
+    const rest = [...this.kit.entries()].filter(([c]) => !HOT.includes(c) && !isLoop(c)).flatMap(([, fs]) => fs);
+    this.warming = (async () => {                         // in the background: attach() doesn't wait for these
+      for (let i = 0; i < rest.length; i += 6) await Promise.all(rest.slice(i, i + 6).map((f) => this.load(f)));
+    })();
+  }
+  /** Resolves once every non-loop take is decoded (tests, the Sound Lab). */
+  warming: Promise<void> = Promise.resolve();
+
+  /** dB that brings each take of a cue to the cue's median loudness (clamped), so no take jumps out. */
+  private level(cue: string) {
+    const files = this.kit.get(cue) ?? [];
+    const loud = files.map((f) => {
+      const b = this.buffers.get(f);
+      return b && typeof b !== "string" ? [f, peakRmsDb(b)] as const : null;
+    }).filter((x): x is readonly [string, number] => x !== null);
+    if (!loud.length) return;
+    const sorted = loud.map(([, v]) => v).sort((a, b) => a - b);
+    const med = sorted[Math.floor((sorted.length - 1) / 2)];
+    for (const [f, v] of loud) this.trim.set(f, Math.max(-LEVEL_CLAMP_DB, Math.min(LEVEL_CLAMP_DB, med - v)));
+  }
+
+  private cueOf(src: string): string | undefined {
+    for (const [cue, files] of this.kit) if (files.includes(src)) return cue;
+    return undefined;
   }
 
   private async load(src: string): Promise<AudioBuffer | null> {
@@ -121,10 +207,12 @@ export class Sfx {
     try {
       let data: ArrayBuffer | null;
       if (src.startsWith("user:")) data = (await this.source?.userData(src.slice(5))) ?? null;
-      else data = await (await fetch(src)).arrayBuffer();
+      else data = await this.fetcher(src);
       if (!data) throw new Error("missing");
       const buf = await ctx.decodeAudioData(data);
       this.buffers.set(src, buf);
+      const cue = this.cueOf(src);
+      if (cue) this.level(cue);
       return buf;
     } catch {
       this.buffers.set(src, "failed");
@@ -139,18 +227,36 @@ export class Sfx {
     if (!ready.length) { files.forEach((f) => void this.load(f)); return null; }
     let bag = (this.bags.get(cue) ?? []).filter((f) => ready.includes(f));
     if (!bag.length) {
-      bag = [...ready].sort(() => Math.random() - 0.5);
+      bag = shuffle(ready);
       if (bag.length > 1 && bag[0] === this.lastTake.get(cue)) bag.push(bag.shift()!);
     }
     const f = bag.shift()!;
     this.bags.set(cue, bag);
     this.lastTake.set(cue, f);
+    this.lastPicked = f;
     return this.buffers.get(f) as AudioBuffer;
   }
+  private lastPicked = "";
 
   has(cue: string) { return this.kit.has(cue); }
 
-  constructor() {
+  private original = new Map<string, string[]>();
+  /** Sound Lab review: play a cue from candidate takes instead of the shipped ones (null = back to the shipped
+   *  takes). The shipped files are kept, so switching back is instant and nothing is lost. */
+  async useVariant(cue: string, files: string[] | null) {
+    if (!this.original.has(cue)) this.original.set(cue, this.kit.get(cue) ?? []);
+    const next = files ?? this.original.get(cue)!;
+    this.kit.set(cue, next);
+    this.bags.delete(cue);
+    this.lastTake.delete(cue);
+    await Promise.all(next.map((f) => this.load(f)));
+    this.level(cue);
+  }
+
+  constructor(opts: { makeContext?: () => AudioContext; fetch?: (src: string) => Promise<ArrayBuffer> } = {}) {
+    this.makeContext = opts.makeContext ?? (() => new AudioContext());
+    this.fetcher = opts.fetch ?? (async (src) => (await fetch(src)).arrayBuffer());
+    if (typeof window === "undefined") return;
     const unlock = () => { this.ensure(); this.ctx?.resume().catch(() => {}); };
     window.addEventListener("pointerdown", unlock, { capture: true });
     window.addEventListener("keydown", unlock, { capture: true });
@@ -159,13 +265,20 @@ export class Sfx {
   private ensure(): AudioContext | null {
     if (this.ctx) return this.ctx;
     try {
-      this.ctx = new AudioContext();
+      this.ctx = this.makeContext();
     } catch {
       return null;
     }
     this.master = this.ctx.createGain();
     this.bus = this.ctx.createGain();
-    this.bus.connect(this.master).connect(this.ctx.destination);
+    // Safety limiter: transparent for one sound, catches stacked beats (a chest-beat run, wake-up) before they clip.
+    const lim = this.ctx.createDynamicsCompressor();
+    lim.threshold.value = -6; lim.knee.value = 3; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.12;
+    // The Web Audio compressor adds automatic makeup gain (+2.91 dB in Chromium with these settings, measured with
+    // an OfflineAudioContext). Take it back out so a single sound plays at exactly the level it had before.
+    const makeup = this.ctx.createGain();
+    makeup.gain.value = db(-LIMITER_MAKEUP_DB);
+    this.bus.connect(this.master).connect(lim).connect(makeup).connect(this.ctx.destination);
     this.applyVolume();
     const len = this.ctx.sampleRate;
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -197,31 +310,118 @@ export class Sfx {
     if (vocal && this.speaking) return;                // his grunts never talk over his own voice
     const now = performance.now();
     if (now - (this.last.get(cue) ?? -1e9) < (COOLDOWN_MS[cue] ?? 120)) return;
-    if (this.live >= 8) return;                       // polyphony cap
+    const ui = UI_GROUP.has(cue);
+    if (this.live >= MAX_VOICES && !ui) return;       // polyphony cap (an interface answer always gets through)
     const ctx = this.ensure();
     if (!ctx || ctx.state !== "running") return;
+    if (ui && this.uiVoice && this.uiVoice.rank > UI_RANK[cue]) return;   // a more important UI sound is ringing
     const buf = this.pick(cue);
     if (!buf && !(cue in LEVEL_DB)) return;            // no recording and no synth recipe for this cue
     this.last.set(cue, now);
+    if (ui) this.choke(ctx);
     const out = ctx.createGain();
     const calm = this.juice === "calm" ? 0.5 : 1;
     out.connect(this.bus);
     this.live++;
     let end: number;
+    let node: AudioScheduledSourceNode | null = null;
     if (buf) {
-      out.gain.value = db((SAMPLE_DB[cue] ?? 0) + (Math.random() * 4 - 2)) * calm * intensity;
+      const take = this.trim.get(this.lastPicked) ?? 0;
+      out.gain.value = db((SAMPLE_DB[cue] ?? 0) + take + (Math.random() * 4 - 2)) * calm * intensity;
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.playbackRate.value = vocal ? jitter(0.03) : jitter(0.05);   // ±5% pitch (vocals ±3%)
       src.connect(out);
       src.start();
+      node = src;
       end = buf.duration / src.playbackRate.value;
     } else {
       out.gain.value = db(LEVEL_DB[cue] + (Math.random() * 4 - 2)) * calm * intensity;
       end = this.synth(ctx, cue as SynthCue, out, jitter(0.05));
     }
-    setTimeout(() => { this.live--; out.disconnect(); }, end * 1000 + 100);
+    const voice = node ? { src: node, out, cue } : null;
+    if (voice) this.voices.add(voice);
+    if (ui && node) this.uiVoice = { src: node, out, rank: UI_RANK[cue] };
+    setTimeout(() => {
+      this.live--; out.disconnect();
+      if (voice) this.voices.delete(voice);
+      if (this.uiVoice?.out === out) this.uiVoice = null;
+    }, end * 1000 + 100);
   }
+
+  /** Fade the interface sound that's still ringing (12 ms, no click) so the new one starts clean. */
+  private choke(ctx: AudioContext) {
+    const v = this.uiVoice;
+    if (!v) return;
+    this.uiVoice = null;
+    const t = ctx.currentTime;
+    v.out.gain.cancelScheduledValues(t);
+    v.out.gain.setValueAtTime(v.out.gain.value, t);
+    v.out.gain.linearRampToValueAtTime(0, t + 0.012);
+    try { v.src.stop(t + 0.015); } catch { /* already stopped */ }
+  }
+
+  /** Start a looping bed (only when a feature asks for one; nothing loops by default). Deduplicated per cue:
+   *  asking again returns the running handle. Fades in, and stop() fades out and frees it. */
+  async loop(cue: string, opts: { fadeS?: number; gainDb?: number } = {}): Promise<LoopHandle | null> {
+    const running = this.loops.get(cue);
+    if (running?.playing) return running;
+    const ctx = this.ensure();
+    if (!ctx) return null;
+    const files = (this.kit.get(cue) ?? []).filter((f) => !this.rejects.has(this.takeName(f)));
+    if (!files.length) return null;
+    const buf = await this.load(files[0]);
+    if (!buf) return null;
+    const again = this.loops.get(cue);               // another call may have started it while this one loaded
+    if (again?.playing) return again;
+    const fade = opts.fadeS ?? 0.6;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(db((SAMPLE_DB[cue] ?? 0) + (opts.gainDb ?? 0)), t + fade);
+    src.connect(g).connect(this.bus);
+    src.start();
+    let playing = true;
+    const handle: LoopHandle = {
+      cue,
+      get playing() { return playing; },
+      stop: (fadeS = 0.4) => {
+        if (!playing) return;
+        playing = false;
+        const t0 = ctx.currentTime;
+        g.gain.cancelScheduledValues(t0);
+        g.gain.setValueAtTime(g.gain.value, t0);
+        g.gain.linearRampToValueAtTime(0, t0 + fadeS);
+        try { src.stop(t0 + fadeS + 0.02); } catch { /* stopped */ }
+        setTimeout(() => g.disconnect(), (fadeS + 0.1) * 1000);
+        if (this.loops.get(cue) === handle) this.loops.delete(cue);
+      },
+    };
+    this.loops.set(cue, handle);
+    return handle;
+  }
+
+  /** Stop everything now (window hidden, app quitting, barge-in on the whole scene). Loops fade very briefly. */
+  stopAll() {
+    for (const h of [...this.loops.values()]) h.stop(0.05);
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (const v of this.voices) {
+      v.out.gain.cancelScheduledValues(t);
+      v.out.gain.setValueAtTime(v.out.gain.value, t);
+      v.out.gain.linearRampToValueAtTime(0, t + 0.02);
+      try { v.src.stop(t + 0.025); } catch { /* ended */ }
+    }
+    this.voices.clear();
+    this.uiVoice = null;
+  }
+
+  /** For tests and the Sound Lab: what's playing. */
+  get activeLoops() { return [...this.loops.keys()]; }
+  get liveVoices() { return this.live; }
 
   // ------------------------------------------------------------ synth recipes (returns duration in s)
   private tone(ctx: AudioContext, out: AudioNode, type: OscillatorType, f0: number, f1: number, dur: number,

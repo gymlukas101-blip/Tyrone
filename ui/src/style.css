@@ -348,6 +348,9 @@ dialog, .settings header { background: #0a3a1c; }
 .soundlab .name { min-width: 130px; color: var(--muted); font-size: 0.9em; }
 .soundlab .take { min-width: 28px; padding: 2px 6px; border-radius: 8px; }
 .soundlab .take.off { opacity: 0.35; text-decoration: line-through; }
+.soundlab .variants { display: inline-flex; gap: 2px; margin-right: 6px; padding: 2px; border-radius: 10px; background: color-mix(in srgb, var(--muted) 15%, transparent); }
+.soundlab .variant { padding: 2px 8px; border-radius: 8px; font-size: 0.85em; background: transparent; }
+.soundlab .variant.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
 /* Memory inspector / import / chip */
 .memresults { display: grid; gap: 6px; margin: 6px 0; max-height: 280px; overflow: auto; }
