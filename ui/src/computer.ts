@@ -197,17 +197,43 @@ async function showHistory(taskId: string) {
 
 function browserPick(st: AutoState): HTMLElement {
   const sel = h("select", {},
-    h("option", { value: "chrome", selected: (st.browser ?? "chrome") === "chrome" }, "Google Chrome"),
-    h("option", { value: "edge", selected: st.browser === "edge" }, "Microsoft Edge")) as HTMLSelectElement;
+    h("option", { value: "my_chrome", selected: st.browser === "my_chrome" }, "My Chrome: the tabs I share (Monkey extension)"),
+    h("option", { value: "chrome", selected: (st.browser ?? "chrome") === "chrome" }, "Monkey's own Chrome window"),
+    h("option", { value: "edge", selected: st.browser === "edge" }, "Monkey's own Edge window")) as HTMLSelectElement;
+  const note = h("small", { class: "meta" });
+  const pairBox = h("div", { class: "pairbox" });
+  const draw = async () => {
+    const v = sel.value;
+    note.textContent = v === "my_chrome"
+      ? "He works in your real Chrome, signed in as you, but only in tabs you share (and pop-ups they open, like Duo)."
+      : `His own window and profile (sign in there once); your normal browser isn't touched.${v === "chrome" && st.chrome_installed === false ? " Chrome isn't installed on this PC, so Edge is used." : ""}`;
+    pairBox.hidden = v !== "my_chrome";
+    if (v !== "my_chrome" || !api.automation_bridge) return;
+    const b = await api.automation_bridge("status");
+    const code = h("input", { readonly: true, value: b.pairing_code ?? "", class: "code" }) as HTMLInputElement;
+    const ok = b.extension_connected;
+    pairBox.replaceChildren(
+      h("p", { class: ok ? "meta ok" : "meta" }, ok ? `✓ Chrome is connected · ${b.tabs ?? 0} tab(s) shared` : b.error ? `⚠ ${b.error}` : "Not connected yet. One-time setup:"),
+      ...(ok ? [] : [h("ol", { class: "steps" },
+        h("li", {}, "In Chrome open ", h("b", {}, "chrome://extensions"), ", turn on ", h("b", {}, "Developer mode"), " (top right)."),
+        h("li", {}, "Click ", h("b", {}, "Load unpacked"), " and pick Monkey's extension folder ",
+          h("button", { type: "button", class: "ghost mini", onclick: async () => { const r = await api.automation_bridge!("open_folder"); if (!r.ok) toast(`⚠ ${r.error ?? ""} ${r.path ?? ""}`, 6000); } }, "Open folder")),
+        h("li", {}, "Click the 🍌 Monkey icon in Chrome's toolbar, paste this code and press Pair:"),
+        h("li", {}, "Open your Canvas page, click the Monkey icon → ", h("b", {}, "Let Monkey use this tab"), "."))]),
+      h("div", { class: "row" }, code,
+        h("button", { type: "button", class: "ghost mini", onclick: async () => { await navigator.clipboard.writeText(code.value).catch(() => code.select()); toast("Pairing code copied"); } }, "Copy"),
+        h("button", { type: "button", class: "ghost mini", title: "The old code stops working; paste the new one in the extension",
+          onclick: async () => { await api.automation_bridge!("new_code"); void draw(); } }, "New code")),
+      h("small", { class: "meta" }, "Chrome shows “Monkey for Chrome started debugging this browser” while he works; press Cancel on that bar to stop him instantly."));
+  };
   sel.addEventListener("change", async () => {
     await api.save_settings({ automation_browser: sel.value });
     if (state) state.browser = sel.value;
-    toast(sel.value === "chrome" && st.chrome_installed === false ? "Chrome isn't installed, so Monkey will use Edge until it is." : "Saved. The next task opens in it.", 4000);
+    toast(sel.value === "chrome" && st.chrome_installed === false ? "Chrome isn't installed, so Monkey will use Edge until it is." : "Saved.", 3000);
+    void draw();
   });
-  const note = st.windows_supported && (st.browser ?? "chrome") === "chrome" && st.chrome_installed === false
-    ? " Chrome isn't installed on this PC, so Edge is used." : "";
-  return h("label", { class: "field" }, h("span", {}, "Monkey's browser"), sel,
-    h("small", { class: "meta" }, `His own window and profile (sign in there once); your normal browser isn't touched.${note}`));
+  void draw();
+  return h("div", { class: "field" }, h("label", {}, h("span", {}, "Where Monkey works"), sel), note, pairBox);
 }
 
 /** The Tasks dialog: on/off switch, the permission flow, the live panel and past tasks. */
@@ -252,11 +278,18 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     }
   };
   general.addEventListener("change", () => void syncMode()); course.addEventListener("change", () => void syncMode());
+  const anySite = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
+  const syncSites = () => {
+    domains.disabled = anySite.checked;
+    domains.closest("label")?.toggleAttribute("hidden", anySite.checked);
+    helpers.closest("label")?.toggleAttribute("hidden", anySite.checked);
+  };
+  anySite.addEventListener("change", syncSites);
   const err = h("p", { class: "keynote" });
   const start = async () => {
     err.textContent = ""; err.className = "keynote";
     const r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
-      "managed_browser", shots.checked, askMore.checked, helpers.checked && !general.checked,
+      "managed_browser", shots.checked, askMore.checked, helpers.checked && !general.checked, anySite.checked,
       general.checked ? "general" : "course", apps.value.split(/[,\s]+/).filter(Boolean),
       files.value.split(/\n+/).map((x) => x.trim()).filter(Boolean), physical.checked);
     if (!r.ok) { err.className = "keynote bad"; err.textContent = `⚠ ${r.error}`; return; }
@@ -274,6 +307,8 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
         h("small", {}, " Plans with Claude, switches between the browser and the apps, checks the result on screen."))),
     appBox,
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
+    h("label", { class: "field toggle" }, anySite, h("span", {}, h("b", {}, "Any website"),
+      " Canvas, Duo, module and video sites open freely. He still never types passwords or codes, asks before anything that sends, submits, buys or deletes, and quiz answers stay yours.")),
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
     browserPick(st),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
@@ -294,6 +329,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
       h("small", {}, " Off by default. Turning it off stops everything immediately. Monkey works normally without it."))),
     ...(st.enabled ? [taskPanel(false), busy ? h("p", { class: "meta" }, "One task at a time: pause or stop this one to start another.") : form, past.length ? h("section", {}, h("h4", {}, "Earlier tasks"), h("ul", { class: "pastlist" }, ...past)) : ""] : []),
   );
+  syncSites();
   if (!dlg.open) dlg.showModal();
   dlg.scrollTop = 0;
 }

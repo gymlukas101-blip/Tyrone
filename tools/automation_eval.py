@@ -86,7 +86,7 @@ def fake_advisor(question: str, options: list[str]) -> dict:
 
 def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, pause_test: bool = False,
             restart_test: bool = False, headless: bool = True, cursor: bool = False, relay: bool = False,
-            wrong_first: bool = False) -> dict:
+            wrong_first: bool = False, cdp_endpoint: str | None = None, any_site: bool = False) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix="monkey-eval-"))
     course = DemoCourse(media_seconds=media, variants=variants, seed=seed).start()
     gate = PermissionGate()
@@ -99,12 +99,14 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
             from monkey.automation.cursor_events import BrowserCursor, CursorSettings
 
             cur = BrowserCursor(CursorSettings(motion="full"))
+        if cdp_endpoint:                      # the user's own Chrome through the Monkey for Chrome bridge
+            return BrowserSession("", gate, cursor=cur, cdp_endpoint=cdp_endpoint)
         return BrowserSession(tmp / "profile", gate, headless=headless, executable_path=browser_path(), cursor=cur)
 
     marks: list = []
     mgr = TaskManager(store, gate, factory, emit=lambda n, p: events.append(p["task"]["state"]),
                       advisor=fake_advisor if relay else None)
-    t = mgr.create("Finish all 4 modules of the safety training", course.url, ["127.0.0.1"])
+    t = mgr.create("Finish all 4 modules of the safety training", course.url, ["*"] if any_site else ["127.0.0.1"])
     started = time.time()
     user_acts: list[str] = []
     paused_ok = resumed_ok = restarted = False

@@ -117,9 +117,10 @@ export interface Api {
   automation_state(): Promise<AutoState>;
   automation_enable(on: boolean): Promise<AutoState>;
   automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
-                   confirmMedium: boolean, helperSites?: boolean, skill?: string, apps?: string[], files?: string[],
-                   allowPhysical?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+                   confirmMedium: boolean, helperSites?: boolean, anySite?: boolean, skill?: string, apps?: string[],
+                   files?: string[], allowPhysical?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
   automation_trace?(taskId: string): Promise<{ ok: boolean; events: ComputerEvent[] }>;
+  automation_bridge?(action: "status" | "new_code" | "open_folder"): Promise<BridgeStatus & { path?: string; error?: string }>;
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
   automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
   automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;
@@ -144,6 +145,8 @@ export interface ComputerEvent { task_id?: string; ts: number; t: number; ev: st
   role?: string; name?: string; stage?: string; error?: string; detail?: string; ms?: number; from?: string; to?: string;
   why?: string; process?: string; window?: string; url?: string; message?: string; kind?: string; ok?: boolean;
   recovered_by?: string; subgoal?: string; x?: number; y?: number; space?: string }
+export interface BridgeStatus { ok: boolean; listening?: boolean; extension_connected?: boolean; tabs?: number;
+  error?: string; port?: number; pairing_code?: string; extension_folder?: string }
 export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string }
 export interface AuditRow { ts: number; kind: string; risk: string; target: string; host: string; outcome: string }
 export interface AutoState { enabled: boolean; tasks: AutoTask[]; active: string | null; approvals: Approval[];
@@ -568,6 +571,8 @@ function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, 
       { ts: Date.now() / 1000, kind: "click", risk: "LOW", target: "link Start module 1", host: "127.0.0.1", outcome: "done" },
       { ts: Date.now() / 1000, kind: "play", risk: "LOW", target: "button Play lesson", host: "127.0.0.1", outcome: "done" }] }; },
     async automation_trace() { return { ok: true, events: demoTrace }; },
+    async automation_bridge() { return { ok: true, listening: true, extension_connected: false, tabs: 0, port: 47615,
+      pairing_code: "MONKEY-47615-demo-code-demo-code-demo", extension_folder: "C:\\…\\Monkey\\extension\\chrome" }; },
     async automation_stop_all() { return { ok: true }; },
     async automation_windows() { return { ok: true, windows: [] }; },
     async overlay() { return { ok: true }; },

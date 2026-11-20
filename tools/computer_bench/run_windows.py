@@ -37,8 +37,10 @@ class Fixture:
 
     def start(self) -> None:
         self.log.write_text("", "utf-8")
-        self.proc = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                                      str(HERE / "win_fixture.ps1"), str(self.log)])
+        exe = compile_fixture(self.log.parent)
+        cmd = [str(exe), str(self.log)] if exe else ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                                     "-File", str(HERE / "win_fixture.ps1"), str(self.log)]
+        self.proc = subprocess.Popen(cmd)
         end = time.time() + 30
         while time.time() < end and not self.hwnd():
             time.sleep(0.3)
@@ -68,6 +70,28 @@ class Fixture:
                 return True
             time.sleep(0.15)
         return False
+
+
+_EXE: Path | None = None
+
+
+def compile_fixture(workdir: Path) -> Path | None:
+    """Compile WinFixture.cs with the .NET Framework compiler that ships with Windows (once per run)."""
+    global _EXE
+    if _EXE is not None and _EXE.is_file():
+        return _EXE
+    root = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET"
+    for fw in ("Framework64", "Framework"):
+        csc = root / fw / "v4.0.30319" / "csc.exe"
+        if csc.is_file():
+            out = Path(tempfile.gettempdir()) / "MonkeyWinFixture.exe"
+            r = subprocess.run([str(csc), "/nologo", "/target:winexe", f"/out:{out}", "/r:System.Windows.Forms.dll",
+                                "/r:System.Drawing.dll", str(HERE / "WinFixture.cs")], capture_output=True, text=True)
+            if r.returncode == 0 and out.is_file():
+                _EXE = out
+                return out
+            print("csc failed:", r.stdout[-800:], r.stderr[-400:], flush=True)
+    return None
 
 
 def cursor_pos() -> tuple[int, int]:
@@ -356,32 +380,34 @@ class Hung(Exception):
 
 
 def _bounded(fn, b, timeout: float):
-    """Run one benchmark task with a deadline: a backend blocked on a modal dialog counts as a failure (and the
-    fixture is restarted), instead of hanging the whole run."""
+    """Run one benchmark task on this thread (COM/asyncio objects are bound to it) with a watchdog: if it's still
+    running after `timeout`, the app it talks to is killed, which makes the blocked call return; the task counts as
+    hung and the caller restarts the fixture."""
     import threading
 
-    box: dict = {}
+    fired = threading.Event()
+    done = threading.Event()
 
-    def work():
-        try:
-            try:
-                import comtypes
+    def watch():
+        if not done.wait(timeout):
+            fired.set()
+            fx = getattr(b, "fx", None)
+            if fx is not None and fx.proc is not None:
+                fx.proc.kill()
+            subprocess.run(["taskkill", "/F", "/IM", "notepad.exe"], capture_output=True)
 
-                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
-            except Exception:  # noqa: BLE001
-                pass
-            box["res"] = fn(b)
-        except BaseException as exc:  # noqa: BLE001
-            box["exc"] = exc
-
-    th = threading.Thread(target=work, daemon=True)
-    th.start()
-    th.join(timeout)
-    if th.is_alive():
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        res = fn(b)
+    except Exception:
+        if fired.is_set():
+            raise Hung()
+        raise
+    finally:
+        done.set()
+    if fired.is_set():
         raise Hung()
-    if "exc" in box:
-        raise box["exc"]
-    return box.get("res")
+    return res
 
 
 def _rebuild(name: str, old, fx: Fixture, ad_exe: str):

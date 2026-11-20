@@ -334,3 +334,52 @@ def test_monkeys_browser_prefers_chrome_and_falls_back_to_edge(monkeypatch, tmp_
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert b.default_profile_dir(tmp_path, "chrome").name == "automation-browser-chrome"
     assert b.default_profile_dir(tmp_path, "msedge").name == "automation-browser"   # existing Edge sign-ins kept
+
+
+def test_any_website_scope_still_keeps_the_action_gate():
+    from monkey.automation.permissions import Action, PermissionGate, Risk, Target, url_allowed
+    from monkey.automation.tasks import Task
+
+    assert url_allowed("https://api-3f2a.duosecurity.com/frame/v4/auth", ["*"])[0]
+    assert url_allowed("https://login.wisc.edu/x", ["*"])[0]
+    assert not url_allowed("javascript:alert(1)", ["*"])[0]          # never a script or file URL
+    assert not url_allowed("file:///C:/x", ["*"])[0]
+    t = Task(objective="o", allowed_domains=["*"])
+    g = PermissionGate()
+    assert g.authorize(t, Action("click", Target(role="link", name="Next")), page_url="https://anything.org/a").allowed
+    d = g.authorize(t, Action("click", Target(role="button", name="Submit quiz")), page_url="https://x.org")
+    assert not d.allowed and d.user_only
+    d = g.authorize(t, Action("type", Target(role="textbox", name="Password", input_type="password"), text="x"),
+                    page_url="https://x.org")
+    assert not d.allowed and d.risk == Risk.FORBIDDEN
+    d = g.authorize(t, Action("click", Target(role="button", name="Delete account")), page_url="https://x.org")
+    assert not d.allowed and d.needs_approval
+
+
+def test_closed_popup_falls_back_to_the_previous_tab(tmp_path):
+    import pytest
+
+    pytest.importorskip("playwright")
+    from tools.automation_eval import browser_path as _bp
+
+    if _bp() is None:
+        pytest.skip("no Chromium here")
+    from monkey.automation.browser import BrowserSession
+    from monkey.automation.permissions import PermissionGate
+    from tools.automation_eval import browser_path
+
+    s = BrowserSession(tmp_path / "p", PermissionGate(), headless=True, channel=None,
+                       executable_path=browser_path(), allowed_domains=["*"]).start()
+    try:
+        s.page.set_content("<h1>Canvas</h1><button onclick=\"window.open('about:blank#duo')\">Sign in</button>")
+        main = s.page
+        with s.context.expect_page() as pop:
+            s.page.click("text=Sign in")
+        popup = pop.value
+        popup.wait_for_load_state()
+        assert s.page is popup                                        # the new tab became the active one
+        popup.close()
+        assert s.alive() and s.page is main                            # ... and closing it isn't "browser gone"
+        assert "Canvas" in s.observe().title or s.observe().elements
+    finally:
+        s.close()

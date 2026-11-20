@@ -39,6 +39,7 @@ desktop = [
   # pywinauto reads/acts on one picked window through UI Automation.
   "playwright>=1.65",
   "pywinauto>=0.6.9; sys_platform == 'win32'",
+  "websockets>=13",          # the local bridge the Monkey for Chrome extension connects to
 ]
 dev = ["pytest>=8", "pyinstaller>=6.10"]
 

@@ -953,7 +953,7 @@ class Api:
 
     def save_settings(self, changes: dict):
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
-        if allowed.get("automation_browser", "chrome") not in ("chrome", "edge"):
+        if allowed.get("automation_browser", "chrome") not in ("chrome", "edge", "my_chrome"):
             allowed.pop("automation_browser")
         if "fish_voice_id" in allowed:
             from .audio.tts import normalize_voice_id
@@ -1756,10 +1756,11 @@ class Api:
 
     def automation_start(self, objective: str, start_url: str, domains: list, mode: str = "managed_browser",
                          send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True,
-                         skill: str = "course", apps: list | None = None, files: list | None = None,
-                         allow_physical: bool = False, window: dict | None = None):
+                         any_site: bool = True, skill: str = "course", apps: list | None = None,
+                         files: list | None = None, allow_physical: bool = False, window: dict | None = None):
         return self._app.automation.start(objective, start_url, list(domains or []), mode, send_screenshots,
                                           confirm_medium, window=window, helper_sites=bool(helper_sites),
+                                          any_site=bool(any_site),
                                           skill=skill if skill in ("course", "general") else "course",
                                           apps=list(apps or []), files=list(files or []),
                                           allow_physical=bool(allow_physical))
@@ -1769,6 +1770,11 @@ class Api:
 
     def automation_capabilities(self):
         return self._app.automation.capabilities()
+
+    def automation_bridge(self, action: str = "status"):
+        a = self._app.automation
+        return {"status": a.bridge_status, "new_code": a.bridge_new_code,
+                "open_folder": a.open_extension_folder}.get(action, a.bridge_status)()
 
     def automation_demo(self):
         return self._app.automation.demo_start()

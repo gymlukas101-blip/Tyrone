@@ -112,6 +112,14 @@ class AutomationService:
         cs = CursorSettings.from_app(self.app.cfg.settings)
         cursor = BrowserCursor(cs, on_event=lambda e: self.app.ui.emit("cursor", e)) if cs.mode != "off" else None
         pref = getattr(self.app.cfg.settings, "automation_browser", "chrome")
+        if pref == "my_chrome":
+            b = self.bridge()
+            if not b.ready.is_set():
+                from .browser import BrowserGone
+
+                raise BrowserGone("Your Chrome isn't connected: in Chrome, click the Monkey icon and press “Let Monkey "
+                                  "use this tab”.")
+            return BrowserSession("", self.gate, cursor=cursor, cdp_endpoint=b.cdp_url)
         channel = pick_channel(pref) if sys.platform == "win32" else None
         return BrowserSession(default_profile_dir(self.app.cfg.data_dir, channel or ""), self.gate, headless=False,
                               cursor=cursor, channel=channel)
@@ -139,6 +147,59 @@ class AutomationService:
                 self.app._say(line)
             except Exception:  # noqa: BLE001
                 pass
+
+    # ---- your own Chrome (Monkey for Chrome extension) ---------------------------------------------------------
+    def bridge(self):
+        """The local relay the extension connects to; started on first use and kept running while Monkey runs."""
+        if getattr(self, "_bridge", None) is None:
+            from .. import keys
+            from .chrome_bridge import ChromeBridge, new_token
+
+            tok = keys.get("chrome_bridge")
+            if not tok:
+                tok = new_token()
+                keys.set("chrome_bridge", tok)
+            self._bridge = ChromeBridge(tok, port=int(getattr(self.app.cfg.settings, "chrome_bridge_port", 47615)))
+            self._bridge.start()
+        return self._bridge
+
+    def bridge_status(self) -> dict:
+        from .chrome_bridge import pairing_code
+
+        b = self.bridge()
+        return {"ok": True, **b.status(), "pairing_code": pairing_code(b.token, b.port),
+                "extension_folder": str(self.extension_folder())}
+
+    def bridge_new_code(self) -> dict:
+        """A fresh pairing code (the old one stops working; paste the new one in the extension)."""
+        from .. import keys
+        from .chrome_bridge import new_token
+
+        keys.set("chrome_bridge", new_token())
+        if getattr(self, "_bridge", None) is not None:
+            self._bridge.stop()
+            self._bridge = None
+        return self.bridge_status()
+
+    @staticmethod
+    def extension_folder() -> Path:
+        here = Path(__file__).resolve()
+        for base in (Path(getattr(sys, "_MEIPASS", "")) if getattr(sys, "_MEIPASS", None) else None,
+                     here.parents[2], here.parents[1]):
+            if base and (base / "extension" / "chrome" / "manifest.json").is_file():
+                return base / "extension" / "chrome"
+        return here.parents[2] / "extension" / "chrome"
+
+    def open_extension_folder(self) -> dict:
+        import os
+
+        p = self.extension_folder()
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(p))              # noqa: S606 - opens Explorer on the bundled folder
+        except OSError as exc:
+            return {"ok": False, "error": str(exc), "path": str(p)}
+        return {"ok": True, "path": str(p)}
 
     # ---- API ---------------------------------------------------------------------------------------------------
     @staticmethod
@@ -176,21 +237,23 @@ class AutomationService:
 
     def start(self, objective: str, start_url: str, domains: list[str], mode: str = "managed_browser",
               send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None,
-              helper_sites: bool = True, skill: str = "course", apps: list[str] | None = None,
-              files: list[str] | None = None, allow_physical: bool = False) -> dict:
+              helper_sites: bool = True, any_site: bool = True, skill: str = "course",
+              apps: list[str] | None = None, files: list[str] | None = None, allow_physical: bool = False) -> dict:
         if not self.enabled():
             return {"ok": False, "error": "Turn on computer tasks first (the switch at the top of this window)."}
         objective = (objective or "").strip()
         if len(objective) < 4:
             return {"ok": False, "error": "Say what Monkey should do (one sentence is enough)."}
         if skill == "general":
-            return self._start_general(objective, start_url, domains, send_screenshots, confirm_medium, window,
-                                       apps or [], files or [], allow_physical)
+            return self._start_general(objective, start_url, ["*"] if any_site else domains, send_screenshots,
+                                       confirm_medium, window, apps or [], files or [], allow_physical)
         if mode != "managed_browser":
             return {"ok": False, "error": "Window tasks are read-only previews in this version: use the Monkey "
                                          "browser for tasks."}
         domains = [d.strip().lower() for d in domains if d and d.strip()]
-        if helper_sites and domains:
+        if any_site:
+            domains = ["*"]                     # the owner's choice: Canvas, Duo, module and video sites open freely
+        if helper_sites and domains and "*" not in domains:
             from urllib.parse import urlsplit
 
             host = urlsplit(start_url if "://" in start_url else "https://" + start_url).hostname or ""
@@ -305,5 +368,7 @@ class AutomationService:
     def shutdown(self) -> None:
         if self._mgr is not None:
             self._mgr.shutdown()
+        if getattr(self, "_bridge", None) is not None:
+            self._bridge.stop()
         if self.demo is not None:
             self.demo.stop()
