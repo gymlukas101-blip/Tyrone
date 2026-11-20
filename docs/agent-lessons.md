@@ -25,6 +25,7 @@ How it's kept up to date:
 ### Testing
 - **Measure audio processing in the real engine before trusting its settings.** *Why:* the Web Audio `DynamicsCompressor` adds automatic makeup gain (+2.9 dB in Chromium), so a "safety limiter" quietly made every sound louder until an OfflineAudioContext render caught it (`tools/sfx/mixcheck.py`).
 - **Search for a cue's real call sites, not its name.** *Why:* a plain text search counted the CSS class `reward` and the settings id `check` as sound triggers; only lines that also involve `sfx` count.
+- **A new browser-test fixture skips when `tools.automation_eval.browser_path()` is None, exactly like `tests/test_m4_avatar.py`.** Never fall back to Playwright's default browser. *Why:* the Windows CI job has no Chromium, so the sound wiring tests errored there and blocked a release.
 - **Serve `ui/dist` over HTTP in Playwright, never `file://`.** *Why:* `file://` blocks fetching `monkey.glb`, so the 3D avatar silently falls back to SVG and tests pass against the wrong renderer.
 - **Browser tests wait for the app to finish starting (`window.__monkeyReady`), not just for the event hook,** and poll for an expected state instead of sleeping a fixed time. *Why:* boot's late `setState("idle")` overwrote test events on slower CI machines.
 - **Software-rendered Chromium draws a few fps.** Assert which render tier was chosen and its target, not measured frame rates. *Why:* fps assertions were meaningless and flaky here.
