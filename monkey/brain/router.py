@@ -118,6 +118,14 @@ def detect_importance(text: str) -> Importance:
     return "normal"
 
 
+# Requests that are real thinking or long work: worth the classifier's ~second even on voice (the reply takes a while
+# anyway, and picking the stronger model up front beats escalating mid-answer).
+_NEEDS_THOUGHT = re.compile(
+    r"\b(design|debug|architect\w*|plan (?:out|my|a|the)|strategy|prove|derive|analy[sz]e|compare|trade-?offs?|"
+    r"optimi[sz]e|refactor|implement|algorithm|essay|report|research|outline|draft|write (?:a|an|me|my)|"
+    r"step by step|in detail|learn how i)\b", re.I)
+
+
 def rule_task(text: str) -> tuple[str | None, str]:
     """Return (task id, reason) from rules, or (None, "") if the classifier should decide."""
     for task, pattern in RULES:
@@ -210,12 +218,16 @@ class Router:
         self._profile = profile or (lambda: "best")
         self.policy = policy or ModelPolicy()
 
-    def pick_task(self, text: str) -> tuple[str, str]:
+    def pick_task(self, text: str, fast: bool = False) -> tuple[str, str]:
         task, reason = rule_task(text)
         if task is not None:
             return task, reason
         if self._classify is None:
             return "general", "default"
+        if fast and not _NEEDS_THOUGHT.search(text):
+            # Voice: answer directly instead of waiting on a separate classifier call. The general model can still
+            # escalate itself; requests that look like real thinking work still get classified (below).
+            return "general", "fast path (no classifier)"
         try:
             got = self._classify(text)
             task, diff, needs_web, why = got[0], int(got[1]), bool(got[2]), str(got[3])
@@ -225,9 +237,10 @@ class Router:
         except Exception as exc:  # classifier is best-effort
             return "general", f"classifier failed ({type(exc).__name__}); default"
 
-    def route(self, text: str, explicit_importance: Importance | None = None, sticky: Route | None = None) -> Route:
+    def route(self, text: str, explicit_importance: Importance | None = None, sticky: Route | None = None,
+              fast: bool = False) -> Route:
         importance: Importance = explicit_importance or detect_importance(text)
-        task, reason = self.pick_task(text)
+        task, reason = self.pick_task(text, fast=fast)
 
         forced = self._forced()
         if forced:

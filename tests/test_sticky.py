@@ -14,9 +14,9 @@ def run_after(tmp_path, idle_s):
     seen = []
     orig = agent.router.route
 
-    def spy(text, importance=None, sticky=None):
+    def spy(text, importance=None, sticky=None, **kw):
         seen.append(sticky)
-        return orig(text, importance, sticky=sticky)
+        return orig(text, importance, sticky=sticky, **kw)
 
     agent.router.route = spy
     agent.handle("first question")

@@ -187,6 +187,9 @@ class Agent:
         self.last_activity = 0.0
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        self._speak_lock = threading.Lock()
+        self._stream_obj = None          # the open Claude stream (closed on cancel)
+        self._tool_pool = None           # bounded pool for tool calls (cancel doesn't wait for a slow tool)
         self._restored = False
         self._last_route: Route | None = None
         # Effort handling: the top-level effort is fixed for a conversation (changing it would break the
@@ -199,6 +202,7 @@ class Agent:
         self.persist = persist           # False for throwaway agents (calibration) - never touch the saved chat
         self._haiku_web_direct = False   # set if the API wants Haiku's web search called directly
         self.trace = None                # TurnTracer (app): stage timestamps and routing labels, no speech text
+        self.fast_voice_routing = True   # voice turns skip the classifier unless the request looks like thinking work
         self._restore()
 
     def _mark(self, name: str) -> None:
@@ -211,8 +215,25 @@ class Agent:
 
     # ------------------------------------------------------------ public
     def cancel(self) -> None:
-        """Stop the current reply (e.g. the user said 'Hey Monkey' again)."""
-        self._cancel.set()
+        """Stop the current reply (e.g. the user said 'Hey Monkey' again).
+
+        Under the speak lock, so once this returns no sentence of the cancelled reply can still be handed to the
+        speaker (the app silences the speaker right after). Also closes a stream that's waiting for Claude's first
+        token, so a new turn never waits on it."""
+        with self._speak_lock:
+            self._cancel.set()
+        st = self._stream_obj
+        if st is not None:
+            try:
+                st.close()
+            except Exception:  # noqa: BLE001 - already closed / mid-teardown
+                pass
+
+    def _say(self, sentence: str) -> None:
+        """Speak a sentence of the current reply, unless the reply was cancelled (checked under the same lock)."""
+        with self._speak_lock:
+            if not self._cancel.is_set():
+                self.speak(sentence)
 
     def new_session(self) -> None:
         sid, self.session_id, self.user_texts = self.session_id, None, []
@@ -314,7 +335,8 @@ class Agent:
                 begin(text, self.user_texts)
 
             self._mark("route_start")
-            route = self.router.route(text, importance, sticky=sticky)  # type: ignore[arg-type]
+            route = self.router.route(text, importance, sticky=sticky,  # type: ignore[arg-type]
+                                      fast=(source == "voice" and self.fast_voice_routing))
             self._mark("route_end")
             self._note(task=route.task, model=route.model, effort=route.effort,
                        route_kind=_route_kind(route.reason), classifier="classifier" in (route.reason or ""))
@@ -444,7 +466,7 @@ class Agent:
         line = t.get("holding", "") if t.get("slow") else ""
         if line:
             self.emit("delta", {"text": line + " "})
-            self.speak(line)
+            self._say(line)
         return line
 
     # ------------------------------------------------------------ loop
@@ -512,6 +534,9 @@ class Agent:
             try:
                 self._mark("llm_request")
                 with self.client.beta.messages.stream(**self._params(route)) as stream:
+                    self._stream_obj = stream
+                    if self._cancel.is_set():
+                        stream.close()
                     for event in stream:
                         if self._cancel.is_set():
                             break
@@ -527,15 +552,13 @@ class Agent:
                             for sentence in chunker.feed(event.text):
                                 self._mark("first_speakable")
                                 spoken_all.append(sentence)
-                                self.speak(sentence)
+                                self._say(sentence)
                     if self._cancel.is_set():
-                        self._note(outcome="cancelled")
-                        # Keep history valid: drop the unfinished user turn's tail cleanly.
-                        self.history.append({"role": "assistant", "content": [{"type": "text", "text": "(interrupted)"}]})
-                        self.emit("state", {"state": "idle"})
-                        return " ".join(spoken_all)
+                        return self._interrupted(spoken_all)
                     final = stream.get_final_message()
             except anthropic.APIStatusError as exc:
+                if self._cancel.is_set():
+                    return self._interrupted(spoken_all)
                 if _out_of_credits(exc):
                     return self._fail(CREDITS_GONE)
                 if workspace.needs_workspace(exc):
@@ -578,23 +601,33 @@ class Agent:
                     return self._fail("I'm being rate limited for a moment. Ask me again in a few seconds.")
                 return self._fail(f"API error {exc.status_code}: {exc.message}")
             except anthropic.APIConnectionError:
+                if self._cancel.is_set():
+                    return self._interrupted(spoken_all)       # we closed the stream ourselves
                 if not retried_server:
                     retried_server = True
                     time.sleep(1.0)
                     continue
                 return self._fail("I can't reach the internet right now.")
             except anthropic.APIError as exc:        # stream broke mid-reply in some other way
+                if self._cancel.is_set():
+                    return self._interrupted(spoken_all)
                 if not retried_server:
                     retried_server = True
                     log.warning("stream error, retrying once: %s", exc)
                     continue
                 return self._fail("The connection dropped mid-answer. Ask me again?")
+            except Exception:  # noqa: BLE001 - e.g. the HTTP layer after we closed the stream on cancel
+                if self._cancel.is_set():
+                    return self._interrupted(spoken_all)
+                raise
+            finally:
+                self._stream_obj = None
 
             self._restored = False
             for s in chunker.flush():
                 self._mark("first_speakable")
                 spoken_all.append(s)
-                self.speak(s)
+                self._say(s)
 
             self._record(route, final)
             if any(getattr(b, "type", "") in ("web_search_tool_result", "web_fetch_tool_result")
@@ -615,6 +648,8 @@ class Agent:
 
             results, escalate_reason = self._run_tools(final)
             self.history.append({"role": "user", "content": results})
+            if self._cancel.is_set():
+                return self._interrupted(spoken_all)        # interrupted during a tool: don't start another round
             if escalate_reason is not None:
                 route = self.router.escalate(route)
                 self._note(escalated=True, model=route.model)
@@ -624,6 +659,31 @@ class Agent:
         self.last_activity = time.time()
         self._last_route = route
         self._persist()
+        return " ".join(spoken_all)
+
+    def _run_tool(self, name: str, args: dict):
+        """Run one tool on a small bounded pool and give up waiting the moment the reply is cancelled, so a slow
+        tool (a web lookup, a big inbox) can't hold up the next turn. A tool that's already running finishes in the
+        background; its result is discarded."""
+        import concurrent.futures as cf
+
+        if self._tool_pool is None:
+            self._tool_pool = cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="tool")
+        fut = self._tool_pool.submit(self.tools.run, name, args)
+        while True:
+            try:
+                return fut.result(timeout=0.05)
+            except cf.TimeoutError:
+                if self._cancel.is_set():
+                    return "Stopped: the user interrupted.", True
+
+    def _interrupted(self, spoken_all: list[str]) -> str:
+        """The reply was cancelled: keep the history valid (the user turn gets an assistant reply) and go idle."""
+        self._note(outcome="cancelled")
+        last = self.history[-1] if self.history else None
+        if last is None or last.get("role") != "assistant":
+            self.history.append({"role": "assistant", "content": [{"type": "text", "text": "(interrupted)"}]})
+        self.emit("state", {"state": "idle"})
         return " ".join(spoken_all)
 
     def _run_tools(self, final) -> tuple[list[dict], str | None]:
@@ -661,7 +721,7 @@ class Agent:
                                     "content": f"Memory error: {exc}", "is_error": True})
                 continue
             try:
-                out, is_err = self.tools.run(block.name, dict(block.input or {}))
+                out, is_err = self._run_tool(block.name, dict(block.input or {}))
             except Escalate as esc:
                 escalate_reason = esc.reason
                 out, is_err = "Handing this to a stronger model.", False
