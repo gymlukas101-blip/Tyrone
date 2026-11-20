@@ -96,6 +96,7 @@ class Settings:
     # Computer tasks (docs/adr/0001-computer-agent.md). Off until the user turns it on; nothing else depends on it.
     computer_access: bool = False
     automation_stop_hotkey: str = "ctrl+alt+q"   # emergency stop: refuse every action and stop every task
+    automation_browser: str = "chrome"  # chrome | edge: Monkey's own browser window (falls back to the other)
     overlay_enabled: bool = True      # the small always-on-top companion window (when computer access is on)
     overlay_mode: str = "compact"     # compact | expanded | minimized
     overlay_geom: dict = field(default_factory=dict)    # {"x", "y", "w", "h"} remembered position

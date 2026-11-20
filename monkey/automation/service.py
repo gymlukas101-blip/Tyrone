@@ -77,12 +77,15 @@ class AutomationService:
         return self._mgr.reply(self._mgr.active_id, text)
 
     def _session(self, task):
-        from .browser import BrowserSession, default_profile_dir
+        from .browser import BrowserSession, default_profile_dir, pick_channel
         from .cursor_events import BrowserCursor, CursorSettings
 
         cs = CursorSettings.from_app(self.app.cfg.settings)
         cursor = BrowserCursor(cs, on_event=lambda e: self.app.ui.emit("cursor", e)) if cs.mode != "off" else None
-        return BrowserSession(default_profile_dir(self.app.cfg.data_dir), self.gate, headless=False, cursor=cursor)
+        pref = getattr(self.app.cfg.settings, "automation_browser", "chrome")
+        channel = pick_channel(pref) if sys.platform == "win32" else None
+        return BrowserSession(default_profile_dir(self.app.cfg.data_dir, channel or ""), self.gate, headless=False,
+                              cursor=cursor, channel=channel)
 
     def _emit(self, name: str, p: dict) -> None:
         self.app.ui.emit(name, p)
@@ -109,13 +112,21 @@ class AutomationService:
                 pass
 
     # ---- API ---------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _chrome() -> bool:
+        from .browser import chrome_installed
+
+        return chrome_installed()
+
     def enabled(self) -> bool:
         return bool(self.app.cfg.settings.computer_access)
 
     def state(self) -> dict:
         out = {"enabled": self.enabled(), "tasks": [], "active": None, "approvals": [],
                "demo_url": self.demo.url if self.demo else "", "stop_hotkey": self.app.cfg.settings.automation_stop_hotkey,
-               "windows_supported": sys.platform == "win32"}
+               "windows_supported": sys.platform == "win32",
+               "browser": getattr(self.app.cfg.settings, "automation_browser", "chrome"),
+               "chrome_installed": self._chrome()}
         if self._mgr is None and not self.enabled():
             return out
         m = self.mgr

@@ -34,7 +34,7 @@ python -m monkey
 ```
 
 2. Click **🖐 Tasks** (header), then turn on **Let Monkey do tasks in his own browser**. The companion appears (top-right by default); drag it anywhere.
-3. Click **Try the safe demo course**, then **Allow and start**. An Edge window opens on `http://127.0.0.1:<port>/` with Monkey's own profile.
+3. Click **Try the safe demo course**, then **Allow and start**. A Chrome window (Edge if Chrome isn't installed) opens on `http://127.0.0.1:<port>/` with Monkey's own profile.
 4. Watch the banana travel, glow, press and ripple on each Continue and Play. Each lesson plays to the end; Monkey doesn't skip.
 5. When he says it's your turn:
    - answer the practice question yourself;
@@ -47,7 +47,7 @@ python -m monkey
 **To check on the Dell** (none of this can be verified in the cloud container):
 - the companion's transparency, click-through and no-focus behaviour over other apps;
 - dragging it, and its remembered position across two monitors;
-- Edge launching through `channel="msedge"`;
+- Chrome launching through `channel="chrome"` (Edge as the fallback);
 - the Ctrl+Alt+Q hotkey;
 - the banana's look at 125/150% scaling;
 - GPU/CPU in Task Manager while a lesson plays (expected: near idle).
@@ -74,7 +74,7 @@ fixtures, so each is exercised by the evaluation.
    - **What to do:** e.g. "Finish the modules in this course".
    - **Start page:** the course's **Modules** page, e.g. `https://canvas.wisc.edu/courses/12345/modules`. That's where completion is checked.
    - Keep **"Also allow the sign-in and video sites courses use"** ticked. It adds `wisc.edu` (your NetID login), Duo, Microsoft, `instructure.com`, Kaltura, Panopto, YouTube and Vimeo.
-3. Press **Allow and start**. Edge opens with Monkey's own profile. Sign in with NetID and Duo **yourself** the first time (tick "Yes, this is my device").
+3. Press **Allow and start**. Chrome opens with Monkey's own profile (its own window, not your normal Chrome profile). Sign in with NetID and Duo **yourself** the first time (tick "Yes, this is my device").
 4. Watch the first module. When he asks, answer questions by letter, say "I confirm", "start" or "submit", or "allow" for a new site.
 5. If he says "I'm not sure what to do on this page", do that one step yourself. He notices and carries on, or asks Claude (a few cents).
 6. Budget per task: 4 hours, 600 actions, 40 Claude calls, $1. Pause and **Ctrl+Alt+Q** work at any time.

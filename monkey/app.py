@@ -953,6 +953,8 @@ class Api:
 
     def save_settings(self, changes: dict):
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
+        if allowed.get("automation_browser", "chrome") not in ("chrome", "edge"):
+            allowed.pop("automation_browser")
         if "fish_voice_id" in allowed:
             from .audio.tts import normalize_voice_id
 

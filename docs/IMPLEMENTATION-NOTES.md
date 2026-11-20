@@ -306,3 +306,12 @@ Now (`monkey/memory/export.py`):
   - The sync API is bound to one thread, so all tasks run on one worker.
   - A "paused, no Play button yet" lesson must not start the long wait.
   - The banana must snap to its target before pressing.
+
+## 2026-11-20: Monkey's browser is Chrome first
+- **Setting:** `automation_browser` = `chrome` (default) or `edge`.
+  - `pick_channel()` uses Chrome when it is installed (Program Files, LocalAppData, or the App Paths registry), else Edge.
+  - Chooser in 🖐 Tasks.
+- **Separate profiles:**
+  - `automation-browser-chrome` for Chrome;
+  - Edge keeps `automation-browser`, so its earlier sign-ins aren't lost.
+- First Chrome run means signing in once (NetID/Duo).

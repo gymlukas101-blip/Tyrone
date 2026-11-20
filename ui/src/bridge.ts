@@ -139,7 +139,7 @@ export interface AutoTask {
 export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string }
 export interface AuditRow { ts: number; kind: string; risk: string; target: string; host: string; outcome: string }
 export interface AutoState { enabled: boolean; tasks: AutoTask[]; active: string | null; approvals: Approval[];
-  demo_url: string; stop_hotkey: string; windows_supported: boolean }
+  demo_url: string; stop_hotkey: string; windows_supported: boolean; browser?: string; chrome_installed?: boolean }
 
 export interface PolicyChoice { model: string; effort: string; label: string; usd: number; first_words_s: number; per_month_usd: number }
 export interface PolicyRow {

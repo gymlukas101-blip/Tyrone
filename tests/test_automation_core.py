@@ -321,3 +321,16 @@ def test_helper_sites_cover_school_sign_in():
     assert AutomationService.school_domain("canvas.wisc.edu") == "wisc.edu"
     assert url_allowed("https://login.wisc.edu/idp", ["wisc.edu"])[0]
     assert url_allowed("https://api-1a2b3c4d.duosecurity.com/frame", ["duosecurity.com"])[0]
+
+
+def test_monkeys_browser_prefers_chrome_and_falls_back_to_edge(monkeypatch, tmp_path):
+    from monkey.automation import browser as b
+
+    monkeypatch.setattr(b, "chrome_installed", lambda: True)
+    assert b.pick_channel("chrome") == "chrome"
+    assert b.pick_channel("edge") == "msedge"
+    monkeypatch.setattr(b, "chrome_installed", lambda: False)
+    assert b.pick_channel("chrome") == "msedge"                  # Edge ships with Windows: always the fallback
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert b.default_profile_dir(tmp_path, "chrome").name == "automation-browser-chrome"
+    assert b.default_profile_dir(tmp_path, "msedge").name == "automation-browser"   # existing Edge sign-ins kept
