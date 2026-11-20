@@ -318,19 +318,28 @@ class WindowsMcpBackend:
         self.calls += 1
         r = self.loop.run_until_complete(self.client.call_tool(tool, args))
         parts = getattr(r, "content", None) or []
-        return "\n".join(getattr(p, "text", "") for p in parts)
+        out = []
+        for p in parts:
+            t = getattr(p, "text", "") or ""
+            try:
+                v = json.loads(t)             # Windows-MCP returns a JSON list of text sections
+                t = "\n".join(x if isinstance(x, str) else json.dumps(x) for x in v) if isinstance(v, list) else t
+            except ValueError:
+                pass
+            out.append(t)
+        return "\n".join(out)
 
     def _find(self, name: str, role: str) -> tuple[int, int]:
         txt = self.call("Snapshot", {"use_annotation": False})
         for line in txt.splitlines():
-            m = re.search(r"\((\-?\d+),\s*(\-?\d+)\)\s+(\w[\w ]*?)\s+\"(.*)\"", line)
+            m = re.search(r"\((\-?\d+),\s*(\-?\d+)\)\s+(\w[\w ]*?)\s+\"([^\"]*)\"", line)
             if m and m.group(4).strip() == name and role.lower() in m.group(3).lower():
                 return int(m.group(1)), int(m.group(2))
-        raise RuntimeError(f"not found: {role} {name} | snapshot starts: {txt[:400]!r}")
+        raise RuntimeError(f"not found: {role} {name} | snapshot: {ascii(txt[-300:])}")
 
     def snapshot(self) -> dict:
         txt = self.call("Snapshot", {"use_annotation": False})
-        print("[windows-mcp] snapshot sample:", repr(txt[:900]), flush=True)
+        print("[windows-mcp] snapshot sample:", ascii(txt[:900]), flush=True)
         return {"elements": sum(1 for ln in txt.splitlines() if re.search(r"\(\-?\d+,\s*\-?\d+\)", ln)),
                 "chars": len(txt)}
 

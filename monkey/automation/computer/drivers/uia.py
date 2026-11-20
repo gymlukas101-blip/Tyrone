@@ -420,6 +420,8 @@ class UIADriver(Driver):
     def _select(self, w, option: str) -> dict:
         """Pick a list/combo item with ExpandCollapse + SelectionItem patterns (background-safe, no real mouse);
         the Value pattern for editable combos; physical selection only as an allowed last resort."""
+        if _win32_combo_select(w, option):
+            return {"via": "cb_setcursel", "physical": False}
         expanded = False
         try:
             w.iface_expand_collapse.Expand()
@@ -617,6 +619,39 @@ def _walk(win, limit: int, per_list: int, budget_s: float) -> list:
         out.extend(kids)
         queue.extend(kids)
     return out[:limit]
+
+
+def _win32_combo_select(w, option: str) -> bool:
+    """Classic Win32/WinForms combo boxes: select by text with CB_FINDSTRINGEXACT + CB_SETCURSEL, then tell the
+    owner with WM_COMMAND/CBN_SELCHANGE (what a real pick sends), so the app's own change handler runs. Background-
+    safe; every message has a timeout."""
+    if not IS_WIN:
+        return False
+    try:
+        h = int(w.element_info.handle or 0)
+        if not h or "combobox" not in class_of(h).lower():
+            return False
+        from ctypes import wintypes
+
+        u = ctypes.windll.user32
+        res = ctypes.c_size_t()
+        buf = ctypes.create_unicode_buffer(option)
+        u.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                          wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
+        if not u.SendMessageTimeoutW(h, 0x0158, ctypes.c_size_t(-1).value, ctypes.cast(buf, ctypes.c_void_p).value,
+                                     0x0002, 2000, ctypes.byref(res)):          # CB_FINDSTRINGEXACT
+            return False
+        idx = ctypes.c_ssize_t(res.value).value
+        if idx < 0:
+            return False
+        u.SendMessageTimeoutW(h, 0x014E, idx, 0, 0x0002, 2000, ctypes.byref(res))       # CB_SETCURSEL
+        parent = u.GetParent(h)
+        ctl_id = u.GetDlgCtrlID(h)
+        u.SendMessageTimeoutW(parent, 0x0111, (1 << 16) | (ctl_id & 0xFFFF), h, 0x0002, 2000,
+                              ctypes.byref(res))                                       # WM_COMMAND, CBN_SELCHANGE
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _post_bm_click(w) -> bool:
