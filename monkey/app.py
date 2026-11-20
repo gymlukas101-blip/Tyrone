@@ -1753,9 +1753,20 @@ class Api:
         return self._app.automation.state()
 
     def automation_start(self, objective: str, start_url: str, domains: list, mode: str = "managed_browser",
-                         send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True):
+                         send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True,
+                         skill: str = "course", apps: list | None = None, files: list | None = None,
+                         allow_physical: bool = False, window: dict | None = None):
         return self._app.automation.start(objective, start_url, list(domains or []), mode, send_screenshots,
-                                          confirm_medium, helper_sites=bool(helper_sites))
+                                          confirm_medium, window=window, helper_sites=bool(helper_sites),
+                                          skill=skill if skill in ("course", "general") else "course",
+                                          apps=list(apps or []), files=list(files or []),
+                                          allow_physical=bool(allow_physical))
+
+    def automation_trace(self, task_id: str):
+        return self._app.automation.trace(task_id)
+
+    def automation_capabilities(self):
+        return self._app.automation.capabilities()
 
     def automation_demo(self):
         return self._app.automation.demo_start()

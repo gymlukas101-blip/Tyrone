@@ -188,5 +188,6 @@ class BrowserCursor:
             self._call("moveTo", self.pos[0], self.pos[1], {"duration": 0})
 
 
-TASK_STATE_CURSOR = {"RUNNING": "idle", "WAITING": "busy", "VERIFYING": "thinking", "NEEDS_INPUT": "waiting",
+TASK_STATE_CURSOR = {"RUNNING": "idle", "WAITING": "busy", "VERIFYING": "thinking", "PLANNING": "thinking",
+                     "RECOVERING": "busy", "NEEDS_INPUT": "waiting",
                      "PAUSED": "paused", "BLOCKED": "blocked", "FAILED": "error", "COMPLETED": "success"}

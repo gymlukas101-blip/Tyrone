@@ -39,21 +39,29 @@ class Target:
 
 @dataclass
 class Action:
-    kind: str                     # click | type | select | press | scroll | navigate | wait | read | play
+    kind: str                     # click | type | select | press | scroll | navigate | wait | read | play | upload | choose_file
     target: Target | None = None
     text: str = ""                # for type/select/press; never logged
     url: str = ""                 # for navigate
+    path: str = ""                # for upload/choose_file: the local file (must be one the user put in the task)
+    to_web: bool = False          # choose_file in a picker that belongs to a browser = sending the file to a site
 
     def fingerprint(self, page_url: str) -> str:
         t = self.target or Target()
         host = urlsplit(page_url).hostname or "" if page_url else ""
-        return f"{self.kind}|{t.role}|{t.name.strip().lower()[:80]}|{self.url}|{host}"
+        return f"{self.kind}|{t.role}|{t.name.strip().lower()[:80]}|{self.url}|{host}|{self.path}"
 
     def describe(self) -> str:
         t = self.target
         what = f'{t.role} "{t.name[:60]}"' if t and (t.role or t.name) else ""
         if self.kind == "navigate":
             return f"open {self.url[:80]}"
+        if self.kind == "press" and re.fullmatch(r"[A-Za-z0-9+ ]{1,24}", self.text or ""):
+            return f"press {self.text}"
+        if self.kind in ("upload", "choose_file"):
+            from pathlib import PurePath
+
+            return f"{'send' if self.kind == 'upload' or self.to_web else 'pick'} the file {PurePath(self.path).name}"
         if self.kind == "type":
             return f"type {len(self.text)} characters into {what}"
         return f"{self.kind} {what}".strip()
@@ -102,6 +110,10 @@ def classify(action: Action) -> tuple[Risk, str]:
         return Risk.LOW, "reading"
     if action.kind == "navigate":
         return Risk.LOW, "opening an allowed page"
+    if action.kind == "upload" or (action.kind == "choose_file" and action.to_web):
+        return Risk.HIGH, "this sends a file from your PC to the site"
+    if action.kind == "choose_file":
+        return Risk.MEDIUM, "picking a file in the app's Open/Save box"
     if t.sensitive or t.input_type in ("password",) or (action.kind == "type" and SENSITIVE_FIELD.search(name)):
         return Risk.FORBIDDEN, "sensitive field (passwords, codes and card numbers are yours to type)"
     if action.kind in ("type", "select") and t.in_question:
@@ -154,6 +166,26 @@ def url_allowed(url: str, allowed_domains: list[str]) -> tuple[bool, str]:
     return False, f"{host or 'that site'} isn't one of the sites you allowed for this task"
 
 
+def path_allowed(path: str, allowed: list[str]) -> tuple[bool, str]:
+    """Files are in scope only if the user named them (or a folder holding them) for this task."""
+    from pathlib import Path
+
+    if not path:
+        return False, "no file was given"
+    try:
+        p = Path(path).expanduser().resolve()
+    except (OSError, ValueError):
+        return False, "that file path can't be read"
+    for a in allowed:
+        try:
+            q = Path(a).expanduser().resolve()
+        except (OSError, ValueError):
+            continue
+        if p == q or q in p.parents:
+            return True, ""
+    return False, f"{p.name} isn't one of the files you gave this task"
+
+
 @dataclass
 class Approval:
     id: str
@@ -191,6 +223,10 @@ class PermissionGate:
             return Decision(False, Risk.FORBIDDEN, "this page is on a site you didn't allow for this task")
         if action.kind == "navigate":
             ok, msg = url_allowed(action.url, scope.allowed_domains)
+            if not ok:
+                return Decision(False, Risk.FORBIDDEN, msg)
+        if action.kind in ("upload", "choose_file"):
+            ok, msg = path_allowed(action.path, getattr(scope, "files", []) or [])
             if not ok:
                 return Decision(False, Risk.FORBIDDEN, msg)
         if action.target is not None and action.target.href and not action.target.href.startswith("#"):
@@ -254,6 +290,10 @@ class PermissionGate:
                     a.status = "used"                      # one approval = one action, never a standing grant
                     return True
         return False
+
+    def status(self, approval_id: str) -> str:
+        a = self._approvals.get(approval_id)
+        return a.status if a else "unknown"
 
     def pending_for(self, task_id: str) -> list[Approval]:
         return [a for a in self._approvals.values() if a.task_id == task_id and a.status == "pending"]

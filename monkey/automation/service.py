@@ -29,8 +29,11 @@ class AutomationService:
             from .manager import TaskManager
             from .tasks import TaskStore
 
-            self._mgr = TaskManager(TaskStore(Path(self.app.cfg.data_dir) / "automation.db"), self.gate,
-                                    self._session, emit=self._emit, planner=self._planner(), advisor=self._advise)
+            data = Path(self.app.cfg.data_dir)
+            self._mgr = TaskManager(TaskStore(data / "automation.db"), self.gate, self._session, emit=self._emit,
+                                    planner=self._planner(), advisor=self._advise,
+                                    goal_planner=self._goal_planner(), trace_dir=data / "traces",
+                                    action_cache=self._cache(data), grounder=self._grounder())
         return self._mgr
 
     def _planner(self):
@@ -42,6 +45,32 @@ class AutomationService:
 
         return ClaudePlanner(client, record_usage=self.app._record_usage,
                              cost_fn=lambda model, u: cost_usd(model, Usage.from_response(u)))
+
+    def _goal_planner(self):
+        client = getattr(self.app, "client", None)
+        if client is None:
+            return None
+        from ..brain.costs import Usage, cost_usd
+        from .computer.goal import ClaudeGoalPlanner
+
+        return ClaudeGoalPlanner(client, record_usage=self.app._record_usage,
+                                 cost_fn=lambda model, u: cost_usd(model, Usage.from_response(u)))
+
+    def _grounder(self):
+        client = getattr(self.app, "client", None)
+        if client is None:
+            return None
+        from ..brain.costs import Usage, cost_usd
+        from .computer.drivers.visual import ClaudeGrounder
+
+        return ClaudeGrounder(client, record_usage=self.app._record_usage,
+                              cost_fn=lambda model, u: cost_usd(model, Usage.from_response(u)))
+
+    @staticmethod
+    def _cache(data: Path):
+        from .computer.cache import ActionCache
+
+        return ActionCache(data / "action-cache.json")
 
     def _advise(self, question: str, options: list[str]) -> dict | None:
         """A suggested answer + one sentence why (Haiku: about $0.001). It's only advice: the user picks."""
@@ -136,12 +165,16 @@ class AutomationService:
 
     def start(self, objective: str, start_url: str, domains: list[str], mode: str = "managed_browser",
               send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None,
-              helper_sites: bool = True) -> dict:
+              helper_sites: bool = True, skill: str = "course", apps: list[str] | None = None,
+              files: list[str] | None = None, allow_physical: bool = False) -> dict:
         if not self.enabled():
             return {"ok": False, "error": "Turn on computer tasks first (the switch at the top of this window)."}
         objective = (objective or "").strip()
         if len(objective) < 4:
             return {"ok": False, "error": "Say what Monkey should do (one sentence is enough)."}
+        if skill == "general":
+            return self._start_general(objective, start_url, domains, send_screenshots, confirm_medium, window,
+                                       apps or [], files or [], allow_physical)
         if mode != "managed_browser":
             return {"ok": False, "error": "Window tasks are read-only previews in this version: use the Monkey "
                                          "browser for tasks."}
@@ -165,6 +198,50 @@ class AutomationService:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "task": t.public()}
+
+    def _start_general(self, objective, start_url, domains, send_screenshots, confirm_medium, window, apps, files,
+                       allow_physical) -> dict:
+        """A general task: Monkey's browser (sites you list) and/or Windows apps you list, files you list."""
+        import os
+
+        from .desktop import SENSITIVE_WINDOW
+
+        domains = [d.strip().lower() for d in domains if d and d.strip()]
+        apps = [a.strip().lower() for a in apps if a and a.strip()]
+        if any(SENSITIVE_WINDOW.search(a) for a in apps):
+            return {"ok": False, "error": "Monkey can't use password managers, security or banking apps."}
+        files = [os.path.abspath(os.path.expanduser(f)) for f in files if f and f.strip()]
+        if start_url:
+            ok, why = url_allowed(start_url, domains)
+            if not ok:
+                return {"ok": False, "error": f"The start page has to be on an allowed site ({why})."}
+        if not domains and not apps and not window:
+            return {"ok": False, "error": "Allow at least one site or one app for this task."}
+        try:
+            t = self.mgr.create(objective, start_url, domains, skill="general", mode="managed_browser",
+                                send_screenshots=bool(send_screenshots), confirm_medium=bool(confirm_medium),
+                                window=dict(window or {}), apps=apps, files=files, allow_physical=bool(allow_physical))
+            self.mgr.start(t.id)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "task": t.public()}
+
+    def trace(self, task_id: str, limit: int = 200) -> dict:
+        """The task's structured trace (no typed text, no screenshots), for the task history view."""
+        import json as _json
+
+        p = Path(self.app.cfg.data_dir) / "traces" / f"{task_id}.jsonl"
+        if not p.is_file():
+            return {"ok": True, "events": []}
+        lines = p.read_text("utf-8", "ignore").splitlines()[-limit:]
+        return {"ok": True, "events": [_json.loads(x) for x in lines if x.strip()]}
+
+    def capabilities(self) -> dict:
+        from .computer.drivers.browser import CAPABILITY as B
+        from .computer.drivers.uia import CAPABILITY as U
+        from .computer.drivers.visual import CAPABILITY as V
+
+        return {"ok": True, "backends": [B.public(), U.public(), V.public()], "windows": sys.platform == "win32"}
 
     def demo_start(self, media_seconds: float = 8.0) -> dict:
         from .democourse import DemoCourse
