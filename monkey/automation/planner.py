@@ -53,7 +53,7 @@ class PlanResult:
 
 
 def build_prompt(task, obs, recent: list[str]) -> str:
-    perms = (f"mode={task.mode}; allowed sites={', '.join(task.allowed_domains) or 'none'}; "
+    perms = (f"mode={task.mode}; allowed sites={'any website' if '*' in task.allowed_domains else ', '.join(task.allowed_domains) or 'none'}; "
              f"screenshots to you={'yes' if task.send_screenshots else 'no'}")
     steps = "\n".join(f"- {s}" for s in recent[-6:]) or "- (none yet)"
     return (f"Objective (from the user): {task.objective}\nCurrent subgoal: {task.subgoal or 'figure out the next step'}"

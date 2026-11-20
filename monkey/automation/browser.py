@@ -242,10 +242,25 @@ class BrowserSession:
 
     def alive(self) -> bool:
         try:
-            return self.page is not None and not self.page.is_closed() and self.context is not None \
-                and bool(self.context.pages)
+            if self.context is None:
+                return False
+            if self.page is None or self.page.is_closed():
+                self._fallback_page()          # a pop-up (Duo, an external tool) closed: go back to an open tab
+            return self.page is not None and not self.page.is_closed() and bool(self.context.pages)
         except Exception:  # noqa: BLE001
             return False
+
+    def _fallback_page(self) -> None:
+        """The active tab went away: continue in the most recently opened tab that is still open."""
+        try:
+            open_pages = [p for p in (self.context.pages if self.context else []) if not p.is_closed()]
+        except Exception:  # noqa: BLE001
+            open_pages = []
+        if open_pages:
+            self.page = open_pages[-1]
+            self.events.append({"type": "tab_closed_back_to_previous"})
+            if self.cursor is not None:
+                self.cursor.page = self.page
 
     def close(self) -> None:
         for fn in (lambda: self.context and self.context.close(), lambda: self._pw and self._pw.stop()):
@@ -264,6 +279,7 @@ class BrowserSession:
                 pass
         p.on("dialog", on_dialog)
         p.on("download", lambda dl: self.events.append({"type": "download_started", "name": dl.suggested_filename[:80]}))
+        p.on("close", lambda _p: self._fallback_page() if self.page is _p else None)
         if self.page is not None and p is not self.page:
             self.page = p                    # a page the site opened becomes the active tab
             self.events.append({"type": "tab_opened"})

@@ -117,7 +117,7 @@ export interface Api {
   automation_state(): Promise<AutoState>;
   automation_enable(on: boolean): Promise<AutoState>;
   automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
-                   confirmMedium: boolean, helperSites?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+                   confirmMedium: boolean, helperSites?: boolean, anySite?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
   automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
   automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;

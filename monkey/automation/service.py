@@ -147,7 +147,7 @@ class AutomationService:
 
     def start(self, objective: str, start_url: str, domains: list[str], mode: str = "managed_browser",
               send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None,
-              helper_sites: bool = True) -> dict:
+              helper_sites: bool = True, any_site: bool = True) -> dict:
         if not self.enabled():
             return {"ok": False, "error": "Turn on computer tasks first (the switch at the top of this window)."}
         objective = (objective or "").strip()
@@ -157,7 +157,9 @@ class AutomationService:
             return {"ok": False, "error": "Window tasks are read-only previews in this version: use the Monkey "
                                          "browser for tasks."}
         domains = [d.strip().lower() for d in domains if d and d.strip()]
-        if helper_sites and domains:
+        if any_site:
+            domains = ["*"]                     # the owner's choice: Canvas, Duo, module and video sites open freely
+        if helper_sites and domains and "*" not in domains:
             from urllib.parse import urlsplit
 
             host = urlsplit(start_url if "://" in start_url else "https://" + start_url).hostname or ""

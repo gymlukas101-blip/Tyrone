@@ -147,6 +147,8 @@ def url_allowed(url: str, allowed_domains: list[str]) -> tuple[bool, str]:
     if p.scheme not in ("http", "https"):
         return False, f"{p.scheme}: addresses are never opened"
     host = (p.hostname or "").lower().rstrip(".")
+    if "*" in allowed_domains and host:
+        return True, ""                                   # the user let this task use any website
     for d in allowed_domains:
         d = d.lower().strip().rstrip(".")
         if d and (host == d or host.endswith("." + d)):

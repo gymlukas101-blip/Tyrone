@@ -315,3 +315,13 @@ Now (`monkey/memory/export.py`):
   - `automation-browser-chrome` for Chrome;
   - Edge keeps `automation-browser`, so its earlier sign-ins aren't lost.
 - First Chrome run means signing in once (NetID/Duo).
+
+## 2026-11-20: "Any website" (default) + pop-up tabs no longer break tasks
+- **Owner's choice:** tasks may use any website, so Canvas, Duo and the module/video sites they open no longer stop for "Allow X?".
+  - In code, `allowed_domains=["*"]`; `url_allowed` accepts any http(s) host.
+  - Still blocked: `javascript:`, `file:` and hidden-character URLs.
+  - The per-action gate is unchanged: no passwords or codes; sends, submits, buys and deletes need approval; quiz answers and attestations stay the user's.
+  - Unticking "Any website" in 🖐 Tasks brings back the site list.
+- **Pop-up fix:**
+  - **Before:** when a pop-up tab (Duo, an external tool) closed, the session still pointed at it and reported "browser closed", so tasks lost their place.
+  - **After:** `BrowserSession` falls back to the most recent open tab, both on `close` and in `alive()`.

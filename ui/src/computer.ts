@@ -177,11 +177,18 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   const shots = h("input", { type: "checkbox" }) as HTMLInputElement;
   const askMore = h("input", { type: "checkbox" }) as HTMLInputElement;
   const helpers = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
+  const anySite = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
+  const syncSites = () => {
+    domains.disabled = anySite.checked;
+    domains.closest("label")?.toggleAttribute("hidden", anySite.checked);
+    helpers.closest("label")?.toggleAttribute("hidden", anySite.checked);
+  };
+  anySite.addEventListener("change", syncSites);
   const err = h("p", { class: "keynote" });
   const start = async () => {
     err.textContent = ""; err.className = "keynote";
     const r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
-      "managed_browser", shots.checked, askMore.checked, helpers.checked);
+      "managed_browser", shots.checked, askMore.checked, helpers.checked, anySite.checked);
     if (!r.ok) { err.className = "keynote bad"; err.textContent = `⚠ ${r.error}`; return; }
     toast("Started. Watch the Monkey browser window; you can Pause or Stop anytime.", 5000);
     void refresh();
@@ -196,6 +203,8 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
       h("label", { class: "off", title: "The window driver exists, but tasks run in Monkey's browser in this version." },
         h("input", { type: "radio", name: "mode", disabled: true }), " ", h("b", {}, "Control one of my windows"), h("small", {}, " (coming next)"))),
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
+    h("label", { class: "field toggle" }, anySite, h("span", {}, h("b", {}, "Any website"),
+      " Canvas, Duo, module and video sites open freely. He still never types passwords or codes, asks before anything that sends, submits, buys or deletes, and quiz answers stay yours.")),
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
     browserPick(st),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
@@ -216,6 +225,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
       h("small", {}, " Off by default. Turning it off stops everything immediately. Monkey works normally without it."))),
     ...(st.enabled ? [taskPanel(false), busy ? h("p", { class: "meta" }, "One task at a time: pause or stop this one to start another.") : form, past.length ? h("section", {}, h("h4", {}, "Earlier tasks"), h("ul", { class: "pastlist" }, ...past)) : ""] : []),
   );
+  syncSites();
   if (!dlg.open) dlg.showModal();
   dlg.scrollTop = 0;
 }
