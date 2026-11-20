@@ -212,7 +212,7 @@ Chrome (136+) won't let outside programs remote-control your everyday profile. S
 1. 🖐 Tasks → **Where Monkey works** → **My Chrome: the tabs I share**.
 2. In Chrome:
    1. Open `chrome://extensions` and turn on **Developer mode**.
-   2. Click **Load unpacked** and pick the folder from **Open folder**.
+   2. Click **Load unpacked** and pick the folder from **Open folder** (`%LOCALAPPDATA%\Monkey\chrome-extension`, which updates never replace).
 3. Click the 🍌 icon in Chrome's toolbar, paste the pairing code from Monkey, then press **Pair**.
 4. On your Canvas page, click the 🍌 icon → **Let Monkey use this tab**, then start the task in Monkey.
 
