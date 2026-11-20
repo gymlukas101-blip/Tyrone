@@ -11,7 +11,7 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,14 +37,17 @@ jobs:
         continue-on-error: true
       - name: Browser fixtures (real Chromium on Windows)
         run: python -m tools.computer_bench.run_browser --out bench-browser-windows.json
+        timeout-minutes: 12
         continue-on-error: true
       - name: Desktop backends compared (monkey / agent-desktop / windows-mcp)
         env:
           ANONYMIZED_TELEMETRY: "false"
         run: python -m tools.computer_bench.run_windows --out bench-windows.json
+        timeout-minutes: 25
         continue-on-error: true
       - name: Hybrid workflow (Monkey browser -> real Notepad + Save As dialog -> browser)
         run: python -m tools.computer_bench.run_hybrid --out bench-hybrid.json
+        timeout-minutes: 6
         continue-on-error: true
       - uses: actions/upload-artifact@v4
         if: always()

@@ -348,6 +348,54 @@ class WindowsMcpBackend:
             pass
 
 
+TASK_TIMEOUT_S = 40
+
+
+class Hung(Exception):
+    pass
+
+
+def _bounded(fn, b, timeout: float):
+    """Run one benchmark task with a deadline: a backend blocked on a modal dialog counts as a failure (and the
+    fixture is restarted), instead of hanging the whole run."""
+    import threading
+
+    box: dict = {}
+
+    def work():
+        try:
+            try:
+                import comtypes
+
+                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+            except Exception:  # noqa: BLE001
+                pass
+            box["res"] = fn(b)
+        except BaseException as exc:  # noqa: BLE001
+            box["exc"] = exc
+
+    th = threading.Thread(target=work, daemon=True)
+    th.start()
+    th.join(timeout)
+    if th.is_alive():
+        raise Hung()
+    if "exc" in box:
+        raise box["exc"]
+    return box.get("res")
+
+
+def _rebuild(name: str, old, fx: Fixture, ad_exe: str):
+    try:
+        old.close()
+    except Exception:  # noqa: BLE001
+        pass
+    if name == "monkey":
+        return MonkeyBackend(fx, physical=True)
+    if name == "agent-desktop":
+        return AgentDesktopBackend(fx, ad_exe)
+    return WindowsMcpBackend(fx)
+
+
 def _green(image, desc: str):
     import numpy as np
 
@@ -427,7 +475,7 @@ def run_backend(name: str, workdir: Path, ad_exe: str = "") -> list[dict]:
             calls0 = b.calls
             row = {"backend": name, "task": label}
             try:
-                res = fn(b)
+                res = _bounded(fn, b, TASK_TIMEOUT_S)
                 ok = fx.wait_line(expect) if expect else True
                 if label.startswith("W03"):
                     ok = _value_of(fx.hwnd(), "Name") == "Ada"
@@ -438,6 +486,12 @@ def run_backend(name: str, workdir: Path, ad_exe: str = "") -> list[dict]:
                     row["failure"] = "no effect in the app"
             except NotImplementedError as exc:
                 row["success"], row["failure"] = None, f"n/a: {exc}"
+            except Hung:
+                row["success"], row["failure"] = False, f"hung for more than {TASK_TIMEOUT_S} s"
+                print(f"[{name}] {label}: hung, restarting the fixture", flush=True)
+                fx.stop()
+                fx.start()
+                b = _rebuild(name, b, fx, ad_exe)
             except Exception as exc:  # noqa: BLE001
                 row["success"], row["failure"] = False, f"{type(exc).__name__}: {exc}"[:240]
             row["ms"] = int((time.time() - t0) * 1000)
@@ -460,10 +514,12 @@ def run_backend(name: str, workdir: Path, ad_exe: str = "") -> list[dict]:
         calls0 = b.calls
         row = {"backend": name, "task": "W13 Notepad: type + read back"}
         try:
-            got = b.notepad_type(np_hwnd, "Monkey was here")
+            got = _bounded(lambda bb: bb.notepad_type(np_hwnd, "Monkey was here"), b, TASK_TIMEOUT_S)
             row["success"] = "Monkey was here" in (got or _notepad_text(np_hwnd))
         except NotImplementedError as exc:
             row["success"], row["failure"] = None, f"n/a: {exc}"
+        except Hung:
+            row["success"], row["failure"] = False, f"hung for more than {TASK_TIMEOUT_S} s"
         except Exception as exc:  # noqa: BLE001
             row["success"], row["failure"] = False, f"{type(exc).__name__}: {exc}"[:240]
         row.update(ms=int((time.time() - t0) * 1000), calls=b.calls - calls0, cursor_moved=cursor_pos() != cur0)
