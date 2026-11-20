@@ -429,6 +429,11 @@ function onEvent(name: string, p: any) {
       $("#convChip").hidden = !(p.conversation && p.state === "listening");
       break;
     case "level": avatar.setLevel(p.v); break;
+    case "ack": {                      // the reply is slow to start: one short "hmm" from his own vocal kit, no words
+      const a3 = (window as any).__monkeyAvatarObj;
+      a3?.sfx?.play?.("vocal/hmm", 0.7);
+      break;
+    }
     case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
     case "delta": {
@@ -784,6 +789,12 @@ async function openSettings(section?: string) {
           sel.addEventListener("change", async () => { appState = await api.save_settings({ end_silence: sel.value }); toast("Saved"); });
           return sel;
         })()),
+        h("div", { class: "field", id: "earlyCommit" }, h("label", {}, (() => {
+          const c = h("input", { type: "checkbox" }) as HTMLInputElement;
+          c.checked = s.early_commit ?? true;
+          c.addEventListener("change", async () => { appState = await api.save_settings({ early_commit: c.checked }); toast("Saved"); });
+          return c;
+        })(), " Answer sooner when I've clearly finished (a question or a short command ends my turn after about half a second; trailing off like “and…” waits longer)")),
         h("div", { class: "field" }, h("span", {}, "Something not working?"),
           h("button", { class: "ghost", type: "button", onclick: async () => {
             const r = await api.open_log();

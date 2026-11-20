@@ -40,7 +40,7 @@ class Endpointer:
     def __init__(self, silence_ms: int = 1400, max_ms: int = 45000, no_speech_ms: int | None = 5000,
                  min_speech_ms: int = 300, ratio: float = 3.0, cont_ratio: float = 1.8, floor_init: float = 200.0,
                  short_ms: int = 1500, short_extra_ms: int = 400, preroll_ms: int = 480, tail_ms: int = 320,
-                 vad: Callable[[np.ndarray], bool] | None = None):
+                 vad: Callable[[np.ndarray], bool] | None = None, early_ms: int | None = None):
         self.silence_frames = max(1, silence_ms // FRAME_MS)
         self.max_frames = max_ms // FRAME_MS
         self.no_speech_frames = None if no_speech_ms is None else max(1, no_speech_ms // FRAME_MS)
@@ -52,6 +52,9 @@ class Endpointer:
         self.ratio, self.cont_ratio = ratio, cont_ratio
         self.floor = floor_init
         self.vad = vad
+        # Early commit: after this much silence, report "pause" once so the listener can transcribe what it has
+        # and end the turn now if the words are a finished thought (see audio/turn.py). None = off.
+        self.early_frames = None if early_ms is None else max(1, early_ms // FRAME_MS)
         self.reset()
 
     def reset(self) -> None:
@@ -63,6 +66,8 @@ class Endpointer:
         self.total = 0
         self.started = False
         self.last_voiced = -1        # index into self.frames
+        self.extra = 0               # extra silence frames asked for (the words so far trail off)
+        self.pause_seq = 0           # bumps every time speech resumes after a pause (stale transcripts are ignored)
 
     def _voiced(self, frame: np.ndarray) -> bool:
         level = rms(frame)
@@ -97,15 +102,24 @@ class Endpointer:
             return "speech" if self.started else "waiting"
         self.frames.append(frame)
         if voiced:
+            if self.trailing_silence:
+                self.pause_seq += 1          # you kept talking: any transcript taken in the pause is out of date
+                self.extra = 0
             self.speech_frames += 1
             self.trailing_silence = 0
             self.last_voiced = len(self.frames) - 1
         else:
             self.trailing_silence += 1
-        need = self.silence_frames + (self.short_extra if self.speech_frames < self.short_frames else 0)
+            if self.early_frames is not None and self.trailing_silence == self.early_frames:
+                return "pause"
+        need = self.silence_frames + self.extra + (self.short_extra if self.speech_frames < self.short_frames else 0)
         if self.trailing_silence >= need or len(self.frames) >= self.max_frames:
             return "done"
         return "speech"
+
+    def extend(self, ms: int) -> None:
+        """The words so far trail off ("remind me to…"): wait this much longer before ending the turn."""
+        self.extra = max(self.extra, ms // FRAME_MS)
 
     def audio(self) -> np.ndarray:
         """What you said: from just before you started to a short tail after your last word."""

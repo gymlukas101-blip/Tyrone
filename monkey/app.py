@@ -313,6 +313,8 @@ class MonkeyApp:
                 on_reconnect=lambda msg: self._emit("hint", {"text": f"🎙 {msg}"}),
                 on_stop=self._on_stop_keyword,
                 on_mark=self._listener_mark,
+                transcribe=lambda audio: self.stt().transcribe(audio) if self.stt else "",
+                early_commit=lambda: bool(self.cfg.settings.early_commit),
             )
             try:
                 self.listener.start()
@@ -638,19 +640,20 @@ class MonkeyApp:
         self._listening = False
         self.end_conversation("nothing said after the wake word")
 
-    def _on_utterance(self, audio: np.ndarray) -> None:
+    def _on_utterance(self, audio: np.ndarray, text: str | None = None) -> None:
         source = getattr(self.listener, "last_source", "wake")
         self._listening = False
         self._agent_state = "transcribing"
         self._publish_state()
-        _tmark(self, "stt_start")
-        try:
-            text = self.stt().transcribe(audio) if self.stt else ""
-            _tmark(self, "stt_end")
-        except Exception as exc:  # noqa: BLE001
-            log.exception("speech recognition failed")
-            self._emit("warning", {"message": explain_stt_error(exc)})
-            text = ""
+        if text is None:                       # no early transcript from the pause: transcribe now
+            _tmark(self, "stt_start")
+            try:
+                text = self.stt().transcribe(audio) if self.stt else ""
+                _tmark(self, "stt_end")
+            except Exception as exc:  # noqa: BLE001
+                log.exception("speech recognition failed")
+                self._emit("warning", {"message": explain_stt_error(exc)})
+                text = ""
         text = conversation.strip_wake(text or "")
         self.ui.emit("heard", {"text": text})
         echo = getattr(self, "echo", None)
@@ -674,6 +677,8 @@ class MonkeyApp:
             self._say_goodbye(text)
             return
         if text and len(text.strip(" .")) > 1:
+            if hasattr(self, "_arm_soft_ack"):
+                self._arm_soft_ack()
             self.ask(text)
         else:
             self._agent_state = "idle"
@@ -683,6 +688,26 @@ class MonkeyApp:
             else:
                 self.end_conversation("nothing understood after the wake word")   # likely a false wake
             self._publish_state()
+
+    SOFT_ACK_S = 1.5        # no sound yet this long after you finished: one short "hmm" so it isn't dead air
+
+    def _arm_soft_ack(self) -> None:
+        """If the reply is genuinely slow to start, play one short non-verbal acknowledgment (from his own vocal
+        kit, no words, nothing claimed). It never delays the reply: it's a UI sound, and it's skipped as soon as any
+        reply audio has started or the turn is over."""
+        tr = getattr(self, "tracer", None)
+        turn = tr.current() if tr is not None else None
+
+        def fire():
+            if turn is None or turn.done or "first_audio_played" in turn.marks or "tts_submit" in turn.marks:
+                return
+            if self.speaker is not None and self.speaker.speaking:
+                return
+            tr.mark("ack_spoken", turn=turn)
+            self.ui.emit("ack", {})
+        t = threading.Timer(self.SOFT_ACK_S, fire)
+        t.daemon = True
+        t.start()
 
     def _say_goodbye(self, text: str) -> None:
         """'Thanks' / 'that's all' / 'bye': short sign-off, no model call, back to needing "Hey Monkey"."""

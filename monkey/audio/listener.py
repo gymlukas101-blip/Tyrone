@@ -15,12 +15,16 @@ from typing import Callable
 
 import numpy as np
 
+from .turn import commit_after_ms, completeness
 from .endpoint import FRAME_SAMPLES, SAMPLE_RATE, Endpointer
 
 log = logging.getLogger(__name__)
 
 
 STOP_PHRASES = ("monkey stop", "stop monkey")
+EARLY_MS = 480            # pause length that triggers a background transcription (early commit)
+TRAIL_OFF_EXTRA_MS = 640  # extra wait when the words so far trail off
+SPEC_WAIT_S = 6.0         # longest we wait for an in-flight pause transcription before transcribing afresh
 
 
 def load_wakeword(model_name: str, bundled_dir: Path, user_dir: Path | None = None,
@@ -107,6 +111,8 @@ class Listener:
         stream_factory: Callable | None = None,
         on_stop: Callable[[], None] | None = None,
         on_mark: Callable[[str, float], None] | None = None,
+        transcribe: Callable[[np.ndarray], str] | None = None,
+        early_commit: Callable[[], bool] = lambda: True,
     ):
         self.on_wake = on_wake
         self.on_utterance = on_utterance
@@ -116,6 +122,11 @@ class Listener:
         self.on_reconnect = on_reconnect
         self.on_stop = on_stop             # "Monkey, stop" while he talks: silence him, don't start recording
         self.on_mark = on_mark             # turn tracer: speech_start / last_voiced / endpoint timestamps
+        # Early commit (Voice 2.0): transcribe during a pause; end the turn early if the words are a finished thought
+        self.transcribe = transcribe
+        self.early_commit = early_commit
+        self._spec: tuple | None = None    # (endpointer, pause_seq, text, t0, t1) from the latest pause
+        self._spec_busy = False
         self._speech_marked = False
         self.last_speech_start = 0.0       # monotonic time the latest utterance began (echo guard timing)
         self.ww = wakeword_model
@@ -146,8 +157,79 @@ class Listener:
                 self.vad.reset()
             except Exception:  # noqa: BLE001
                 pass
+        early = EARLY_MS if self.transcribe is not None and self._early_on() else None
+        self._spec = None
         return Endpointer(silence_ms=int(self.end_silence_ms()), no_speech_ms=None if conversation else 5000,
-                          min_speech_ms=480 if conversation else 300, vad=self.vad)
+                          min_speech_ms=480 if conversation else 300, vad=self.vad, early_ms=early)
+
+    def _early_on(self) -> bool:
+        try:
+            return bool(self.early_commit())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _speculate(self, ep: Endpointer) -> None:
+        """Transcribe what we have during a pause, in the background (one at a time)."""
+        if self._spec_busy or self.transcribe is None:
+            return
+        self._spec_busy = True
+        seq, audio, t0 = ep.pause_seq, ep.audio(), time.monotonic()
+        done = threading.Event()
+        self._spec_running = (ep, seq, done)
+
+        def run():
+            try:
+                text = self.transcribe(audio)
+                self._spec = (ep, seq, text or "", t0, time.monotonic())
+            except Exception:  # noqa: BLE001
+                log.debug("speculative transcription failed", exc_info=True)
+            finally:
+                self._spec_busy = False
+                done.set()
+        threading.Thread(target=run, name="stt-early", daemon=True).start()
+
+    def _spec_for(self, ep: Endpointer):
+        sp = self._spec
+        return sp if sp is not None and sp[0] is ep and sp[1] == ep.pause_seq else None
+
+    def _finish_after_spec(self, now: float, running) -> None:
+        """The turn ended by the normal silence rule while the pause's transcription is still running: wait for it
+        (it started earlier than a fresh one would) instead of transcribing the same audio again."""
+        from .endpoint import FRAME_MS
+
+        ep, seq, done = running
+        self._mark("last_voiced", now - ep.trailing_silence * FRAME_MS / 1000.0)
+        self._mark("endpoint", now)
+        audio = ep.audio()
+        self.last_source = self._mode
+        self._mode = "wake"
+
+        def deliver():
+            done.wait(SPEC_WAIT_S)
+            sp = self._spec
+            if sp is not None and sp[0] is ep and sp[1] == seq:
+                self._mark("stt_start", sp[3])
+                self._mark("stt_end", sp[4])
+                self._spec = None
+                self.on_utterance(audio, text=sp[2])
+            else:
+                self.on_utterance(audio)              # failed or too slow: the app transcribes as before
+        threading.Thread(target=deliver, daemon=True).start()
+
+    def _finish(self, now: float, text: str | None = None, spec=None) -> None:
+        from .endpoint import FRAME_MS
+
+        self._mark("last_voiced", now - self._ep.trailing_silence * FRAME_MS / 1000.0)
+        self._mark("endpoint", now)
+        if spec is not None:
+            self._mark("stt_start", spec[3])
+            self._mark("stt_end", spec[4])
+        audio = self._ep.audio()
+        self.last_source = self._mode
+        self._mode = "wake"
+        self._spec = None
+        kwargs = {"text": text} if text is not None else {}
+        threading.Thread(target=self.on_utterance, args=(audio,), kwargs=kwargs, daemon=True).start()
 
     # ---- control -------------------------------------------------------
     def _open_stream(self):
@@ -318,15 +400,27 @@ class Listener:
             self._speech_marked = True
             self.last_speech_start = now
             self._mark("speech_start", now)
-        if state == "done":
+        if state == "pause":
+            self._speculate(self._ep)
+        spec = self._spec_for(self._ep) if self._ep.early_frames is not None else None
+        if spec is not None and state in ("speech", "pause") and self._ep.trailing_silence >= self._ep.early_frames:
             from .endpoint import FRAME_MS
 
-            self._mark("last_voiced", now - self._ep.trailing_silence * FRAME_MS / 1000.0)
-            self._mark("endpoint", now)
-            audio = self._ep.audio()
-            self.last_source = self._mode
-            self._mode = "wake"
-            threading.Thread(target=self.on_utterance, args=(audio,), daemon=True).start()
+            wait = commit_after_ms(spec[2])
+            if wait is not None:
+                if self._ep.trailing_silence * FRAME_MS >= wait:
+                    self._finish(now, spec[2], spec)             # a finished thought: don't make you wait
+                    return
+            elif completeness(spec[2]) == "incomplete":
+                self._ep.extend(TRAIL_OFF_EXTRA_MS)              # "remind me to…": give you longer than usual
+                self._spec = None
+        if state == "done":
+            running = getattr(self, "_spec_running", None)
+            if spec is None and running is not None and running[0] is self._ep and running[1] == self._ep.pause_seq \
+                    and not running[2].is_set():
+                self._finish_after_spec(now, running)        # it's already transcribing this pause: use that result
+            else:
+                self._finish(now, spec[2] if spec is not None else None, spec)
         elif state == "timeout":
             self._mode = "wake"
             if self.on_timeout:
