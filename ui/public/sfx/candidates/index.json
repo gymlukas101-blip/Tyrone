@@ -1,6 +1,6 @@
 {
  "version": 1,
- "about": "CC0 candidate takes for blind review (docs/audio/SOURCE_LEDGER.md, tools/sfx/recipes/sprint1.json). Not used unless chosen in the Sound Lab.",
+ "about": "CC0 candidate takes (docs/audio/SOURCE_LEDGER.md, tools/sfx/recipes/sprint1.json). 'defaults' are the sets the owner picked in blind listening (2026-11-20); the shipped takes stay for 'Original' in the Sound Lab.",
  "cues": {
   "boing": {
    "B": [
@@ -185,5 +185,16 @@
     "sfx/candidates/whoosh-C_5.ogg"
    ]
   }
+ },
+ "defaults": {
+  "ui_click": "C",
+  "check": "B",
+  "ui_error": "B",
+  "notify": "B",
+  "thump": "B",
+  "chest_thump": "C",
+  "boing": "C",
+  "whoosh": "C",
+  "sparkle": "B"
  }
 }

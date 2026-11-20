@@ -107,3 +107,30 @@ UI levels follow the measured loudness, so the interface has a hierarchy, all un
 
   This container has no audio device.
 - **Ambience** (`jungle_loop`) stays off. Turning on background audio for everyone needs approval.
+
+## 6. Blind listening, round 1 (2026-11-20)
+
+**Setup:**
+- One listener, the owner, on laptop speakers.
+- 12 cards, each with the shipped sound, candidate B and candidate C.
+- Loudness-matched, with order and sides shuffled.
+- Answers were copied from the review page and decoded with the private key afterwards.
+
+| Moment | Pick | Notes |
+|---|---|---|
+| Button click | **C** (Kenney UI SFX Set click) | |
+| Something worked (`check`) | **B** (plinkfx success) | Tagged "too loud": re-rendered 3 dB quieter (`target_db` −12.5) |
+| Opening a panel | original | |
+| Closing a panel | original | |
+| Something went wrong (`ui_error`) | **B** (plinkfx deny) | |
+| Monkey needs you (`notify`) | **B** (plinkfx notify) | |
+| Sit down (`thump`) | **B** (Kenney Impact, soft heavy) | |
+| Chest beat | **C** (Kenney Impact, punch heavy, pitched down) | |
+| Lie down (`flop`) | original | |
+| Silly moment (`boing`) | **C** (plinkfx cartoon jump) | |
+| Quick movement (`whoosh`) | **C** (wyzowl swish) | B tagged "harsh" |
+| Showing off (`sparkle`) | **B** (wyzowl shimmer) | |
+
+**Decision.** The owner is the deciding listener, so the 9 picked sets become the defaults (`candidates/index.json` → `defaults`).
+- Every shipped take stays. "Original" in the Sound Lab switches a cue back, and a Sound Lab choice always overrides a default.
+- One listener on one device isn't a statistical result. More listeners on headphones and phone speakers can still overturn a pick.

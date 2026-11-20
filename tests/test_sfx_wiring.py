@@ -73,10 +73,13 @@ def test_sound_lab_takes_play_alone_and_the_version_switch_applies(page):
     played(page)
     page.locator(".soundlab .take").first.dispatch_event("pointerdown")      # a take button: no click sound over it
     assert "ui_click" not in played(page)
+    # the blind-listening pick is the default (candidates/index.json "defaults": ui_click -> C)
+    page.wait_for_function("() => (window.__monkeyAvatarObj.sfx.cues().ui_click || [])[0]?.includes('candidates/ui_click-C')")
+    assert page.locator(".soundlab .cue", has=page.locator(".name", has_text="ui click")).locator(".variant.on").inner_text() == "C"
     row = page.locator(".soundlab .cue", has=page.locator(".name", has_text="ui click"))
     row.locator(".variant", has_text="B").click()
     page.wait_for_function("() => (window.__monkeyAvatarObj.sfx.cues().ui_click || [])[0]?.includes('candidates/ui_click-B')")
     row = page.locator(".soundlab .cue", has=page.locator(".name", has_text="ui click"))
-    row.locator(".variant", has_text="Now").click()
+    row.locator(".variant", has_text="Original").click()
     page.wait_for_function("() => !(window.__monkeyAvatarObj.sfx.cues().ui_click || [])[0]?.includes('candidates')")
     page.keyboard.press("Escape")

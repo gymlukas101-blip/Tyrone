@@ -139,7 +139,7 @@
     ]
    }
   ],
-  "target_db": -9.5,
+  "target_db": -12.5,
   "max_ms": 350,
   "ceiling_dbtp": -3,
   "tail_fade_ms": 40

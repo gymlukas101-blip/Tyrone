@@ -72,8 +72,11 @@ decorateJungle($("#stage"));
 
 /** Hook the recorded sound kit into the avatar's sound engine (bundled files + sounds made on this PC). */
 let soundsAttached = false;
-/** CC0 candidate takes under review (ui/public/sfx/candidates): cue -> {"B": files, "C": files}. */
+/** CC0 candidate takes (ui/public/sfx/candidates): cue -> {"B": files, "C": files}. */
 let candidates: Record<string, Record<string, string[]>> = {};
+/** Sets chosen in blind listening (candidates/index.json "defaults"); a Sound Lab choice overrides them. */
+let variantDefaults: Record<string, string> = {};
+const ORIGINAL = "original";            // the shipped ElevenLabs takes, always available to switch back to
 function attachSounds(s: Record<string, any>) {
   const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
   if (!a3) return;
@@ -91,10 +94,15 @@ function attachSounds(s: Record<string, any>) {
       return out.buffer;
     },
   });
-  // Candidate sets chosen in the Sound Lab replace a cue's shipped takes (the shipped ones stay for switching back).
+  // Chosen candidate sets replace a cue's shipped takes (the shipped ones stay for switching back): the blind-test
+  // defaults first, then whatever was picked in the Sound Lab ("original" = keep the shipped takes).
   void ready.then(async () => {
-    try { candidates = (await (await fetch("sfx/candidates/index.json")).json()).cues ?? {}; } catch { candidates = {}; }
-    for (const [cue, v] of Object.entries((s.sfx_variants ?? {}) as Record<string, string>)) {
+    try {
+      const idx = await (await fetch("sfx/candidates/index.json")).json();
+      candidates = idx.cues ?? {};
+      variantDefaults = idx.defaults ?? {};
+    } catch { candidates = {}; variantDefaults = {}; }
+    for (const [cue, v] of Object.entries({ ...variantDefaults, ...((s.sfx_variants ?? {}) as Record<string, string>) })) {
       const files = candidates[cue]?.[v];
       if (files) await a3.sfx.useVariant(cue, files);
     }
@@ -143,18 +151,18 @@ function soundSection(s: Record<string, any>) {
     const sets = candidates[cue];
     if (!sets) return null;
     const box = h("span", { class: "variants", role: "group", "aria-label": `Version of ${cue.replace(/_/g, " ")}` });
-    for (const v of ["now", ...Object.keys(sets)]) {
-      const on = (variants[cue] ?? "now") === v;
+    for (const v of [ORIGINAL, ...Object.keys(sets)]) {
+      const on = (variants[cue] ?? variantDefaults[cue] ?? ORIGINAL) === v;
       box.append(h("button", { type: "button", class: "variant" + (on ? " on" : ""), "data-sfx": "none", "aria-pressed": String(on),
-        title: v === "now" ? "The sound Monkey ships with" : `Candidate ${v} (free CC0 sources, see the sound ledger)`,
+        title: v === ORIGINAL ? "The original sound (ElevenLabs kit)" : `Set ${v} (free CC0 sources, see the sound ledger)${variantDefaults[cue] === v ? " · picked in blind listening" : ""}`,
         onclick: async () => {
-          if (v === "now") delete variants[cue]; else variants[cue] = v;
-          await a3!.sfx.useVariant(cue, v === "now" ? null : sets[v]);
+          variants[cue] = v;                      // explicit, so it also overrides a blind-test default
+          await a3!.sfx.useVariant(cue, v === ORIGINAL ? null : sets[v]);
           const first = a3!.sfx.cues()[cue]?.[0];
           if (first) void a3!.sfx.preview(first);
           appState = await api.save_settings({ sfx_variants: { ...variants } });
           renderLab();
-        } }, v === "now" ? "Now" : v));
+        } }, v === ORIGINAL ? "Original" : v));
     }
     return box;
   };
