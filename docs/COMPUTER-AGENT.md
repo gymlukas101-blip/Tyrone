@@ -186,3 +186,21 @@ What a run tests:
 - **Waiting.** Waiting is local `wait_for_function` in 0.5 s slices, with no API connection held.
 - **Banana cursor.** Travel ≤ 260 ms plus press ≤ 90 ms per click. Nothing runs while idle (see the cursor README). The cursor-on vs cursor-off evaluation runs are compared above.
 - **Companion.** It renders at 30 fps when visible and stops when hidden.
+
+## General tasks: browser + Windows apps (branch `feature/hybrid-computer-use`)
+
+1. In 🖐 **Tasks**, pick **"General task: his browser + apps you pick"**.
+2. Fill in:
+   - **What to do:** the objective.
+   - **Start page and sites:** optional.
+   - **Apps he may use:** click the `+ notepad.exe`-style buttons for open apps.
+   - **Files:** the files he may open, save or upload.
+   - **Real mouse and keyboard:** tick "may use my real mouse and keyboard" only if an app needs it.
+3. Monkey plans with Claude a few steps at a time and works between the browser and those apps, including their Open/Save dialogs.
+4. The task panel shows a live feed: which app he's in, each step, ✓ when the result was read back, ✗ and why.
+5. **Rules:**
+   - Uploads and sending files always ask first.
+   - Only listed files can be picked.
+   - He refuses to repeat an action that may already have happened.
+   - "Done" only counts when the proof is on screen.
+6. **Design and evidence:** [ADR 0002](adr/0002-hybrid-computer-use.md), [quality report](research/COMPUTER-USE-QUALITY.md).

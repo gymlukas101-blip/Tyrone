@@ -117,7 +117,9 @@ export interface Api {
   automation_state(): Promise<AutoState>;
   automation_enable(on: boolean): Promise<AutoState>;
   automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
-                   confirmMedium: boolean, helperSites?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+                   confirmMedium: boolean, helperSites?: boolean, skill?: string, apps?: string[], files?: string[],
+                   allowPhysical?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+  automation_trace?(taskId: string): Promise<{ ok: boolean; events: ComputerEvent[] }>;
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
   automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
   automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;
@@ -130,12 +132,18 @@ export interface Api {
 
 export interface AutoTask {
   id: string; objective: string; mode: string; state: string; note: string; subgoal: string; start_url: string;
+  skill?: string; apps?: string[]; files?: string[]; window?: { title?: string; process?: string };
   allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string;
     info?: { question?: string; options?: string[]; statement?: string; host?: string; word?: string; button?: string;
       recommend?: { letter: string; reason: string } } } | null;
   progress: { steps: number; modules_done: number }; usage: { actions: number; model_calls: number; usd: number; elapsed_s: number };
   created: number; updated: number; outcome: Record<string, any> | null; errors: { kind: string; detail: string }[];
 }
+/** One structured step from the hybrid computer-use trace (never typed text, screenshots or full URLs). */
+export interface ComputerEvent { task_id?: string; ts: number; t: number; ev: string; op?: string; backend?: string;
+  role?: string; name?: string; stage?: string; error?: string; detail?: string; ms?: number; from?: string; to?: string;
+  why?: string; process?: string; window?: string; url?: string; message?: string; kind?: string; ok?: boolean;
+  recovered_by?: string; subgoal?: string; x?: number; y?: number; space?: string }
 export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string }
 export interface AuditRow { ts: number; kind: string; risk: string; target: string; host: string; outcome: string }
 export interface AutoState { enabled: boolean; tasks: AutoTask[]; active: string | null; approvals: Approval[];
@@ -512,6 +520,16 @@ function demoCalibration() {
 function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, fn: () => void) => void) {
   const st: AutoState = { enabled: false, tasks: [], active: null, approvals: [], demo_url: "", stop_hotkey: "ctrl+alt+q",
                           windows_supported: false };
+  const now = () => Date.now() / 1000;
+  const demoTrace: ComputerEvent[] = [
+    { ts: now(), t: 0.4, ev: "ACTION_VERIFIED", op: "navigate", backend: "browser", stage: "changed", ms: 310 },
+    { ts: now(), t: 2.1, ev: "WINDOW_SELECTED", process: "notepad.exe" },
+    { ts: now(), t: 2.2, ev: "DRIVER_SWITCHED", from: "browser", to: "uia", why: "selected notepad.exe" },
+    { ts: now(), t: 2.9, ev: "ACTION_VERIFIED", op: "type_text", backend: "uia", role: "textbox", name: "Text Editor", stage: "verified", ms: 120 },
+    { ts: now(), t: 4.0, ev: "ACTION_VERIFIED", op: "choose_file", backend: "uia", stage: "verified", ms: 900 },
+    { ts: now(), t: 4.4, ev: "DRIVER_SWITCHED", from: "uia", to: "browser", why: "upload_file" },
+    { ts: now(), t: 4.5, ev: "ACTION_FAILED", op: "upload_file", backend: "browser", error: "needs_approval", detail: "this sends a file from your PC to the site" },
+  ];
   const push = (t: AutoTask, avatar: string) => emit([["automation", { task: t, avatar, control: ["RUNNING", "WAITING", "VERIFYING"].includes(t.state), approvals: [] }]]);
   return {
     async window_role() { return new URLSearchParams(location.search).has("overlay") ? "overlay" as const : "main" as const; },
@@ -549,6 +567,7 @@ function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, 
     async automation_history() { return { ok: true, task: st.tasks[0], log: [
       { ts: Date.now() / 1000, kind: "click", risk: "LOW", target: "link Start module 1", host: "127.0.0.1", outcome: "done" },
       { ts: Date.now() / 1000, kind: "play", risk: "LOW", target: "button Play lesson", host: "127.0.0.1", outcome: "done" }] }; },
+    async automation_trace() { return { ok: true, events: demoTrace }; },
     async automation_stop_all() { return { ok: true }; },
     async automation_windows() { return { ok: true, windows: [] }; },
     async overlay() { return { ok: true }; },
