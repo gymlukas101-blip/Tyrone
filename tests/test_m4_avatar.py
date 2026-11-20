@@ -116,13 +116,12 @@ def test_idle_avatar_draws_at_30_fps_and_full_rate_when_busy():
             for _ in range(24):                                     # 6 s: idle fidgets come and go
                 samples.append(p.evaluate("() => ({...window.__monkeyAvatarObj.stats})"))
                 p.wait_for_timeout(250)
+            p.mouse.move(200, 200)                                     # idle, then you move the mouse
+            p.wait_for_timeout(300)
+            cursor = p.evaluate("() => ({...window.__monkeyAvatarObj.stats})")
             p.evaluate("() => window.__monkeyEvents([['state', {state: 'speaking'}]])")
             p.wait_for_timeout(300)
             busy = p.evaluate("() => ({...window.__monkeyAvatarObj.stats})")
-            p.mouse.move(200, 200)
-            p.evaluate("() => window.__monkeyEvents([['state', {state: 'idle'}]])")
-            p.wait_for_timeout(300)
-            cursor = p.evaluate("() => ({...window.__monkeyAvatarObj.stats})")
         finally:
             b.close()
     idle = [x for x in samples if x["tier"] == "idle"]
