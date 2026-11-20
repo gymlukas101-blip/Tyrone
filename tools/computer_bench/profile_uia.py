@@ -56,7 +56,31 @@ def main() -> int:
             v = drv.observe()
             pr.disable()
             print(f"observe(): {len(v.elements)} elements in {time.time() - t:.2f}s", flush=True)
-            pstats.Stats(pr).sort_stats("cumulative").print_stats(30)
+            pstats.Stats(pr).sort_stats("cumulative").print_stats(12)
+            # The benchmark path, step by step, with a stack dump every 20 s if anything blocks.
+            import faulthandler
+            import sys
+
+            from tools.computer_bench.run_windows import MonkeyBackend, bring_front
+
+            faulthandler.dump_traceback_later(20, repeat=True, file=sys.stdout)
+            steps = []
+            b = MonkeyBackend(fx, physical=True)
+            steps.append(("list_windows", lambda: b.list_windows()))
+            steps.append(("bring_front", lambda: (bring_front(fx.hwnd()), time.sleep(0.3))))
+            steps.append(("computer.observe", lambda: b.snapshot()))
+            steps.append(("type Name", lambda: b.type("Name", "Ada")))
+            steps.append(("click Greet", lambda: b.click("Greet")))
+            for label, fn in steps:
+                t = time.time()
+                try:
+                    fn()
+                    res = "ok"
+                except Exception as exc:  # noqa: BLE001
+                    res = f"{type(exc).__name__}: {exc}"[:160]
+                print(f"STEP {label:18s} {time.time() - t:7.2f}s {res}", flush=True)
+            faulthandler.cancel_dump_traceback_later()
+            print("LOG", fx.lines(), flush=True)
         finally:
             fx.stop()
     return 0
