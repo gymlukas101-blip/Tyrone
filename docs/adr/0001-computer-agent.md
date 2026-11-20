@@ -1,6 +1,6 @@
 # ADR 0001: Monkey's computer-agent mode
 
-Status: accepted, implemented as a vertical slice on branch `feature/computer-agent` (not on `main`, which auto-releases).
+Status: accepted; built as a vertical slice on `feature/computer-agent`, merged to `main` 2026-11-20.
 Date: 2026-11-19.
 
 ## Audit: what Monkey already had (code is the source of truth)

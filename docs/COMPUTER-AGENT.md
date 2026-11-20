@@ -1,6 +1,6 @@
 # Computer tasks + banana cursor: status, how to run, security, results
 
-Branch: `feature/computer-agent` (not merged; `main` auto-releases). Design: [ADR 0001](adr/0001-computer-agent.md).
+Shipped on `main` (merged 2026-11-20). Design: [ADR 0001](adr/0001-computer-agent.md).
 Cursor: [docs/cursor/README.md](cursor/README.md) and [REFERENCE-ANALYSIS.md](cursor/REFERENCE-ANALYSIS.md).
 
 ## Resume here (progress file)
@@ -23,7 +23,7 @@ Next, by evidence:
 
 ## Try it on Windows (smallest procedure)
 
-1. Install the build from this branch: the `MonkeySetup-Velopack` artifact of the branch's CI run. You can also run it from source:
+1. The installed app auto-updates to the release that has this (Settings → **Check now** to fetch it right away). You can also run it from source:
 
 ```bash
 pip install -e ".[desktop,dev]"

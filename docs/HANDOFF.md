@@ -4,7 +4,7 @@ Last updated 2026-11-19 (release v0.3.37: Google sign-in cancel/expiry handling,
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
 
-## In progress on branch `feature/computer-agent` (not on main)
+## Computer tasks (merged to main 2026-11-20)
 - Computer tasks: a durable TaskManager, an execution-layer permission gate, a managed Edge browser through Playwright with the
   official Claude browser toolset, a deterministic course skill, a demo course, a Windows UIA driver, the companion window,
   and the animated banana cursor. Status, the Windows test procedure and results: `docs/COMPUTER-AGENT.md`.
