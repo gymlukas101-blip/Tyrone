@@ -141,8 +141,8 @@ def compose(out: Path, n: int) -> Path:
             face = src.crop((int(FACE[0] * W), int(FACE[1] * H), int(FACE[2] * W), int(FACE[3] * H)))
             im.paste(face.resize((fw, fh), Image.LANCZOS), (x, 40 + h + 8))
         dr = ImageDraw.Draw(im)
-        dr.text((12, 8), "before: old face + audio-only visemes", fill=(255, 230, 120), font=font)
-        dr.text((w + 24, 8), "after: face mixer + acting + text lip sync", fill=(255, 230, 120), font=font)
+        dr.text((12, 8), "before: old face", fill=(255, 230, 120), font=font)
+        dr.text((w + 24, 8), "after: face mixer + acting + lip sync", fill=(255, 230, 120), font=font)
         dr.text((12, 40 + h - 22), "face close-up below", fill=(220, 240, 220), font=small)
         im.save(sbs / f"{i:04d}.png")
     video = out / "monkey_dialogue_before_after.mp4"
