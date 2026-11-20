@@ -10,7 +10,7 @@ Dependency-ordered. Each item has a definition of done (DoD). The progress recor
 - **Results (container):** full suite 469 passed, 4 skipped; end-to-end course 6/6.
 - **Not yet checked on the Dell:** audio reopen after sleep or a headset change; the update restart.
 
-## Milestone 2: voice reliability and measurement
+## Milestone 2: voice reliability and measurement (built on `feature/flagship-m2-voice`)
 
 Measure first, so later milestones can show they helped.
 
@@ -29,13 +29,14 @@ Measure first, so later milestones can show they helped.
    - **Change:** a redacted per-turn trace (route reason, model, effort, rounds, cost, latency, correction signals), a `bench_routing --from-traces` mode, and an importance regex that only fires on phrases like "this is important".
    - **DoD:** a live classifier accuracy number exists; misroutes are listed per task.
 
-## Milestone 3: release trust
+## Milestone 3: release trust (built on `feature/flagship-m2-voice`)
 
 5. **Supply chain and licensing.** Every push to `main` ships to the owner's PC, so this comes before feature work.
-   - **Change:** hashed lockfile, SHA-pinned actions, Dependabot, LICENSE and third-party notices (Playwright, openWakeWord CC BY-NC-SA).
-   - **DoD:** CI fails on lockfile drift; notices ship in the installer.
+   - **Change:** hashed lockfiles (`requirements/*.lock`, `tools/lock.sh`), SHA-pinned actions, an informational vulnerability audit job, third-party notices (`THIRD_PARTY_NOTICES.md` plus a generated `THIRD_PARTY_LICENSES.txt`).
+   - **DoD:** CI fails on lockfile drift (`tools/check_lock.py`); notices ship in the installer.
+   - **Left for the owner:** a LICENSE for Monkey's own code (your choice of terms), and whether to turn on Dependabot (it opens pull requests and sends notifications, so it needs your OK).
 
-## Milestone 4: avatar and companion
+## Milestone 4: avatar and companion (built on `feature/flagship-m4-avatar`)
 
 6. **Avatar state resolver.** One table-driven resolver for both windows: priority needs_input > error > speaking > listening > working/thinking > idle > sleeping, with minimum dwell times.
    - **DoD:**
@@ -46,10 +47,14 @@ Measure first, so later milestones can show they helped.
    - **Change:** FPS tiers (60 active, 30 idle, about 10 asleep, 0 when hidden); pixel ratio at most 1.5; no level events for hidden windows; send level only when it changes.
    - **DoD:** `renderer.info` frames per minute per tier; zero `evaluate_js` calls while idle and hidden (fake window); GPU % measured on the Dell.
 8. **Companion Win32 polish.**
-   - **Change:** `MA_NOACTIVATE`, DPI re-report, placement on the union of displays.
+   - **Done:** click areas are re-reported when the display scale changes; the position check already accepts any monitor.
+   - **Held back:** answering `WM_MOUSEACTIVATE` needs a window procedure, and a Python one would run on every message
+     (it can stall the companion when Python is busy). Only worth it if clicking the companion is seen to take focus on
+     the Dell; then do it in a tiny native helper, not Python.
+   - **Original plan:** `MA_NOACTIVATE`, DPI re-report, placement on the union of displays.
    - **DoD:** Windows CI test: clicking the companion keeps Notepad in front; 125/150% scaling verified on the Dell.
 
-## Milestone 5: intelligence and memory quality
+## Milestone 5: intelligence and memory quality (built on `feature/flagship-m4-avatar`)
 
 9. **Recall gate.**
    - **Change:** skip for command/chat/weather tasks; check coverage of the recent window; inject only facts and episodes with a bm25 floor.
@@ -59,17 +64,22 @@ Measure first, so later milestones can show they helped.
 
 ## Milestone 6: UI (Dashboard and Focus, real data only)
 
-11. **P0 UI fixes.**
+11. **P0 UI fixes.** (done on `feature/flagship-m4-avatar`: real buttons for card titles and email rows with keyboard
+    access, a radio group for Quick/Auto/Important with arrow keys, a live chat log, labelled controls, landmarks, the
+    brief pinned past the 4-card limit, and the composer always on screen at 420×700. axe: no serious or critical
+    findings at 1280 or 420 px; it found no contrast problems.)
     - **Change:** the brief survives the card limit; the composer is visible at 420×700; keyboard access for collapsed cards and email rows; `aria-live` chat; radio semantics; labelled input; contrast fixes.
     - **DoD:** the axe and Playwright checks in Agent D's acceptance criteria.
-12. **Dashboard.**
+12. **Dashboard.** (done as the Focus tab of the Today view, `ui/src/today.ts` + `Api.dashboard()`; it reuses the
+    cached brief and assignment board, so there's no second data path.)
     - **Change:** a structured `dashboard()` endpoint (cached; every section reports ok/empty/not_connected/unavailable) and cards for top/next, schedule, due top 3, unread, weather, plus a docked composer.
     - **DoD:**
       - 1280, 900 and 420 px screenshots;
       - with everything disconnected, zero fake rows;
       - no network on draw;
       - first draw under 300 ms on the Dell.
-13. **Focus view.**
+13. **Focus view.** (done: the Today view's Focus / Homework / Schedule tabs, with Open on Canvas and "Mark done in
+    Monkey" plus Undo.)
     - **Change:** Brief/Homework/Schedule/Chat tabs; the focus item, why, due, Open on Canvas, and "Mark done in Monkey" with Undo. No XP, levels or other fabricated data.
     - **DoD:** tablist keyboard pattern; reduced-motion check with `getAnimations().length === 0`.
 14. **Hold-to-dictate.** EXPERIMENT; ask the owner first, because it types into other apps.

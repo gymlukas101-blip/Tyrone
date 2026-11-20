@@ -285,10 +285,18 @@ class ToolRunner:
             file = "sensitive.md"
         if file == "sensitive.md" and not F.EXPLICIT_REMEMBER.search(self.user_text or ""):
             return "That's sensitive; only saved when the user explicitly asks you to remember it."
+        clash = F.conflicts(self._mem_root(), file, fact)
         f, created = F.add_fact(self._mem_root(), file, fact, src="user_said")
         self._reindex()
         self.s.emit("memory", {"command": "remember", "path": f.file})
-        return f"{'Saved' if created else 'Already known'}: [{f.file} {f.id}] {f.text}"
+        out = f"{'Saved' if created else 'Already known'}: [{f.file} {f.id}] {f.text}"
+        if clash and created:
+            # Never refuse: people have several instruments, allergies, siblings. Point it out instead, so an
+            # outdated fact can be retired when the user meant a change (ask them if it isn't clear).
+            c = clash[0]
+            out += (f"\nNote: this may replace [{c.file} {c.id}] \"{c.text}\". If the user changed it (not added to "
+                    f"it), retire the old one with update_memory(fact_id={c.id}) or forget_memory; if unsure, ask.")
+        return out
 
     def t_update_memory(self, fact_id: str, new_text: str, evidence: str):
         why = self._check_write(new_text, evidence)

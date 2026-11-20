@@ -392,3 +392,66 @@ Now (`monkey/memory/export.py`):
   - The whole call has a deadline and always comes back with a next step: new Outlook detected, Outlook didn't start, or Outlook isn't ready yet.
   - Settings shows "Opening Outlook…" while it waits and keeps the result under the button.
 - **Tests:** `tests/test_outlook_optin.py` (sign-in wait, already open, new Outlook, won't start, always answers). Windows behaviour itself is unverified until it runs on the Dell.
+## 2026-11-20: flagship Milestone 2 (voice reliability, measurement) and Milestone 3 (release trust)
+- **Speaker races (D4–D6):** speaking state and the pending count change together under one lock, and the UI is told in order on its own thread; the stall watchdog waits while an engine is still inside its deadline; an interrupt makes the engine thread stop reading, closing the generator so Pocket frees its model at once; sentences queued before an interrupt are never spoken.
+- **Echo guard (`monkey/audio/echo.py`):** in conversation mode a transcript that is mostly his own recent sentence is ignored; the mic reopens after the device's output latency plus 0.3 s.
+- **"Monkey, stop":** a second keyword (also "stop monkey") silences him while he talks and never starts a recording.
+- **Turn traces (`monkey/trace.py`):** per-turn monotonic stage marks from the mic (speech start, last voiced, end of turn) through STT, routing, context, first token, first sentence, TTS, first audible audio (output latency included) and barge-in silence; routing labels, rounds, cost, escalation and a "you corrected him next turn" signal. No speech text unless the owner turns on "Keep what I ask in local traces". `python -m tools.voice_report`, `python -m tools.bench_routing --from-traces`, and a Speed group in Check everything.
+- **Importance:** only phrases aimed at Monkey ("this is important", "take your time") raise the tier; "any important emails?" no longer does.
+- **Supply chain:** hashed lockfiles and a drift check, SHA-pinned actions, notices in the installer, an audit job that reports without blocking releases.
+- **Tests:** `tests/test_m2_voice.py`, `tests/test_supply_chain.py`. Container only: audio timing on the Dell is unverified.
+
+## 2026-11-20: flagship Milestone 4 (avatar state, render cost, companion)
+- **One avatar-state rule (`ui/src/avatar/resolver.ts`)** for the main window and the companion: speaking > a task needs you > you're talking > thinking or a task working > idle, with minimum dwell times so blips don't flicker. Fixes D7 (the companion ignored "listening"/"thinking" while a task ran). Vitest tables (`ui/test/resolver.test.ts`, `npm test`) and a Playwright check in both windows (`tests/test_m4_avatar.py`).
+- **Render tiers (`avatar3d.ts`):** full rate while he talks, listens, thinks, emotes, moves between poses, shows effects or follows your cursor; 30 fps when idle and still; 15 fps asleep; nothing when hidden. `stats` (frames, tier, why) is exposed for checks. Pixel ratio is unchanged (still up to 2), pending a measurement on the Dell, so nothing looks softer.
+- **Quiet UI bus:** the mouth level is sent only when it changes, so silence costs zero `evaluate_js` calls (it was about 30 per second into both windows, even when idle).
+- **Companion:** click areas are re-reported when the display scale changes.
+
+## 2026-11-20: flagship Milestone 5 (memory quality)
+- **Recall gate (`monkey/memory/recall_gate.py`):**
+  - Automatic recall is skipped for tasks that never need your memory (commands, weather, pictures, check-offs), unless the message points at your past ("like last time", "remember", "usual").
+  - Quick facts and web lookups still search, because wording-based routing sends "when does comet club meet?" there, but only strong matches are injected.
+  - Only facts and episode summaries are injected, never raw old messages; `search_memory` still finds those when asked.
+  - Each hit must share enough of the message's distinctive words, and a hit already in the recent conversation isn't repeated.
+  - Each turn's trace records whether recall was skipped, empty or injected, and how many characters.
+- **One write path:** the built-in memory tool is view-only. Every change goes through `remember` / `update_memory` / `forget_memory`, so nothing Monkey writes is labelled "you typed it" (`user_edit`).
+- **Contradictions:** `remember` refuses a fact that contradicts a current one ("roommate is Sam" vs "roommate is Jordan", same subject with a different value, or mostly the same words with different details) and points the model at `update_memory`. The old fact moves to `superseded.md` instead of two "current" truths.
+- **Tests:** `tests/test_recall_gate.py` (19 labelled recall cases, logging, 8 seeded conflict cases, view-only memory tool).
+
+## 2026-11-20: flagship Milestone 6, P0 UI fixes
+- Card titles are real buttons (`aria-expanded`), email rows and picture thumbnails open with Enter or Space, Quick/Auto/Important is a radio group with arrow keys, the chat log is a live region you can scroll by keyboard, and the mic and text box have labels. Landmarks and a top heading were added.
+- The morning brief and unsent drafts are pinned: the 4-card limit drops the oldest other card instead.
+- Narrow windows: the panel row can't grow past the window and the cards area shrinks (it scrolls), so the composer stays on screen at 420×700 with cards open.
+- Tests: `tests/test_m6_ui.py` (axe at 1280 and 420 px with no serious or critical findings, composer position, keyboard, pinned brief).
+
+## 2026-11-20: flagship Milestone 6, Today view (dashboard + focus)
+- **Today** (header button ☀): Focus / Homework / Schedule tabs, with the composer docked underneath.
+- **Focus:** the top assignment, why it's first, when it's due, Open on Canvas, and "Mark done in Monkey" with Undo (it only ticks it in Monkey; nothing is submitted). Below that, tiles for next due, today's schedule, unread email and weather.
+- **Data:** `Api.dashboard()` reads the cached brief and the cached assignment board, so drawing it needs no network. Every section reports ok / empty / not_connected / unavailable and shows that instead of placeholder rows. No XP, levels or other invented data.
+- **Narrow windows:** header buttons become icon-only, with labels kept for screen readers, so all six fit at 420 px.
+- **Tests (`tests/test_m6_ui.py`):** zero rows when nothing is connected, no network while drawing, first draw under 300 ms (in the container), the tab keyboard pattern (arrows, Home/End, wraparound, roving tabindex), mark done and Undo, and no animations with reduced motion. axe shows no serious or critical findings at 1280 and 420 px.
+
+## 2026-11-20: independent review of Milestones 2–6, fixed before merging
+- **Echo guard (blocker):** answers that repeat his words ("the short version", "add it to my calendar") were dropped as echoes. Now an echo needs the timing of one (it starts within 0.6 s of his voice ending) plus 4 or more words, 90% of them in order from what he just said. The reviewer's cases are tests.
+- **Remember (blocker):** the conflict check refused true facts ("plays piano" after "plays guitar", two allergies). `remember` never refuses now: it saves, and adds a "may replace" hint only for same-subject, new-value facts or ones sharing 2+ key words.
+- **Branch base (blocker):** rebased onto `main`, so the Outlook fix (v0.3.71) is kept.
+- **Turn traces:** a barge-in no longer finishes the new turn with the old reply's state, and each request finishes its own turn. "Interrupt → silence" is now recorded.
+- **Speaker:** queued audio is tagged with its reply, so a late end-of-sentence marker from an interrupted reply can't end the next one.
+- **Recall:** questions about you ("what's my advisor's name?") use normal matching even when routed as quick facts.
+- **Today view:**
+  - It says "and on your Canvas planner" when the tick also synced to Canvas.
+  - It never fetches while drawing; it loads in the background with a "Loading…" state.
+  - Yesterday's brief is never shown as today.
+  - It closes when a reply, card or draft arrives.
+  - Stale draws are ignored and errors are caught.
+  - Focus moves to Undo and back to the Today button.
+  - Undo lasts 10 s.
+- **Render tiers:** the busy tier runs at the display's own rate (75/120/144 Hz), not 60.
+- **Privacy:** request text kept in traces (opt-in) is removed when history is deleted or the option is turned off.
+- **Tracer:** file writes happen outside the lock, and "no thanks" no longer counts as a correction.
+- **Tests:** the reduced-motion test checks the whole page; the network test lost an always-true condition. A new non-gating CI job (`ui-browser`) runs the browser UI tests on every push.
+
+## 2026-11-20: self-improvement loop for agents working on Monkey
+- `docs/agent-lessons.md`: short rules, each with its reason, seeded from this project's own failures, wasted context and owner corrections. CLAUDE.md tells every agent to read it before starting and to fix or retire a rule that proves wrong.
+- `tools/lessons/collect.py` finds corrections, failures and waste in run logs (JSONL), redacted.
+- A weekly scheduled review (Sundays 7:32 PM Central) reads the week's sessions and updates only that file. A push that changes only that file doesn't build a release (`paths-ignore`).

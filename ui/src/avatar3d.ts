@@ -175,7 +175,11 @@ export class Avatar3D implements AvatarLike {
     // Any sign of life from the user resets idle time (and wakes him up if he dozed off).
     for (const ev of ["keydown", "pointerdown", "wheel"]) window.addEventListener(ev, () => this.poke(), { passive: true });
     let lastMove = 0;
-    window.addEventListener("pointermove", () => { const n = performance.now(); if (n - lastMove > 1500) { lastMove = n; this.poke(); } });
+    window.addEventListener("pointermove", () => {
+      const n = performance.now();
+      this.lastInput = n;                              // he follows the cursor: render smoothly while it moves
+      if (n - lastMove > 1500) { lastMove = n; this.poke(); }
+    }, { passive: true });
 
     new ResizeObserver(() => this.resize()).observe(host);
     this.ready = this.load(url);
@@ -613,11 +617,37 @@ export class Avatar3D implements AvatarLike {
   /** Frame cap (0 = display rate). The companion window runs at 30 fps; a hidden window renders nothing. */
   maxFps = 0;
   private lastFrame = 0;
+  private lastInput = 0;
+  /** Render-cost counters (Playwright and the lag audit read these). */
+  stats = { frames: 0, tier: "full" as "full" | "idle" | "asleep" | "hidden", fps: 0, why: "" };
+
+  /** How often to draw right now. Anything moving fast or that you're looking at gets the full rate; a still,
+   *  idle Monkey is drawn at 30 fps (breathing and blinks look the same) and a sleeping one at 15. */
+  private tierFps(now: number): number {
+    if (document.hidden) { this.stats.tier = "hidden"; return 0; }
+    const why = this.state !== "idle" ? this.state : this.emoting ? "emote" : this.jaw > 0.01 ? "mouth"
+      : now - this.lastInput < 2000 ? "cursor"
+      : this.chainAct !== null && this.chainStage !== "sit_doze_loop" && this.chainStage !== "sleep_loop" ? "transition"
+      : this.vfx.active > 0 && !this.sleeping ? "effects"
+      : Math.abs(this.sleepAmt - (this.sleeping ? 1 : 0)) > 0.05 ? "settling" : "";
+    this.stats.why = why;
+    const busy = why !== "";
+    let fps: number;
+    if (busy) { this.stats.tier = "full"; fps = this.maxFps || 1000; }   // full = the display's own rate (75/120/144 Hz)
+    else if (this.sleeping) { this.stats.tier = "asleep"; fps = 15; }
+    else { this.stats.tier = "idle"; fps = 30; }
+    if (this.maxFps) fps = Math.min(fps, this.maxFps);
+    this.stats.fps = fps >= 1000 ? 0 : fps;      // 0 = uncapped
+    return fps;
+  }
+
   private frame() {
     const now = performance.now();
-    if (document.hidden) return;
-    if (this.maxFps && now - this.lastFrame < 1000 / this.maxFps - 1) return;
+    const fps = this.tierFps(now);
+    if (fps === 0) return;
+    if (fps < 1000 && now - this.lastFrame < 1000 / fps - 1) return;
     this.lastFrame = now;
+    this.stats.frames++;
     if (this.frozen) { this.renderer.render(this.scene, this.camera); return; }
     const dt = Math.min(0.1, this.clock.getDelta());
     const t = performance.now();

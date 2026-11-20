@@ -18,7 +18,7 @@ from .visemes import estimate_visemes
 
 log = logging.getLogger(__name__)
 BLOCK = 1024  # ~23ms at 44.1k -> ~43 mouth updates per second
-STALL_S = 12.0   # "speaking" with no audio for this long = something hung: reset so Monkey never gets stuck
+STALL_S = 12.0   # "speaking" with no audio *and no engine working* this long = something hung: reset
 
 
 def _deadline(text: str) -> float:
@@ -53,12 +53,28 @@ class Speaker:
         self._stream = None
         self._want_stream = False         # start() was called: the watchdog keeps a stream open from then on
         self._last_audio = 0.0
+        self._in_engine = False           # an engine is producing this sentence (it has its own deadline)
+        self._notify: queue.Queue[bool] = queue.Queue()   # speaking-state changes, delivered in order
+        # Turn tracer hook: timing(name, at) with "first_audio_packet" (an engine produced audio),
+        # "first_audio_played" and "playback_stopped" (when the sound reaches/leaves the speaker, output latency included)
+        self.timing: Callable[..., None] | None = None
+        self._stop_at: float | None = None
+        self._await_first = False
+        threading.Thread(target=self._notify_loop, name="tts-state", daemon=True).start()
         threading.Thread(target=self._synth_loop, name="tts", daemon=True).start()
         threading.Thread(target=self._watchdog, name="tts-watchdog", daemon=True).start()
 
     @property
     def speaking(self) -> bool:
         return self._speaking
+
+    @property
+    def output_latency(self) -> float:
+        """Seconds between a sample leaving us and reaching the speaker (the device's output buffer)."""
+        try:
+            return float(self._stream.latency) if self._stream is not None else 0.1
+        except Exception:  # noqa: BLE001
+            return 0.1
 
     def start(self) -> None:
         from .devices import on_reset
@@ -124,14 +140,26 @@ class Speaker:
         """Queue a sentence. `engine` forces one voice (Settings → Test), with no fallback."""
         import time
 
-        with self._lock:
+        with self._lock:                  # pending and the speaking flag change together (no lost "speaking")
             self._pending += 1
-        self._last_audio = time.monotonic()
-        self._set_speaking(True)
-        self._sentences.put(sentence if engine is None else (sentence, engine))
+            self._last_audio = time.monotonic()
+            self._set_speaking_locked(True)
+            gen = self._gen
+        self._sentences.put((gen, sentence, engine))
+
+    def _time(self, name: str, at: float | None = None) -> None:
+        if self.timing is not None:
+            try:
+                self.timing(name, at)
+            except Exception:  # noqa: BLE001
+                pass
 
     def stop(self) -> None:
         """Barge-in: drop everything queued and stop talking now."""
+        import time
+
+        if self._speaking:
+            self._stop_at = time.monotonic()      # the next audio callback reports when it actually went quiet
         with self._lock:
             self._gen += 1
             self._pending = 0
@@ -140,35 +168,78 @@ class Speaker:
             while not self._audio.empty():
                 self._audio.get_nowait()
             self._buf = np.zeros(0, dtype=np.int16)
-        self._set_speaking(False)
+            self._set_speaking_locked(False)
 
     # ---- internals -----------------------------------------------------
     def _set_speaking(self, value: bool) -> None:
+        with self._lock:
+            self._set_speaking_locked(value)
+
+    def _set_speaking_locked(self, value: bool) -> None:
+        """Caller holds self._lock. The UI is told on a separate thread, in order, so the audio callback never
+        waits on the UI and two quick changes can't arrive swapped."""
         if value != self._speaking:
             self._speaking = value
-            self.on_state(value)
-            if not value:
-                self.on_level(0.0)
+            if value:
+                self._await_first = True
+            self._notify.put(value)
+
+    def _notify_loop(self) -> None:
+        while True:
+            value = self._notify.get()
+            try:
+                self.on_state(value)
+                if not value:
+                    self.on_level(0.0)
+            except Exception:  # noqa: BLE001
+                log.debug("speaking-state listener failed", exc_info=True)
+
+    def wait_idle_notified(self, timeout: float = 1.0) -> None:
+        """Tests: wait until every state change so far has been delivered."""
+        import time
+
+        end = time.monotonic() + timeout
+        while not self._notify.empty() and time.monotonic() < end:
+            time.sleep(0.005)
+        time.sleep(0.01)
 
     def _run_engine(self, engine, sentence: str, gen: int) -> None:
         """Stream one sentence from an engine on a helper thread, so a hung engine can't freeze Monkey."""
         q: queue.Queue = queue.Queue()
 
         def work():
+            it = engine.stream_pcm(sentence)
             try:
-                for chunk in engine.stream_pcm(sentence):
+                for chunk in it:
+                    if gen != self._gen:          # interrupted: stop reading so the engine frees its model now
+                        break
                     q.put(chunk)
                 q.put(StopIteration)
             except Exception as exc:  # noqa: BLE001
                 q.put(exc)
+            finally:
+                close = getattr(it, "close", None)
+                if close is not None:
+                    try:
+                        close()                   # Pocket's generator sets its stop flag in `finally`
+                    except Exception:  # noqa: BLE001
+                        pass
 
         threading.Thread(target=work, name=f"tts-{type(engine).__name__}", daemon=True).start()
+        import time
+
         timeout, got = _deadline(sentence), False
+        waited_since = time.monotonic()
         while True:
+            if gen != self._gen:
+                return                            # interrupted while waiting: don't hold up the next reply
             try:
-                item = q.get(timeout=timeout if not got else 15.0)
+                item = q.get(timeout=0.1)
             except queue.Empty:
-                raise EngineTimeout(f"{type(engine).__name__} didn't produce audio in time") from None
+                if time.monotonic() - waited_since > (timeout if not got else 15.0):
+                    raise EngineTimeout(f"{type(engine).__name__} didn't produce audio in time") from None
+                continue
+            waited_since = time.monotonic()
             if item is StopIteration:
                 if not got:
                     raise RuntimeError(f"{type(engine).__name__} returned no audio")
@@ -178,10 +249,12 @@ class Speaker:
                     log.warning("TTS engine %s failed mid-sentence: %s", type(engine).__name__, item)
                     return
                 raise item
+            if not got:
+                self._time("first_audio_packet")
             got = True
             if gen != self._gen:
                 return
-            self._audio.put(item)
+            self._audio.put((gen, item))
 
     def _watchdog(self) -> None:
         import time
@@ -192,54 +265,70 @@ class Speaker:
                 log.warning("speaker stream stopped (device change?); reopening")
                 self.reopen()
                 continue
-            if self._speaking and self._sentences.empty() and self._audio.empty() and self._buf.size == 0 \
-                    and time.monotonic() - self._last_audio > STALL_S:
-                log.warning("speaker stalled (pending=%s); resetting", self._pending)
-                with self._lock:
+            with self._lock:
+                if self._speaking and not self._in_engine and self._sentences.empty() and self._audio.empty() \
+                        and self._buf.size == 0 and time.monotonic() - self._last_audio > STALL_S:
+                    log.warning("speaker stalled (pending=%s); resetting", self._pending)
                     self._pending = 0
-                self._set_speaking(False)
+                    self._set_speaking_locked(False)
 
     def _synth_loop(self) -> None:
         while True:
-            sentence = self._sentences.get()
-            if sentence is None:
+            item = self._sentences.get()
+            if item is None:
                 return
-            gen = self._gen
-            engines = self.engines
-            if isinstance(sentence, tuple):
-                sentence, forced = sentence
-                engines = [forced]
-            for engine in engines:
-                try:
-                    if not getattr(engine, "enabled", lambda: True)() or not engine.available():
-                        continue
-                    self._run_engine(engine, sentence, gen)
-                    break
-                except Exception as exc:  # noqa: BLE001 - try the next engine
-                    log.warning("TTS engine %s failed: %s", type(engine).__name__, exc)
-                    if self.on_fallback is not None and engine is self.engines[0]:
-                        try:
-                            self.on_fallback(type(engine).__name__, exc)
-                        except Exception:  # noqa: BLE001
-                            pass
-            if gen == self._gen:
-                self._audio.put(None)  # end-of-sentence marker
+            gen, sentence, forced = item
+            if gen != self._gen:
+                continue                          # queued before an interrupt: never speak it
+            engines = self.engines if forced is None else [forced]
+            self._in_engine = True
+            try:
+                self._speak_one(engines, sentence, gen, forced)
+            finally:
+                self._in_engine = False
+                self._last_audio = __import__("time").monotonic()
+            self._audio.put((gen, None))  # end-of-sentence marker (the callback ignores ones from an old reply)
+
+    def _speak_one(self, engines, sentence: str, gen: int, forced) -> None:  # noqa: ARG002
+        for engine in engines:
+            try:
+                if not getattr(engine, "enabled", lambda: True)() or not engine.available():
+                    continue
+                self._run_engine(engine, sentence, gen)
+                break
+            except Exception as exc:  # noqa: BLE001 - try the next engine
+                log.warning("TTS engine %s failed: %s", type(engine).__name__, exc)
+                if self.on_fallback is not None and engine is self.engines[0]:
+                    try:
+                        self.on_fallback(type(engine).__name__, exc)
+                    except Exception:  # noqa: BLE001
+                        pass
 
     def _callback(self, outdata, frames, time_info, status) -> None:  # noqa: ARG002
         out = np.zeros(frames, dtype=np.int16)
         filled = 0
+        if self._stop_at is not None and self._audio.empty() and self._buf.size == 0:
+            self._stop_at = None                  # this block is silent: what's in the device buffer is the last sound
+            self._time("playback_stopped", __import__("time").monotonic() + self.output_latency)
         while filled < frames:
             if self._buf.size == 0:
                 try:
                     nxt = self._audio.get_nowait()
                 except queue.Empty:
                     break
-                if nxt is None:
+                gen, chunk = nxt
+                if gen != self._gen:
+                    continue                      # from a reply that was interrupted: never play it or count it
+                if chunk is None:
                     with self._lock:
-                        self._pending = max(0, self._pending - 1)
+                        if gen == self._gen:
+                            self._pending = max(0, self._pending - 1)
                     continue
-                self._buf = nxt
+                self._buf = chunk
             self._last_audio = __import__("time").monotonic()
+            if self._await_first:
+                self._await_first = False
+                self._time("first_audio_played", self._last_audio + self.output_latency)
             take = min(frames - filled, self._buf.size)
             out[filled:filled + take] = self._buf[:take]
             self._buf = self._buf[take:]
@@ -255,5 +344,7 @@ class Speaker:
         if self.on_visemes is not None and (filled or self._prev_rms):
             self.on_visemes(estimate_visemes(out, TTS_RATE, self._prev_rms))  # one 1024-pt FFT: microseconds
         self._prev_rms = rms
-        if filled == 0 and self._pending == 0 and self._audio.empty() and self._speaking:
-            self._set_speaking(False)
+        if filled == 0 and self._speaking:
+            with self._lock:                      # re-check under the lock: say() may have just queued more
+                if self._pending == 0 and self._audio.empty() and self._buf.size == 0:
+                    self._set_speaking_locked(False)

@@ -289,10 +289,33 @@ def _budget_checks(app) -> list[Check]:
                   "Raise the budget in Settings → Brain & budget, or use Saver mode" if pct >= 90 else "")]
 
 
+def _speed_checks(app) -> list[Check]:
+    """How fast he answers, from local turn traces (timings only, no speech)."""
+    tr = getattr(app, "tracer", None)
+    recs = tr.recent() if tr is not None else []
+    if not recs:
+        return [Check("Speed", "Turn timings", SKIP, "no turns yet", "Talk to Monkey a few times, then check again")]
+    from .trace import span_stats
+
+    rows = {r["span"]: r for r in span_stats(recs)}
+    out: list[Check] = []
+    for label, target in (("you stop → he speaks", 2500), ("typed → he speaks", 2500), ("speech → text", 1500),
+                          ("request → first word", 1500), ("sentence → first sound", 1200),
+                          ("interrupt → silence", 300)):
+        r = rows.get(label)
+        if r is None:
+            continue
+        detail = f"median {r['p50'] / 1000:.2f} s, slow turns {r['p95'] / 1000:.2f} s ({r['n']} turns)"
+        ok = r["p50"] <= target
+        out.append(Check("Speed", label, OK if ok else WARN, detail,
+                         "" if ok else "Copy this report to Claude: it shows which stage is slow"))
+    return out or [Check("Speed", "Turn timings", SKIP, f"{len(recs)} turns, none spoken yet", "")]
+
+
 GROUPS: list[tuple[str, Callable]] = [
     ("App", _app_checks), ("Brain", _brain_checks), ("Voice", _voice_checks), ("Listening", _listening_checks),
     ("Google", _google_checks), ("Calendar", _calendar_link_checks), ("School & accounts", _school_checks),
-    ("Memory", _memory_checks), ("Morning brief", None), ("Budget", _budget_checks),
+    ("Memory", _memory_checks), ("Morning brief", None), ("Budget", _budget_checks), ("Speed", _speed_checks),
 ]
 
 

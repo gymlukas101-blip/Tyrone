@@ -145,7 +145,7 @@ def test_memory_tool_writes_blocked_in_untrusted_turn(tmp_path):
     assert not (tmp_path / "memory" / "memories" / "evil.md").exists()
     results = [b for m in agent.history if m["role"] == "user" and isinstance(m["content"], list)
                for b in m["content"] if isinstance(b, dict) and b.get("type") == "tool_result"]
-    assert any("Not saved" in str(r.get("content")) for r in results)
+    assert any("read-only" in str(r.get("content")) or "Not saved" in str(r.get("content")) for r in results)
 
 
 def test_retrieved_text_is_wrapped_as_data(tmp_path):

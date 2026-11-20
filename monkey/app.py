@@ -49,7 +49,9 @@ class UIBus:
         self.windows: list = []          # extra windows that get the same events (the companion overlay)
         self._q: queue.Queue[tuple[str, dict]] = queue.Queue()
         self._level: float | None = None
+        self._sent_level = 0.0            # last mouth level the windows got: silence is sent once, not 30×/s
         self._visemes: dict | None = None
+        self.calls = 0                    # evaluate_js calls (tests and the lag audit)
         threading.Thread(target=self._loop, name="ui-bus", daemon=True).start()
 
     def emit(self, name: str, payload: dict | None = None) -> None:
@@ -70,8 +72,11 @@ class UIBus:
             while not self._q.empty() and len(batch) < 200:
                 batch.append(self._q.get_nowait())
             if self._level is not None:
-                batch.append(("level", {"v": round(self._level, 3)}))
+                v = round(self._level, 3)
                 self._level = None
+                if abs(v - self._sent_level) >= 0.01 or (v == 0.0 and self._sent_level != 0.0):
+                    batch.append(("level", {"v": v}))
+                    self._sent_level = v
             if self._visemes is not None:
                 batch.append(("visemes", self._visemes))
                 self._visemes = None
@@ -79,12 +84,26 @@ class UIBus:
                 js = f"window.__monkeyEvents && window.__monkeyEvents({json.dumps(batch, default=str)})"
                 for w in [self.window, *self.windows]:
                     try:
+                        self.calls += 1
                         w.evaluate_js(js)
                     except Exception as exc:  # noqa: BLE001 - window may be closing or hidden
                         log.debug("evaluate_js failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------- app
+
+def _tmark(app, name: str, at: float | None = None) -> None:
+    """Turn tracer mark (no-op on stub apps in tests)."""
+    tr = getattr(app, "tracer", None)
+    if tr is not None:
+        tr.mark(name, at)
+
+
+def _tfinish(app, outcome: str = "ok", turn=None) -> None:
+    tr = getattr(app, "tracer", None)
+    if tr is not None:
+        tr.finish(outcome, turn=turn)
+
 class MonkeyApp:
     def __init__(self, data_dir: Path | None = None, headless: bool = False):
         self.cfg = Config(data_dir)
@@ -140,6 +159,10 @@ class MonkeyApp:
         self.agent = Agent(None, self.router, ToolRunner(self.services), self.memory, self.ledger,
                            emit=self._emit, speak=self._say, user_name=lambda: self.cfg.settings.user_name,
                            history=self.history, on_session_end=self._episode_async)
+        from .trace import TurnTracer
+
+        self.tracer = TurnTracer(self.cfg.data_dir / "traces", keep_text=lambda: bool(self.cfg.settings.trace_text))
+        self.agent.trace = self.tracer
         threading.Thread(target=self._history_maintenance, name="history", daemon=True).start()
         from .routines.morning import MorningRoutine, Schedule
 
@@ -159,6 +182,10 @@ class MonkeyApp:
         self._reply_done = False         # the agent finished its reply (audio may still be playing)
         self._conv_timer: threading.Timer | None = None
         self._waved = False
+        self._last_brief: dict | None = None      # today's brief as last shown (the Today view reads it)
+        from .audio.echo import EchoGuard
+
+        self.echo = EchoGuard()
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
         self.updater = Updater(self.ui.emit, enabled=lambda: self.cfg.settings.auto_update)
@@ -257,6 +284,7 @@ class MonkeyApp:
             loudness=lambda: (bool(self.cfg.settings.voice_match_loudness),
                               max(0.25, min(2.0, (self.cfg.settings.voice_volume or 100) / 100))),
         )
+        self.speaker.timing = lambda name, at=None: _tmark(self, name, at)
         try:
             self.speaker.start()
         except Exception as exc:  # noqa: BLE001
@@ -283,6 +311,8 @@ class MonkeyApp:
                 end_silence_ms=lambda: END_SILENCE_PRESETS.get(self.cfg.settings.end_silence, 1400),
                 on_conversation_idle=lambda: self.end_conversation("quiet"),
                 on_reconnect=lambda msg: self._emit("hint", {"text": f"🎙 {msg}"}),
+                on_stop=self._on_stop_keyword,
+                on_mark=self._listener_mark,
             )
             try:
                 self.listener.start()
@@ -483,6 +513,9 @@ class MonkeyApp:
 
     def _say(self, sentence: str) -> None:
         if self.speaker is not None:
+            if getattr(self, "echo", None) is not None:
+                self.echo.remember(sentence)
+            _tmark(self, "tts_submit")
             self.speaker.say(sentence)
 
     # ------------------------------------------------------------------ voice flow
@@ -491,7 +524,25 @@ class MonkeyApp:
         if self.cfg.settings.conversation_mode:
             self._in_conversation = True
 
+    # ---- turn tracing --------------------------------------------------------
+    def _listener_mark(self, name: str, at: float) -> None:
+        tr = getattr(self, "tracer", None)
+        if tr is None:
+            return
+        if name == "speech_start":
+            cur = tr.current()
+            if cur is None or cur.done or "speech_start" in cur.marks:
+                tr.begin("conversation" if getattr(self.listener, "mode", "") == "conversation" else "voice", at)
+        tr.mark(name, at)
+
     def _on_speaker_state(self, speaking: bool) -> None:
+        if not speaking:
+            import time as _t
+
+            self._spoke_until = _t.monotonic() + (getattr(self.speaker, "output_latency", 0.1) if self.speaker else 0.1)
+        if not speaking and self._reply_done:
+            _tmark(self, "last_audio_played")
+            _tfinish(self)
         if not speaking:
             self._maybe_continue_conversation()
         self._publish_state()
@@ -515,7 +566,9 @@ class MonkeyApp:
             self.listener.enter_conversation(self.cfg.settings.conversation_idle_s)
             self._publish_state()
 
-        self._conv_timer = threading.Timer(0.3, open_mic)    # let his last word die out of the room first
+        # Let his last word leave the speaker (output buffer) and die out of the room before the mic listens.
+        latency = getattr(self.speaker, "output_latency", 0.1) if self.speaker is not None else 0.1
+        self._conv_timer = threading.Timer(min(1.0, latency + 0.3), open_mic)
         self._conv_timer.daemon = True
         self._conv_timer.start()
 
@@ -541,6 +594,13 @@ class MonkeyApp:
     def _on_wake(self) -> None:
         # Cancel the reply first, *then* silence the speaker: the other order lets a sentence the agent finishes in
         # between get queued again, and he talks over what you're saying.
+        self._reply_done = False              # the reply being interrupted must not finish the new turn
+        tr = getattr(self, "tracer", None)
+        if tr is not None:
+            tr.begin("wake")
+            tr.mark("wake")
+        if self.speaker and self.speaker.speaking:
+            _tmark(self, "interrupt_request")     # barge-in: the speaker reports when it actually went quiet
         self.agent.cancel()
         if self.speaker:
             self.speaker.stop()
@@ -550,6 +610,21 @@ class MonkeyApp:
         if not self._waved:  # say hi with a wave the first time each run
             self._waved = True
             self.ui.emit("emote", {"name": "wave"})
+        self._publish_state()
+
+    def _on_stop_keyword(self) -> None:
+        """"Monkey, stop" while he talks: stop the reply and the voice, then wait for the wake word again."""
+        self._reply_done = False
+        tr = getattr(self, "tracer", None)
+        if tr is not None:
+            tr.begin("stop_keyword")
+            tr.mark("interrupt_request")
+            tr.note(task="stop", outcome="stopped")
+        self.agent.cancel()
+        if self.speaker:
+            self.speaker.stop()
+        self.end_conversation("told to stop")
+        self.ui.emit("hint", {"text": "Stopped."})
         self._publish_state()
 
     def push_to_talk(self) -> None:
@@ -568,17 +643,28 @@ class MonkeyApp:
         self._listening = False
         self._agent_state = "transcribing"
         self._publish_state()
+        _tmark(self, "stt_start")
         try:
             text = self.stt().transcribe(audio) if self.stt else ""
+            _tmark(self, "stt_end")
         except Exception as exc:  # noqa: BLE001
             log.exception("speech recognition failed")
             self._emit("warning", {"message": explain_stt_error(exc)})
             text = ""
         text = conversation.strip_wake(text or "")
         self.ui.emit("heard", {"text": text})
+        echo = getattr(self, "echo", None)
+        started = getattr(self.listener, "last_speech_start", 0.0) or 0.0
+        voice_end = getattr(self, "_spoke_until", 0.0) or 0.0
+        after = (started - voice_end) if started and voice_end else None
+        if source == "conversation" and echo is not None and echo.is_echo(text, started_after_voice_s=after):
+            log.info("ignored an echo of Monkey's own voice")   # never log speech
+            text = ""
+            _tfinish(self, "echo")
         if source == "conversation" and not conversation.worth_answering(text):
             # Background noise, someone else talking, an "uh": keep waiting, same quiet deadline.
             log.info("ignored a %d-character utterance in conversation mode", len(text))   # never log speech
+            _tfinish(self, "ignored")
             self._agent_state = "idle"
             if self._in_conversation and self.listener is not None:
                 self.listener.enter_conversation(self.cfg.settings.conversation_idle_s)
@@ -614,9 +700,15 @@ class MonkeyApp:
             self.ui.emit("emote", {"name": "sleep"})
 
     def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
+        tr = getattr(self, "tracer", None)
+        turn = None
+        if tr is not None:
+            turn = tr.begin("typed") if typed else tr.ensure("voice")
         # A letter ("B") or "I confirm" while a computer task is waiting on a question/confirmation goes to the task.
         reply = self.automation.handle_reply(text) if getattr(self, "automation", None) else None
         if reply is not None:
+            if tr is not None:
+                tr.note(task="task_reply")
             if not typed:
                 self.ui.emit("user", {"text": text})
             self.ui.emit("delta", {"text": reply})
@@ -646,7 +738,10 @@ class MonkeyApp:
         def run():
             try:
                 self.agent.handle(text, importance, source="typed" if typed else "voice")
+                if self.speaker is None or not self.speaker.speaking:
+                    _tfinish(self, turn=turn)    # nothing (left) to say: this turn (not a newer one) ends here
             except Exception as exc:  # noqa: BLE001 - the agent rolls itself back; just make sure we're usable
+                _tfinish(self, "error", turn=turn)
                 log.exception("agent failed")
                 self._listening = False
                 if self.speaker is not None and self.speaker.speaking:
@@ -971,6 +1066,8 @@ class Api:
 
             allowed["fish_voice_id"] = normalize_voice_id(str(allowed["fish_voice_id"]))
         self._app.cfg.update(**allowed)
+        if allowed.get("trace_text") is False and getattr(self._app, "tracer", None) is not None:
+            self._app.tracer.forget_text()        # turning it off removes what was kept
         if "start_with_windows" in allowed and getattr(sys, "frozen", False):
             from . import cleanup
 
@@ -986,6 +1083,8 @@ class Api:
 
     def stop_speaking(self):
         if self._app.speaker:
+            if self._app.speaker.speaking:
+                _tmark(self._app, "interrupt_request")
             self._app.speaker.stop()
         self._app.agent.cancel()
 
@@ -1123,11 +1222,66 @@ class Api:
             return {"ok": False, "error": f"Couldn't build the brief ({type(exc).__name__})."}
         if b is None:
             return {"ok": True, "brief": None}
+        a._last_brief = b                          # the Today view reads this (no network when it draws)
         key = f"brief-spoken:{b['day']}"
         if opened and a.cfg.settings.brief_speak_on_open and b["kind"] != "draft" and not a.ledger.get_state(key):
             a.ledger.put_state(key, True, time.time())
             a._say(b["spoken"])                    # two short sentences at most; details stay on screen
         return {"ok": True, "brief": b}
+
+    def dashboard(self):
+        """The Today view: real data only, from what's already in memory (never a network call while it draws;
+        if nothing is loaded yet it starts a background load and reports "loading").
+
+        Every section reports ok | empty | not_connected | unavailable, and nothing is ever made up: a section with
+        no data says why instead of showing placeholder rows."""
+        a = self._app
+        out: dict = {"ok": True, "sections": {}}
+        sec = out["sections"]
+        board = getattr(a.board, "last", None)
+        if board is None:
+            # Nothing loaded yet this run: load it in the background (Canvas/the feed can take a few seconds) and
+            # tell the view to look again, instead of blocking the draw on the network.
+            if not getattr(self, "_board_loading", False):
+                self._board_loading = True
+
+                def load():
+                    try:
+                        a.board.load(refresh=False)
+                    except Exception:  # noqa: BLE001
+                        log.warning("assignment board load failed", exc_info=True)
+                    finally:
+                        self._board_loading = False
+                threading.Thread(target=load, name="board-load", daemon=True).start()
+            out["loading"] = True
+            sec["focus"] = sec["due"] = {"status": "loading", "items": [], "note": "Loading your assignments…"}
+        elif board["source"] == "none":
+            sec["focus"] = sec["due"] = {"status": "not_connected", "items": [],
+                                         "note": "Add your Canvas calendar link in Settings → Accounts."}
+        else:
+            todo = board["todo"]
+            keep = ("id", "title", "course", "due", "reason", "url", "tier", "missing", "done")
+            items = [{k: it.get(k) for k in keep} for it in todo[:3]]
+            sec["focus"] = {"status": "ok" if items else "empty", "items": items[:1],
+                            "note": "" if items else "Nothing due. Nice."}
+            sec["due"] = {"status": "ok" if items else "empty", "items": items[1:3] if items else [],
+                          "note": ""}
+            out["stats"] = board.get("stats", {})
+        from datetime import date as _date
+
+        today = _date.today().isoformat()
+        b = getattr(a, "_last_brief", None)
+        if b is not None and b.get("day") != today:
+            b = None                                # yesterday's brief: never show old classes as today
+        if b is None:
+            b = a.morning.cached(_date.today()) if a.cfg.settings.brief_enabled else None
+        by_title = {x["title"]: x for x in (b or {}).get("sections", [])}
+        for key, title in (("schedule", "Today"), ("unread", "Unread email"), ("weather", "Weather")):
+            got = by_title.get(title)
+            sec[key] = ({"status": got["status"], "items": got["items"][:5], "note": got.get("note", "")} if got else
+                        {"status": "unavailable", "items": [], "note": "Not loaded yet."})
+        out["brief_day"] = (b or {}).get("day")
+        return out
 
     def brief_candidates(self):
         """Recurring calendar events over the next two weeks, as a schedule for the user to confirm."""
@@ -1271,6 +1425,8 @@ class Api:
         if a.history is None:
             return {"ok": False, "error": "History is off."}
         n = a.history.delete_all() if scope == "all" else a.history.prune(int(days))
+        if getattr(a, "tracer", None) is not None:
+            a.tracer.forget_text()                 # request text kept in turn traces goes with your history
         return {"ok": True, "deleted": n}
 
     def history_export(self):
@@ -1538,7 +1694,12 @@ class Api:
 
     def toggle_assignment(self, item_id: str, done: bool):
         try:
-            return {"ok": True, **self._app.board.toggle(str(item_id), bool(done))}
+            r = self._app.board.toggle(str(item_id), bool(done))
+            try:
+                self._app.board.load(refresh=False)   # keep the in-memory board (Today view) in step with the check
+            except Exception:  # noqa: BLE001
+                log.debug("board reload after toggle failed", exc_info=True)
+            return {"ok": True, **r}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 

@@ -53,7 +53,8 @@ def keyword_lines(phrases: list[str], bpe_model: Path) -> list[str]:
 class SherpaWakeWord:
     """Same interface the Listener uses for openWakeWord: predict(frame) -> {name: score}, reset()."""
 
-    def __init__(self, model_dir: Path, phrases: list[str], work_dir: Path, sensitivity: float = 0.5):
+    def __init__(self, model_dir: Path, phrases: list[str], work_dir: Path, sensitivity: float = 0.5,
+                 stop_phrases: tuple[str, ...] = ()):
         import sherpa_onnx
 
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +62,10 @@ class SherpaWakeWord:
         lines = keyword_lines(phrases, model_dir / "bpe.model")
         if not lines:
             raise ValueError("No wake phrase configured")
+        stop_lines = [ln for ln in keyword_lines(list(stop_phrases), model_dir / "bpe.model") if ln not in lines]
+        # "Monkey, stop" only matters while he talks; the listener decides that (see Listener._step).
+        self.stop_names = {ln.rsplit("@", 1)[1] for ln in stop_lines}
+        lines = lines + stop_lines
         kw_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
         # Higher sensitivity -> lower acoustic threshold and a bigger boost for the keyword path.
         sensitivity = min(0.9, max(0.1, sensitivity))

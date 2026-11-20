@@ -145,6 +145,48 @@ def add_fact(root: Path, rel: str, text: str, src: str = "user_said") -> tuple[F
     return next(f for f in parse_file(root, rel) if f.id == fid), True
 
 
+_COPULA = re.compile(r"^(.+?)\s+(?:is|are|was|were)\s+(.+)$", re.I)
+_DETS = {"the", "their", "his", "her", "a", "an", "user's", "users", "user"}
+
+
+def _copula(text: str) -> tuple[str, str] | None:
+    """("roommate", "jordan") for "Their roommate is Jordan"; None if the fact isn't an "X is Y" statement."""
+    m = _COPULA.match(" ".join((text or "").split()).rstrip("."))
+    if not m:
+        return None
+    subj = " ".join(w for w in re.findall(r"[a-z0-9'-]+", m.group(1).lower()) if w not in _DETS)
+    val = " ".join(re.findall(r"[a-z0-9'-]+", m.group(2).lower()))
+    return (subj, val) if subj and val else None
+
+
+def conflicts(root: Path, rel: str, text: str) -> list[Fact]:
+    """Current facts in the same file that a new fact may replace (a hint, never a refusal).
+
+    "Their advisor is Dr. Rivera" vs "Their advisor is Dr. Chen": most of the shorter fact's content words are
+    shared, but not all of them. A new fact like that should replace the old one (update_fact), not sit beside it
+    as a second "current" truth."""
+    new = content_words(text)
+    new_is = _copula(text)
+    out = []
+    for f in parse_file(root, safe_rel(root, rel)):
+        if f.status != "current" or normalize(f.text) == normalize(text):
+            continue
+        old_is = _copula(f.text)
+        if new_is and old_is and new_is[0] == old_is[0] and new_is[1] != old_is[1]:
+            out.append(f)                    # same subject, different value: "roommate is Sam" / "roommate is Jordan"
+            continue
+        if not new:
+            continue
+        old = content_words(f.text)
+        if not old:
+            continue
+        shared = len(new & old)
+        smaller = min(len(new), len(old))
+        if shared >= 2 and shared / smaller >= 0.5 and (new - old) and (old - new):
+            out.append(f)
+    return out
+
+
 def find_fact(root: Path, fid: str) -> Fact | None:
     return next((f for f in all_facts(root) if f.id == fid and f.status == "current"), None)
 

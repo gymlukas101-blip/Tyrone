@@ -80,6 +80,7 @@ export interface Api {
   import_undo(): Promise<{ ok: boolean; error?: string; restored?: string[] }>;
   new_conversation(): Promise<void>;
   get_assignments(refresh: boolean): Promise<any>;
+  dashboard(): Promise<any>;
   toggle_assignment(id: string, done: boolean): Promise<{ ok: boolean; synced?: boolean; error?: string }>;
   get_health(day: string): Promise<{ ok: boolean; error?: string; health?: any }>;
   garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
@@ -360,6 +361,22 @@ function mockApi(): Api {
     async import_undo() { return { ok: true, restored: ["profile.md"] }; },
     async new_conversation() {},
     async get_assignments() { return { ok: true, ...demoBoard() }; },
+    async dashboard() {
+      // ?demo&empty: everything disconnected (the Today view must show zero made-up rows)
+      if (new URLSearchParams(location.search).has("empty")) {
+        const nc = { status: "not_connected", items: [], note: "Add your Canvas calendar link in Settings → Accounts." };
+        const na = { status: "unavailable", items: [], note: "Not loaded yet." };
+        return { ok: true, sections: { focus: nc, due: nc, schedule: na, unread: { ...na, status: "not_connected", note: "Email not connected." }, weather: na } };
+      }
+      const b = demoBoard();
+      const keep = (x: any) => ({ id: x.id, title: x.title, course: x.course, due: x.due, reason: x.reason, url: "https://canvas.example.edu/courses/1/assignments/" + x.id, tier: x.tier, missing: x.missing, done: x.done });
+      return { ok: true, stats: b.stats, sections: {
+        focus: { status: "ok", items: [keep(b.todo[0])], note: "" },
+        due: { status: "ok", items: b.todo.slice(1, 3).map(keep), note: "" },
+        schedule: { status: "ok", items: ["9:00 AM Demo class (Room 1)", "2:25 PM Demo lab"], note: "" },
+        unread: { status: "not_connected", items: [], note: "Email not connected." },
+        weather: { status: "ok", items: ["Cloudy, 38°F"], note: "" } } };
+    },
     async toggle_assignment() { return { ok: true, synced: true }; },
     async get_health() { return { ok: true, health: demoHealth() }; },
     async garmin_login() { return { ok: false, error: "Demo mode" }; },

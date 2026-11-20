@@ -9,6 +9,8 @@ Monkey is the owner's Windows voice assistant:
 
 Read `docs/HANDOFF.md` first: it has the current state and the open items. `docs/IMPLEMENTATION-NOTES.md` is the per-change log.
 
+**Before starting any work, read `docs/agent-lessons.md` and follow its rules.** They are lessons from earlier runs: failures, wasted tokens and the owner's corrections. If a rule turns out to be wrong, fix or retire it in the same change and say why.
+
 ## Hard rules
 - **This repo is PUBLIC.** Never commit, push, log, upload to CI or put in a release:
   - the owner's private context pack (`profile.md`, `preferences.md`, `projects.md`, `classes.md` and the zip they came in);

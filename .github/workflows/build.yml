@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # The weekly lessons review only edits this file: no new release for that alone.
+    paths-ignore: ["docs/agent-lessons.md"]
   pull_request:
   workflow_dispatch:
 
@@ -14,11 +16,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]" numpy sherpa-onnx sentencepiece
+      # Hashed lockfile: every package and its exact file are pinned (tools/lock.sh regenerates it).
+      - run: pip install --require-hashes -r requirements/linux-test-py312.lock
+      - run: pip install --no-deps -e .
+      - name: Lockfiles match pyproject.toml
+        run: python tools/check_lock.py
       - name: Download keyword-spotting model + test audio
         run: |
           curl -sL -o kws.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
@@ -29,10 +35,10 @@ jobs:
           mkdir -p wakeword/vad
           curl -sfL -o wakeword/vad/silero_vad.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
       - run: pytest -q
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
-      - run: npm ci && npm run build
+      - run: npm ci && npm run build && npm test
         working-directory: ui
 
   windows:
@@ -42,11 +48,11 @@ jobs:
       # Every build gets a unique, increasing version so Velopack can update installed copies.
       MONKEY_VERSION: 0.3.${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -54,8 +60,10 @@ jobs:
         working-directory: ui
         run: npm ci && npm run build
 
-      - name: Install Python dependencies
-        run: pip install ".[desktop,dev]"
+      - name: Install Python dependencies (hashed lockfile)
+        run: |
+          pip install --require-hashes -r requirements/windows-py312.lock
+          pip install --no-deps .
 
       - name: Bundle the fallback wake word model (hey_jarvis) + feature models
         run: python -c "import openwakeword.utils as u; u.download_models(model_names=['hey_jarvis'])"
@@ -78,6 +86,9 @@ jobs:
         shell: bash
         run: echo "__version__ = \"$MONKEY_VERSION\"" > monkey/_version.py
 
+      - name: Third-party license list
+        run: python tools/notices.py THIRD_PARTY_LICENSES.txt
+
       - name: PyInstaller
         run: pyinstaller monkey.spec --noconfirm
 
@@ -97,7 +108,7 @@ jobs:
           Remove-Item selftest-secrets.dat
 
       # ---- Velopack: auto-updating installer + GitHub Release on every push to main ----
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "9.0.x"
 
@@ -114,7 +125,7 @@ jobs:
           vpk pack --packId Monkey --packVersion ${{ env.MONKEY_VERSION }} --packDir dist/Monkey
           --mainExe Monkey.exe --packTitle Monkey --packAuthors Monkey --icon assets/monkey.ico --outputDir velopack
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MonkeySetup-Velopack
           path: velopack/*Setup.exe
@@ -124,3 +135,45 @@ jobs:
         run: >
           vpk upload github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
           --outputDir velopack --publish --releaseName "Monkey ${{ env.MONKEY_VERSION }}" --tag v${{ env.MONKEY_VERSION }}
+
+  # The real built UI in Chromium: accessibility (axe), layout, keyboard, Today view, avatar states and render tiers.
+  # Not a gate for the Windows build (a browser hiccup must not block an urgent fix), but its result shows on every run.
+  ui-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - run: pip install --require-hashes -r requirements/linux-test-py312.lock
+      - run: pip install --no-deps -e . && pip install "playwright==1.65.2"
+      - run: python -m playwright install --with-deps chromium
+      - run: npm ci && npm run build
+        working-directory: ui
+      - name: Browser UI tests
+        run: |
+          export MONKEY_BROWSER_PATH="$(python -c 'from playwright.sync_api import sync_playwright as s; p = s().start(); print(p.chromium.executable_path); p.stop()')"
+          pytest -q tests/test_m4_avatar.py tests/test_m6_ui.py tests/test_m1_fixes.py -k "not speaker"
+
+  # Known-vulnerability report for the locked dependencies. Informational: it never blocks a release, so a new
+  # advisory can't stop an urgent fix from shipping; read the job summary and update with tools/lock.sh --upgrade.
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: Python packages (Windows lockfile)
+        run: pip-audit --no-deps --disable-pip -r requirements/windows-py312.lock --desc on | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: UI packages
+        working-directory: ui
+        run: npm audit --omit=dev | tee -a "$GITHUB_STEP_SUMMARY"

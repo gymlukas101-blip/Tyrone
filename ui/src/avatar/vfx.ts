@@ -117,6 +117,8 @@ export class Vfx {
   private tex = new Map<FxKind, THREE.Texture>();
   private pool: THREE.Sprite[] = [];
   private live: Live[] = [];
+  /** Particles on screen (the render loop runs at full rate while any are alive). */
+  get active(): number { return this.live.length; }
   enabled = true;
   reduced = false;      // reduced motion: fewer, calmer effects
 
