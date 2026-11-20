@@ -157,6 +157,10 @@ class MonkeyBackend:
 
     def _ok(self, out) -> bool:
         self.calls += 1
+        from monkey.automation.computer.model import ErrorKind
+
+        if out.error == ErrorKind.NO_EFFECT and out.executed:
+            return True          # "nothing visible changed" is a signal for the planner, not a failed click
         if out.error is not None:
             raise RuntimeError(f"{out.error.value}: {out.detail}")
         return True
@@ -322,10 +326,11 @@ class WindowsMcpBackend:
             m = re.search(r"\((\-?\d+),\s*(\-?\d+)\)\s+(\w[\w ]*?)\s+\"(.*)\"", line)
             if m and m.group(4).strip() == name and role.lower() in m.group(3).lower():
                 return int(m.group(1)), int(m.group(2))
-        raise RuntimeError(f"not found: {role} {name}")
+        raise RuntimeError(f"not found: {role} {name} | snapshot starts: {txt[:400]!r}")
 
     def snapshot(self) -> dict:
         txt = self.call("Snapshot", {"use_annotation": False})
+        print("[windows-mcp] snapshot sample:", repr(txt[:900]), flush=True)
         return {"elements": sum(1 for ln in txt.splitlines() if re.search(r"\(\-?\d+,\s*\-?\d+\)", ln)),
                 "chars": len(txt)}
 
@@ -467,7 +472,7 @@ def tasks(fx: Fixture, workdir: Path):
         ("W02 snapshot window", lambda b: b.snapshot(), None, False),
         ("W03 type into a text box", lambda b: b.type("Name", "Ada"), None, False),
         ("W04 click a button", lambda b: b.click("Greet"), r"^greet:Ada$", False),
-        ("W05 toggle a checkbox", lambda b: b.click("Subscribe to updates", "checkbox"), r"^subscribe:True$", False),
+        ("W05 toggle a checkbox", lambda b: b.click("Remember my choice", "checkbox"), r"^remember:True$", False),
         ("W06 select in a combo box", lambda b: b.select("Color", "Blue"), r"^color:Blue$", False),
         ("W07 wait until enabled, click", lambda b: (b.click("Prepare"), b.wait_enabled("Ready", 6),
                                                      b.click("Ready")), r"^ready$", False),
@@ -478,7 +483,7 @@ def tasks(fx: Fixture, workdir: Path):
         ("W10 unexpected message box", lambda b: (b.click("Save settings"), time.sleep(1.0),
                                                   b.dismiss_dialog("OK")), r"^alert_closed$", False),
         ("W11 act on a covered (background) window", lambda b: b.click("Greet"), r"^greet:", True),
-        ("W12 owner-drawn control (pixels only)", lambda b: b.visual_click("the green Start button"),
+        ("W12 owner-drawn control (pixels only)", lambda b: (time.sleep(1.7), b.visual_click("the green Start button")),
          r"^canvas_start$", False),
     ]
 

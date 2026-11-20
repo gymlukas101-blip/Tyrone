@@ -202,6 +202,21 @@ class UIADriver(Driver):
 
     # ---- observing --------------------------------------------------------------------------------------------------
     def observe(self) -> View:
+        try:
+            return self._observe()
+        except DriverError:
+            raise
+        except Exception:  # noqa: BLE001 - a COM hiccup while a dialog opens/closes: look once more
+            time.sleep(0.3)
+            try:
+                return self._observe()
+            except DriverError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise DriverError(ErrorKind.STALE, f"the window changed while reading it ({type(exc).__name__})") \
+                    from exc
+
+    def _observe(self) -> View:
         hwnd = self.pick_active()
         if is_hung(hwnd):
             raise DriverError(ErrorKind.UNRESPONSIVE, "the app isn't responding")
@@ -304,6 +319,9 @@ class UIADriver(Driver):
         1.5 s (their input always wins). Otherwise refuse: never a silent fallback to the real mouse."""
         if not self.allow_physical:
             raise DriverError(ErrorKind.NEEDS_FOREGROUND, "that control only responds to the real mouse or keyboard")
+        el = getattr(self, "_target_el", None)
+        if el is not None:
+            self._check_target(el)            # a real click must land on our window, not on whatever covers it
         if foreground_hwnd() not in (self.active, self.root) and not self.scope.contains(foreground_hwnd()):
             raise DriverError(ErrorKind.WRONG_WINDOW, "the window isn't in front, so I didn't use the mouse")
         idle = user_idle_ms()
@@ -329,7 +347,7 @@ class UIADriver(Driver):
         if el is None:
             raise DriverError(ErrorKind.NOT_FOUND, f"{op} needs a target")
         w = self._live(el)
-        self._check_target(el)
+        self._target_el = el          # the covered-check runs only before *physical* input (see _physical_ok)
         ev = {}
         if el.box:
             cx, cy = el.box.center
@@ -350,8 +368,7 @@ class UIADriver(Driver):
             elif op == "type_text":
                 ev.update(self._type(w, args.get("text", "")))
             elif op == "select_option":
-                w.select(args.get("option", ""))
-                ev["via"] = "selection"
+                ev.update(self._select(w, str(args.get("option", ""))))
             elif op == "scroll":
                 try:
                     w.iface_scroll_item.ScrollIntoView()
@@ -399,6 +416,37 @@ class UIADriver(Driver):
         w.click_input()
         self._own_input_at = time.time()
         return {"via": "click_input", "physical": True}
+
+    def _select(self, w, option: str) -> dict:
+        """Pick a list/combo item with ExpandCollapse + SelectionItem patterns (background-safe, no real mouse);
+        the Value pattern for editable combos; physical selection only as an allowed last resort."""
+        expanded = False
+        try:
+            w.iface_expand_collapse.Expand()
+            expanded = True
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for item in w.descendants():
+                ei = item.element_info
+                if (ei.control_type or "").lower() == "listitem" and (ei.name or "").strip().lower() == option.lower():
+                    item.iface_selection_item.Select()
+                    return {"via": "selection_item", "physical": False}
+            try:
+                w.iface_value.SetValue(option)
+                return {"via": "value_pattern", "physical": False}
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            if expanded:
+                try:
+                    w.iface_expand_collapse.Collapse()
+                except Exception:  # noqa: BLE001
+                    pass
+        self._physical_ok()
+        w.select(option)
+        self._own_input_at = time.time()
+        return {"via": "select", "physical": True}
 
     def _type(self, w, text: str) -> dict:
         try:

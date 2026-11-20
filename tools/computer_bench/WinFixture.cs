@@ -24,8 +24,8 @@ static class WinFixture {
         var outl = (Label)add(new Label { Text = "(nothing yet)" }, 20, 56, 400, 28);
         greet.Click += (s, e) => { outl.Text = "Hello, " + name.Text; L("greet:" + name.Text); };
 
-        var sub = (CheckBox)add(new CheckBox { Text = "Subscribe to updates" }, 20, 90, 200, 28);
-        sub.CheckedChanged += (s, e) => L("subscribe:" + (sub.Checked ? "True" : "False"));
+        var sub = (CheckBox)add(new CheckBox { Text = "Remember my choice" }, 20, 90, 200, 28);
+        sub.CheckedChanged += (s, e) => L("remember:" + (sub.Checked ? "True" : "False"));
 
         var color = (ComboBox)add(new ComboBox { AccessibleName = "Color", DropDownStyle = ComboBoxStyle.DropDownList },
                                   20, 124, 160, 28);

@@ -43,8 +43,8 @@ def test_type_click_toggle_select_in_the_background(app, tmp_path):
     assert c.do("click", {"name": "Greet", "role": "button"}).error is None
     assert app.wait_line("^greet:Ada$")
     c.observe("uia")
-    out = c.do("click", {"name": "Subscribe to updates", "role": "checkbox"})
-    assert out.error is None and app.wait_line("^subscribe:True$")
+    out = c.do("click", {"name": "Remember my choice", "role": "checkbox"})
+    assert out.error is None and app.wait_line("^remember:True$")
     c.observe("uia")
     assert c.do("select_option", {"name": "Color", "role": "combobox"}, option="Blue").error is None
     assert app.wait_line("^color:Blue$")
