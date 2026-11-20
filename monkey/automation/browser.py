@@ -199,7 +199,7 @@ class BrowserSession:
 
     def __init__(self, profile_dir: Path | str, gate: PermissionGate, *, headless: bool = False,
                  channel: str | None = None, executable_path: str | None = None, allowed_domains=None,
-                 cursor=None):
+                 cursor=None, cdp_endpoint: str | None = None):
         self.profile_dir = str(profile_dir)
         self.gate = gate
         self.headless = headless
@@ -214,13 +214,17 @@ class BrowserSession:
         self._owner: int | None = None
         self.last_obs: Observation | None = None
         self.cursor = cursor                  # cursor_events.BrowserCursor (feedback only) or None
+        self.cdp_endpoint = cdp_endpoint      # the user's own Chrome via the Monkey for Chrome extension bridge
+        self._browser = None
 
     # ---- lifecycle ---------------------------------------------------------------------------------------------
     def start(self) -> "BrowserSession":
         from playwright.sync_api import sync_playwright
 
-        Path(self.profile_dir).mkdir(parents=True, exist_ok=True)
         self._owner = threading.get_ident()
+        if self.cdp_endpoint:
+            return self._start_user_chrome(sync_playwright)
+        Path(self.profile_dir).mkdir(parents=True, exist_ok=True)
         self._pw = sync_playwright().start()
         kw = dict(headless=self.headless, viewport=VIEWPORT, accept_downloads=True,
                   args=["--no-first-run", "--no-default-browser-check", "--disable-features=Translate"])
@@ -236,6 +240,33 @@ class BrowserSession:
         for p in self.context.pages:
             self._on_page(p)
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        if self.cursor is not None:
+            self.cursor.page = self.page
+        return self
+
+    def _start_user_chrome(self, sync_playwright) -> "BrowserSession":
+        """Your own Chrome, through the extension: only the tabs you shared are visible; nothing is launched."""
+        self._pw = sync_playwright().start()
+        try:
+            self._browser = self._pw.chromium.connect_over_cdp(self.cdp_endpoint, timeout=20_000)
+        except Exception as exc:  # noqa: BLE001
+            self._pw.stop()
+            self._pw = None
+            raise BrowserGone("Monkey can't reach your Chrome. Click the Monkey icon in Chrome and press “Let Monkey "
+                              "use this tab” (and check Monkey is paired).") from exc
+        self.context = self._browser.contexts[0] if self._browser.contexts else None
+        if self.context is None or not self.context.pages:
+            self.close()
+            raise BrowserGone("No Chrome tab is shared with Monkey yet: open the page, click the Monkey icon in Chrome "
+                              "and press “Let Monkey use this tab”.")
+        if self.allowed_domains and "*" not in self.allowed_domains:
+            self.context.route("**/*", self._route)
+        if self.cursor is not None:
+            self.cursor.install(self.context)
+        self.context.on("page", self._on_page)
+        for p in self.context.pages:
+            self._on_page(p)
+        self.page = self.context.pages[0]
         if self.cursor is not None:
             self.cursor.page = self.page
         return self
@@ -263,6 +294,15 @@ class BrowserSession:
                 self.cursor.page = self.page
 
     def close(self) -> None:
+        if self._browser is not None:
+            # Your Chrome: just disconnect (the bridge ignores Browser.close); your tabs stay exactly as they are.
+            for fn in (lambda: self._browser.close(), lambda: self._pw and self._pw.stop()):
+                try:
+                    fn()
+                except Exception:  # noqa: BLE001
+                    pass
+            self.context = self.page = self._pw = self._browser = None
+            return
         for fn in (lambda: self.context and self.context.close(), lambda: self._pw and self._pw.stop()):
             try:
                 fn()

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Monkey for Chrome",
+  "version": "1.0.0",
+  "description": "Lets your Monkey assistant work in the Chrome tabs you share with it. Nothing happens in a tab you didn't share.",
+  "minimum_chrome_version": "125",
+  "permissions": ["debugger", "tabs", "storage", "alarms"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "Monkey for Chrome",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3kYBeS/0+9IK3JkmFOeq88GYQgWvJvIseEylTdduDbNST0knZLT3qjShdJmRyEvIrKGx8hDgFGhCqh8K09pHUHE86RClJCZHOYWndF4DbxNFdgVtUcVkvBXbZ5ooKOd/7G/yRINrzg1y1upCcWA1wv+pW3IGhy18SbY7bih9u1huTW1N+Crnwp5+XjEqd2er1ikw5VN13qPAtA/sMacIx5jjOmNR0YOuwoha6++udXM3vEW0dWdoB4TR9/Lvi4PRe44agp4LJ6KAnqBPLC6X7O3pOzjNKTolWPNxWiSP1tJOykyMyN0qTeL6qEkQoxtXhTICd0fsMigr0ljZZNueGQIDAQAB"
+}

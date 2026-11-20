@@ -186,3 +186,35 @@ What a run tests:
 - **Waiting.** Waiting is local `wait_for_function` in 0.5 s slices, with no API connection held.
 - **Banana cursor.** Travel ≤ 260 ms plus press ≤ 90 ms per click. Nothing runs while idle (see the cursor README). The cursor-on vs cursor-off evaluation runs are compared above.
 - **Companion.** It renders at 30 fps when visible and stops when hidden.
+
+## Working in your own Chrome (Monkey for Chrome extension)
+
+Chrome (136+) won't let outside programs remote-control your everyday profile. So Monkey ships a small extension instead
+(`extension/chrome/`, also inside the installed app). Monkey then works in **your real tabs, signed in as you**.
+
+1. 🖐 Tasks → **Where Monkey works** → **My Chrome: the tabs I share**.
+2. In Chrome:
+   1. Open `chrome://extensions` and turn on **Developer mode**.
+   2. Click **Load unpacked** and pick the folder from **Open folder**.
+3. Click the 🍌 icon in Chrome's toolbar, paste the pairing code from Monkey, then press **Pair**.
+4. On your Canvas page, click the 🍌 icon → **Let Monkey use this tab**, then start the task in Monkey.
+
+**What he can reach:**
+- Only the tabs you share, plus pop-ups they open (a Duo sign-in, a module window).
+- Your other tabs are invisible to him.
+- He never closes your browser or your tabs; he can only close tabs he opened.
+- While he's connected, Chrome shows "Monkey for Chrome started debugging this browser". Press **Cancel** on that bar to cut him off instantly.
+
+**Security:**
+- The bridge listens only on 127.0.0.1.
+- The extension and Monkey prove they hold the same pairing code in both directions (HMAC challenge-response) before anything flows. Another program can't pose as Monkey, and a web page can't connect.
+- The extension itself refuses cookie reads and browser-wide changes.
+- Every click still goes through Monkey's permission gate.
+- **New code** in Monkey revokes the old pairing.
+
+**Tested in the container** (`tests/test_chrome_bridge.py`): a real Chromium with the real extension loaded played your Chrome.
+- The full demo course (Canvas-style pages, an embedded cross-origin player, the quiz page, an SSO redirect) completed and was verified by the course's own server.
+- No unauthorized actions; the unshared tab was untouched; no tab was closed.
+- A wrong pairing code and foreign origins were refused.
+
+**Not yet tried:** your Chrome on the Dell.

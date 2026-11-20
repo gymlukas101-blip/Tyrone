@@ -325,3 +325,18 @@ Now (`monkey/memory/export.py`):
 - **Pop-up fix:**
   - **Before:** when a pop-up tab (Duo, an external tool) closed, the session still pointed at it and reported "browser closed", so tasks lost their place.
   - **After:** `BrowserSession` falls back to the most recent open tab, both on `close` and in `alive()`.
+
+## 2026-11-20: Monkey for Chrome (use the owner's own Chrome tabs)
+- **`extension/chrome/`:** MV3, `chrome.debugger`.
+  - Share-a-tab popup; pop-ups opened by shared tabs are shared too.
+  - Pairing with mutual HMAC.
+  - Blocks cookie reads and browser-wide CDP methods.
+  - The stable extension id comes from the public `key` in the manifest; the private key is **not** in the repo (it isn't needed for "Load unpacked").
+- **`monkey/automation/chrome_bridge.py`:** asyncio `websockets` relay on 127.0.0.1:47615.
+  - `/extension`: Origin = Monkey's extension id, plus mutual HMAC.
+  - `/cdp/<secret>`: Playwright `connect_over_cdp`.
+  - Translates Target.* to `chrome.debugger` per tab (adapted from Playwright's MCP extension relay, Apache-2.0).
+  - Ignores `Browser.close`; closes only tabs Monkey created.
+- **`BrowserSession(cdp_endpoint=...)`:** connects instead of launching. `close()` only disconnects.
+- **Setting** `automation_browser="my_chrome"`. The pairing token is in the DPAPI key store (`chrome_bridge`).
+- **New dependency:** `websockets` (BSD-3).

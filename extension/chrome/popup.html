@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Monkey for Chrome</title>
+<style>
+  :root { --bg: #0f2a17; --panel: #173d22; --line: #2e6b3d; --text: #f3f7ee; --muted: #b8d3b5; --accent: #f5c518; --bad: #ff9a8a; }
+  body { margin: 0; width: 320px; font: 14px system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; gap: 8px; align-items: center; padding: 12px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header img { width: 28px; height: 28px; }
+  header b { font-size: 16px; }
+  main { padding: 12px 14px; display: grid; gap: 10px; }
+  .status { display: flex; gap: 8px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #777; flex: none; }
+  .dot.on { background: #6fdc7c; } .dot.wait { background: var(--accent); }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 9px 12px; cursor: pointer; background: var(--accent); color: #1b1300; font-weight: 700; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  input { font: inherit; width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #0b1f11; color: var(--text); }
+  small, .meta { color: var(--muted); }
+  .err { color: var(--bad); min-height: 1em; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><img src="icons/icon-48.png" alt=""><b>Monkey for Chrome</b></header>
+<main>
+  <div class="status"><span id="dot" class="dot"></span><span id="status">…</span></div>
+  <section id="pairBox" hidden>
+    <p class="meta">In Monkey: 🖐 Tasks → Monkey's browser → <b>My Chrome</b>. Copy the pairing code shown there and paste it here (once).</p>
+    <input id="code" placeholder="MONKEY-47615-…" autocomplete="off" spellcheck="false">
+    <div class="row" style="margin-top:8px"><button id="pair">Pair with Monkey</button></div>
+  </section>
+  <section id="shareBox" hidden>
+    <p id="tabInfo" class="meta"></p>
+    <div class="row"><button id="share">Let Monkey use this tab</button><button id="unshare" class="ghost" hidden>Stop sharing this tab</button></div>
+    <small>Monkey only works in tabs you share (and pop-ups they open, like a Duo sign-in). Chrome shows a “started debugging this browser” bar while he's connected; press Cancel there to stop him at once.</small>
+    <div class="row"><button id="stopAll" class="ghost" hidden>Stop sharing all tabs</button><button id="unpair" class="ghost">Unpair</button></div>
+  </section>
+  <p id="err" class="err"></p>
+</main>
+<script src="popup.js" type="module"></script>
+</body>
+</html>
