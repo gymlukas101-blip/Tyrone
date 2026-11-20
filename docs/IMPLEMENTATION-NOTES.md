@@ -455,3 +455,35 @@ Now (`monkey/memory/export.py`):
 - `docs/agent-lessons.md`: short rules, each with its reason, seeded from this project's own failures, wasted context and owner corrections. CLAUDE.md tells every agent to read it before starting and to fix or retire a rule that proves wrong.
 - `tools/lessons/collect.py` finds corrections, failures and waste in run logs (JSONL), redacted.
 - A weekly scheduled review (Sundays 7:32 PM Central) reads the week's sessions and updates only that file. A push that changes only that file doesn't build a release (`paths-ignore`).
+
+
+## Sound rebuild, sprint 1 (branch `work/monkey-sfx-foley-redesign`, 2026-11-20; not merged)
+
+Audit, sources, the bible and results are in `docs/audio/` (`SFX_AUDIT.md`, `SOURCE_LEDGER.md`, `SONIC_BIBLE.md`).
+
+**Engine (`ui/src/avatar/sfx.ts`):**
+- Fisher–Yates shuffle bag. The old sort-based one led with take 1 36% of the time.
+- Takes leveled per cue on decode.
+- Master limiter with makeup compensation.
+- UI choke group with ranks.
+- UI sounds bypass the polyphony cap.
+- Hot-cue preload: `attach()` waits only for those; the rest load in batches, loops on demand.
+- `loop()` handles and `stopAll()`, with stop on window hide.
+- Preview isolation in the Sound Lab.
+- `useVariant()` for the Sound Lab's Now · B · C switch (setting `sfx_variants`).
+
+**Wiring:** `ui_open`/`ui_close` on dialogs, `check`/`ui_error` on result toasts and flashes, `notify` on drafts, task permissions and ready updates. Sound Lab take buttons make no click.
+
+**Assets:**
+- No shipped take changed.
+- 105 CC0 candidate takes for 13 cues are in `ui/public/sfx/candidates/`, rendered by `tools/sfx/recipe.py` from `tools/sfx/recipes/sprint1.json`, with sources pinned by SHA-256.
+- Zero paid audio calls.
+
+**Tools:** `tools/sfx/inventory.py`, `mixcheck.py`, `recipe.py`, `abclips.py`, `reel.py`.
+
+**Tests:** `ui/test/sfx.test.ts` (18, fake audio graph) and `tests/test_sfx_wiring.py` (3, real UI in Chromium).
+
+**Open:**
+- blind listening results (review page);
+- trigger-to-sound latency and laptop-speaker check on the Windows PC;
+- the near-silent `ear_perk` take (owner's call in the Sound Lab).

@@ -66,6 +66,7 @@ class Settings:
     sleep_after_min: int = 8          # idle minutes before he dozes off (ZZZ)
     offline_voice: str = "fallback"   # Pocket TTS clone: "fallback" (when Fish fails), "only" (never use Fish), "off"
     sfx_rejects: list = field(default_factory=list)  # sound takes you turned off in the Sound Lab ("laugh_2", ...)
+    sfx_variants: dict = field(default_factory=dict)  # Sound Lab: cue -> candidate set in use ("B"/"C"); absent = current
     max_credits: bool = False         # paying with Claude Max's monthly API credits ($100): budget kept under it
     brain_profile: str = "best"       # "best" (Opus for heavy work) | "saver" (Sonnet for heavy work)
     # Updates + images

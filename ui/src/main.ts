@@ -5,13 +5,14 @@ import { Avatar } from "./avatar";
 import { Avatar3D, webglAvailable } from "./avatar3d";
 import type { AvatarLike, AvatarState } from "./avatar-types";
 import { type Api, type AppState, type Brief, type Importance, waitForApi } from "./bridge";
-import { type Child, fmtTime, h, safeHttp, toast } from "./dom";
+import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
 import { renderAssignments, markChecked } from "./assignments";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
+import { flash, pop, pulse, setFeedbackSound, shake } from "./feedback";
 import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
@@ -71,13 +72,15 @@ decorateJungle($("#stage"));
 
 /** Hook the recorded sound kit into the avatar's sound engine (bundled files + sounds made on this PC). */
 let soundsAttached = false;
+/** CC0 candidate takes under review (ui/public/sfx/candidates): cue -> {"B": files, "C": files}. */
+let candidates: Record<string, Record<string, string[]>> = {};
 function attachSounds(s: Record<string, any>) {
   const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
   if (!a3) return;
   a3.sfx.rejects = new Set<string>(s.sfx_rejects ?? []);
   if (soundsAttached) return;
   soundsAttached = true;
-  void a3.sfx.attach({
+  const ready = a3.sfx.attach({
     bundled: async () => (await (await fetch("sfx/index.json")).json()).cues ?? {},
     user: async () => (await api.get_user_sounds()) ?? {},
     userData: async (rel) => {
@@ -88,11 +91,45 @@ function attachSounds(s: Record<string, any>) {
       return out.buffer;
     },
   });
-  // Quiet, short UI clicks (common tier: very low level, cooldown in the engine).
+  // Candidate sets chosen in the Sound Lab replace a cue's shipped takes (the shipped ones stay for switching back).
+  void ready.then(async () => {
+    try { candidates = (await (await fetch("sfx/candidates/index.json")).json()).cues ?? {}; } catch { candidates = {}; }
+    for (const [cue, v] of Object.entries((s.sfx_variants ?? {}) as Record<string, string>)) {
+      const files = candidates[cue]?.[v];
+      if (files) await a3.sfx.useVariant(cue, files);
+    }
+  });
+  // Quiet, short UI clicks (common tier: very low level, cooldown in the engine). A button can pick its own cue
+  // with data-sfx="cue", or none at all with data-sfx="none" (Sound Lab takes: the take itself is the sound).
   document.addEventListener("pointerdown", (e) => {
-    if ((e.target as HTMLElement)?.closest("button")) a3.sfx.play("ui_click");
+    const b = (e.target as HTMLElement)?.closest?.("button");
+    if (!b || b.disabled) return;
+    const cue = b.dataset.sfx ?? "ui_click";
+    if (cue !== "none") a3.sfx.play(cue);
   }, { capture: true });
+  // Results and problems sound like what they are (one small vocabulary, shared with the visual feedback).
+  const play = (cue: string, intensity = 1) => a3.sfx.play(cue, intensity);
+  setFeedbackSound(play);
+  setToastSound(play);
+  // Dialogs (Settings, Memory, Tasks, the Brain table…) open and close with a soft paper/wood sound. The choke group
+  // in the engine replaces the click that opened them, so it's one sound, not two.
+  const openNow = new WeakMap<Element, boolean>();
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      const d = m.target as HTMLDialogElement;
+      if (d.tagName !== "DIALOG") continue;
+      if (openNow.get(d) === d.open) continue;
+      openNow.set(d, d.open);
+      a3.sfx.play(d.open ? "ui_open" : "ui_close", 0.9);
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ["open"], subtree: true });
+  // Stop loops and ringing sounds when the window is hidden (no phantom sounds from the tray).
+  document.addEventListener("visibilitychange", () => { if (document.hidden) a3.sfx.stopAll(); });
 }
+
+/** "Something needs you": a draft waiting for your OK, a computer task asking permission, an update ready. Rare
+ *  by design, so it keeps meaning "look here". */
+function notifySound() { ((window as any).__monkeyAvatarObj as Avatar3D | undefined)?.sfx.play("notify"); }
 
 /** Settings → Sound: make Monkey's vocal set on this PC (Fish free model), and a Sound Lab to audition takes. */
 function soundSection(s: Record<string, any>) {
@@ -100,14 +137,36 @@ function soundSection(s: Record<string, any>) {
   const status = h("span", { class: "meta", id: "voiceKitStatus" }, "");
   const lab = h("div", { class: "soundlab" });
   const rejects = new Set<string>(s.sfx_rejects ?? []);
+  const variants: Record<string, string> = { ...(s.sfx_variants ?? {}) };
+  /** "Now · B · C": try a cue's candidate sets in the real app; the choice applies everywhere at once. */
+  const variantSwitch = (cue: string) => {
+    const sets = candidates[cue];
+    if (!sets) return null;
+    const box = h("span", { class: "variants", role: "group", "aria-label": `Version of ${cue.replace(/_/g, " ")}` });
+    for (const v of ["now", ...Object.keys(sets)]) {
+      const on = (variants[cue] ?? "now") === v;
+      box.append(h("button", { type: "button", class: "variant" + (on ? " on" : ""), "data-sfx": "none", "aria-pressed": String(on),
+        title: v === "now" ? "The sound Monkey ships with" : `Candidate ${v} (free CC0 sources, see the sound ledger)`,
+        onclick: async () => {
+          if (v === "now") delete variants[cue]; else variants[cue] = v;
+          await a3!.sfx.useVariant(cue, v === "now" ? null : sets[v]);
+          const first = a3!.sfx.cues()[cue]?.[0];
+          if (first) void a3!.sfx.preview(first);
+          appState = await api.save_settings({ sfx_variants: { ...variants } });
+          renderLab();
+        } }, v === "now" ? "Now" : v));
+    }
+    return box;
+  };
   const renderLab = () => {
     const cues = a3?.sfx.cues() ?? {};
     const names = Object.keys(cues).sort((x, y) => Number(y.startsWith("vocal/")) - Number(x.startsWith("vocal/")) || x.localeCompare(y));
     lab.replaceChildren(...(names.length ? names.map((cue) => h("div", { class: "cue" },
       h("span", { class: "name" }, cue.replace("vocal/", "🗣 ").replace(/_/g, " ")),
+      ...[variantSwitch(cue)].filter((x): x is HTMLElement => x !== null),
       ...cues[cue].map((src, i) => {
         const take = a3!.sfx.takeOf(src);
-        const b = h("button", { type: "button", class: "take" + (rejects.has(take) ? " off" : ""),
+        const b = h("button", { type: "button", class: "take" + (rejects.has(take) ? " off" : ""), "data-sfx": "none",
           title: "Click to play · right-click to turn this take on/off" }, String(i + 1));
         b.addEventListener("click", () => void a3!.sfx.preview(src));
         b.addEventListener("contextmenu", async (e) => {
@@ -417,18 +476,33 @@ function healthCard(hd: any) {
 }
 
 // ------------------------------------------------------------------ events from Python
+let lastVoice = "idle";
+let lastConversation = false;
+let stoppedAt = 0;
 function onEvent(name: string, p: any) {
+  if (name === "stopped") stoppedAt = performance.now();
   // A reply, a new card or a draft to approve must never land behind the Today view: go back to the chat.
   if (todayOpen() && ["user", "delta", "panel", "draft", "emails", "calendar", "images", "approval"].includes(name)) {
     toggleToday(false, false);
   }
   switch (name) {
     case "state":
+      if (p.state === "transcribing" && lastVoice === "listening") { pulse($("#stateLabel")); pop("👂 Got it"); }
+      if (lastConversation && p.conversation === false) pop("👋 Talk soon");
+      if (p.conversation !== undefined) lastConversation = !!p.conversation;
+      lastVoice = p.state;
       setState(p.state);
       if (p.state === "idle") botBubble = null;
       $("#convChip").hidden = !(p.conversation && p.state === "listening");
       break;
     case "level": avatar.setLevel(p.v); break;
+    case "ack": {                      // the reply is slow to start: one short "hmm" from his own vocal kit, no words
+      const a3 = (window as any).__monkeyAvatarObj;
+      a3?.sfx?.play?.("vocal/hmm", 0.7);
+      pop("💭 Hmm…");
+      break;
+    }
+    case "stopped": pop("✋ Stopped", "warn"); shake($("#stateLabel")); break;
     case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
     case "delta": {
@@ -452,7 +526,7 @@ function onEvent(name: string, p: any) {
     case "bench": benchEvent(p); break;
     case "offlinevoice": offlineVoiceEvent(p); break;
     case "panel": card(p.title, md(p.markdown)); break;
-    case "draft": draftCard(p); break;
+    case "draft": draftCard(p); notifySound(); break;          // waiting on your OK: the one "look here" chime
     case "approval":
       if (p.action === "sent") avatar.emote("celebrate");
       if (p.action === "sent") document.querySelectorAll(".draft:not(.sent)").forEach((c) => {
@@ -477,7 +551,7 @@ function onEvent(name: string, p: any) {
     case "update": {
       const el = document.getElementById("updStatus");
       if (el) el.textContent = updateText(p);
-      if (p.status === "ready") updateToast(p);
+      if (p.status === "ready") { updateToast(p); notifySound(); }
       break;
     }
     case "sources":
@@ -485,18 +559,25 @@ function onEvent(name: string, p: any) {
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
       break;
     case "opened": addMsg("sys", `Opened ${p.url}`); break;
-    case "memory": if (appState.settings.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
+    case "memory":
+      pop(p.command === "forget" ? "🧠 Forgotten" : p.command === "update" ? "🧠 Updated" : "🧠 Remembered", "good");
+      if (appState?.settings?.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`);
+      break;
     case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
-    case "warning": addMsg("sys", "⚠ " + p.message); break;
+    case "warning": addMsg("sys", "⚠ " + p.message); flash("warn"); break;
     case "automation": { const m = automationEvent(p); moodEmote(m); resolver.setMood(m); break; }
-    case "automation_propose": void openTasks(p); break;
+    case "automation_propose": void openTasks(p); notifySound(); break;
     case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
     case "automation_enabled": void refreshTasks(); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
-    case "heard": if (!p.text) addMsg("sys", "Didn't catch that."); break;
-    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); break;
-    case "hint": $("#hint").textContent = p.text; break;
+    case "heard": if (!p.text) { addMsg("sys", "Didn't catch that."); pop("❓ Didn't catch that"); } break;
+    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
+    case "hint":
+      $("#hint").textContent = p.text;
+      if (/^🎙/.test(p.text)) pop("🎙 Mic back", "good");
+      else if (p.text === "Stopped." && performance.now() - stoppedAt > 1000) pop("✋ Stopped", "warn");
+      break;
   }
 }
 window.__monkeyEvents = (events) => { for (const [n, p] of events) { try { onEvent(n, p); } catch (e) { console.error(n, e); } } };

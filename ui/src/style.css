@@ -348,6 +348,9 @@ dialog, .settings header { background: #0a3a1c; }
 .soundlab .name { min-width: 130px; color: var(--muted); font-size: 0.9em; }
 .soundlab .take { min-width: 28px; padding: 2px 6px; border-radius: 8px; }
 .soundlab .take.off { opacity: 0.35; text-decoration: line-through; }
+.soundlab .variants { display: inline-flex; gap: 2px; margin-right: 6px; padding: 2px; border-radius: 10px; background: color-mix(in srgb, var(--muted) 15%, transparent); }
+.soundlab .variant { padding: 2px 8px; border-radius: 8px; font-size: 0.85em; background: transparent; }
+.soundlab .variant.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
 /* Memory inspector / import / chip */
 .memresults { display: grid; gap: 6px; margin: 6px 0; max-height: 280px; overflow: auto; }
@@ -557,3 +560,33 @@ body.today-open #cards, body.today-open #log { display: none; }
   #side > header { gap: 4px; }
 }
 .todaybar { display: flex; gap: 6px; align-items: center; }
+
+/* ---------------- sound-off feedback (ui/src/feedback.ts) */
+#stage { position: relative; }
+.fbpop {
+  position: absolute; left: 50%; top: 14%; transform: translate(-50%, 0) scale(1); z-index: 30; pointer-events: none;
+  padding: 6px 14px; border-radius: 999px; font-weight: 800; font-size: 18px; white-space: nowrap;
+  background: #fff8dc; color: #3a2400; border: 3px solid #2b1a00; box-shadow: 0 4px 0 #2b1a00, 0 8px 18px #0006;
+  animation: fbpop-in .32s cubic-bezier(.2, 1.6, .4, 1) both; transition: opacity .35s, transform .35s;
+}
+.fbpop.good { background: #c8f7b0; } .fbpop.warn { background: #ffe08a; } .fbpop.bad { background: #ffb3a8; }
+.fbpop.out { opacity: 0; transform: translate(-50%, -14px) scale(.96); }
+.fbpop.still { animation: fbpop-fade .25s both; }
+.fbpop.still.out { transform: translate(-50%, 0); }
+@keyframes fbpop-in { from { opacity: 0; transform: translate(-50%, 18px) scale(.5); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes fbpop-fade { from { opacity: 0; } to { opacity: 1; } }
+#stage.fbflash-good { animation: fbflash-good .9s ease-out; }
+#stage.fbflash-warn { animation: fbflash-warn .9s ease-out; }
+#stage.fbflash-bad { animation: fbflash-bad .9s ease-out; }
+@keyframes fbflash-good { 0% { box-shadow: inset 0 0 0 0 #7ddc6f00; } 20% { box-shadow: inset 0 0 0 10px #7ddc6fcc; } 100% { box-shadow: inset 0 0 0 0 #7ddc6f00; } }
+@keyframes fbflash-warn { 0% { box-shadow: inset 0 0 0 0 #ffc94000; } 20% { box-shadow: inset 0 0 0 10px #ffc940cc; } 100% { box-shadow: inset 0 0 0 0 #ffc94000; } }
+@keyframes fbflash-bad { 0% { box-shadow: inset 0 0 0 0 #ff5a4a00; } 20% { box-shadow: inset 0 0 0 12px #ff5a4add; } 100% { box-shadow: inset 0 0 0 0 #ff5a4a00; } }
+.fbshake { animation: fbshake .42s cubic-bezier(.36, .07, .19, .97); }
+@keyframes fbshake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-7px); } 40%, 60% { transform: translateX(7px); } }
+.fbpulse { animation: fbpulse .45s ease-out; }
+@keyframes fbpulse { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  #stage.fbflash-good, #stage.fbflash-warn, #stage.fbflash-bad { animation-duration: .6s; }
+  .fbpulse { animation: fbpulse-still .45s; }
+  @keyframes fbpulse-still { 35% { filter: brightness(1.4); } }
+}

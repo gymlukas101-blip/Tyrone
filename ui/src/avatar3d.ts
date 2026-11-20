@@ -11,6 +11,8 @@ import { IdleBrain, Life } from "./avatar/life";
 import { type Juice, Sfx } from "./avatar/sfx";
 import { Vfx } from "./avatar/vfx";
 import { type Beat, crossed } from "./avatar/events";
+import { PerformanceDirector } from "./avatar/acting";
+import { FaceMixer } from "./avatar/face";
 import { addFurDetail, setFurStrength } from "./avatar/fur";
 
 const STATE_CLIP: Record<AvatarState, string> = {
@@ -43,6 +45,9 @@ function jungleEnvironment(): THREE.Scene {
   return env;
 }
 
+/** ?face=baseline: the previous face code, for side-by-side comparison and rollback. */
+const FACE_MODE = typeof location !== "undefined" && new URLSearchParams(location.search).get("face") === "baseline"
+  ? "baseline" : "mixer";
 const SLEEP_CHAIN = ["yawn", "sit_down", "sit_doze_loop", "lie_down", "sleep_loop"];
 const VISEMES = ["viseme_sil", "viseme_PP", "viseme_FF", "viseme_TH", "viseme_DD", "viseme_kk", "viseme_CH",
   "viseme_SS", "viseme_nn", "viseme_RR", "viseme_aa", "viseme_E", "viseme_I", "viseme_O", "viseme_U"];
@@ -97,6 +102,10 @@ export class Avatar3D implements AvatarLike {
   private state: AvatarState = "idle";
   private level = 0;
   private visTarget: Record<string, number> = {};
+  /** Layered face (avatar/face.ts) and the performance director (avatar/acting.ts). */
+  readonly face = new FaceMixer();
+  readonly director = new PerformanceDirector();
+  private faceKeys = new Set<string>();
   private visNow: Record<string, number> = {};
   private jaw = 0;
   private expr: Record<string, number> = {};
@@ -315,6 +324,8 @@ export class Avatar3D implements AvatarLike {
     if (s === this.state) return;
     const prev = this.state;
     this.state = s;
+    this.director.setState(s);
+    if (s !== "speaking") this.face.resetSpeech();          // a stop/interrupt never leaves a stale mouth shape
     this.stateSince = performance.now();
     if (s !== "idle") this.poke();
     if (s === "listening" && prev === "idle") this.sfx.play("pop");   // earcon on transitions only
@@ -527,6 +538,37 @@ export class Avatar3D implements AvatarLike {
     }
   }
 
+  /** The face before the mixer (kept for ?face=baseline A/B and as a rollback). */
+  private legacyFace(dt: number, yawn: number, blink: number, t: number) {
+    const talking = this.state === "speaking";
+    for (const v of VISEMES) {
+      const target = talking ? (this.visTarget[v] ?? 0) : 0;
+      const now = this.visNow[v] ?? 0;
+      this.visNow[v] = now + (target - now) * (target > now ? 0.6 : 0.3);
+      if (this.visNow[v] > 0.001 || now > 0) this.setMorph(v, this.visNow[v]);
+    }
+    const jawTarget = talking ? Math.min(0.6, this.level * 0.8) : 0;
+    this.jaw += (jawTarget - this.jaw) * (jawTarget > this.jaw ? 0.5 : 0.25);
+    this.setMorph("jawOpen", this.jaw);
+    const keys = new Set([...Object.keys(this.expr), ...Object.keys(this.exprNow)]);
+    for (const k of keys) {
+      const target = this.expr[k] ?? 0;
+      const now = this.exprNow[k] ?? 0;
+      const next = now + (target - now) * 0.12;
+      this.exprNow[k] = next;
+      this.setMorph(k, next);
+      if (!this.expr[k] && next < 0.002) delete this.exprNow[k];
+    }
+    if (yawn > 0) {
+      this.setMorph("jawOpen", Math.max(this.jaw, yawn));
+      this.setMorph("mouthO", yawn * 0.6);
+      this.setMorph("squint", yawn * 0.8);
+    }
+    this.setMorph("blink_L", blink);
+    this.setMorph("blink_R", blink);
+    if (this.sleepAmt > 0.05) this.setMorph("cheekPuff", this.sleepAmt * (0.25 + 0.3 * Math.max(0, Math.sin(t / 1000 * 0.9))));
+  }
+
   // ------------------------------------------------------------ frame
   private setMorph(name: string, v: number) {
     for (const r of this.morphMap.get(name) ?? []) r.influences[r.index] = v;
@@ -573,6 +615,9 @@ export class Avatar3D implements AvatarLike {
   private nextGesture = 0;
   /** While he talks: a hand gesture that fits the sentence ("?" shrug/palms, "!" big/thumbs up...). */
   gestureFor(sentence: string) {
+    if (FACE_MODE !== "baseline" && !this.sleeping && (this.state === "speaking" || this.state === "thinking")) {
+      this.director.sentence(sentence);                 // facial acting for what he's about to say
+    }
     if (this.state !== "speaking" || this.emoting || this.sleeping || !this.gestures.size) return;
     const now = performance.now();
     if (now < this.nextGesture) return;
@@ -625,7 +670,7 @@ export class Avatar3D implements AvatarLike {
    *  idle Monkey is drawn at 30 fps (breathing and blinks look the same) and a sleeping one at 15. */
   private tierFps(now: number): number {
     if (document.hidden) { this.stats.tier = "hidden"; return 0; }
-    const why = this.state !== "idle" ? this.state : this.emoting ? "emote" : this.jaw > 0.01 ? "mouth"
+    const why = this.state !== "idle" ? this.state : this.emoting ? "emote" : Math.max(this.jaw, this.face.jaw) > 0.01 ? "mouth"
       : now - this.lastInput < 2000 ? "cursor"
       : this.chainAct !== null && this.chainStage !== "sit_doze_loop" && this.chainStage !== "sleep_loop" ? "transition"
       : this.vfx.active > 0 && !this.sleeping ? "effects"
@@ -641,16 +686,29 @@ export class Avatar3D implements AvatarLike {
     return fps;
   }
 
+  /** Deterministic rendering for demos and tests: stop the live loop and draw exactly one frame of `dt` seconds. */
+  private virtualNow: number | null = null;
+  private virtualDt = 0;
+  step(dt: number) {
+    if (this.virtualNow === null) {
+      this.renderer.setAnimationLoop(null);
+      this.virtualNow = performance.now();
+    }
+    this.virtualNow += dt * 1000;
+    this.virtualDt = dt;
+    this.frame();
+  }
+
   private frame() {
-    const now = performance.now();
-    const fps = this.tierFps(now);
+    const now = this.virtualNow ?? performance.now();
+    const fps = this.virtualNow !== null ? 1000 : this.tierFps(now);
     if (fps === 0) return;
     if (fps < 1000 && now - this.lastFrame < 1000 / fps - 1) return;
     this.lastFrame = now;
     this.stats.frames++;
     if (this.frozen) { this.renderer.render(this.scene, this.camera); return; }
-    const dt = Math.min(0.1, this.clock.getDelta());
-    const t = performance.now();
+    const dt = this.virtualNow !== null ? this.virtualDt : Math.min(0.1, this.clock.getDelta());
+    const t = this.virtualNow ?? performance.now();
     this.mixer?.update(dt);
 
     // Idle life: weighted fidgets with cooldowns, then drowsy -> asleep (docs/ANIMATION-UI-DIRECTION.md §4).
@@ -675,30 +733,7 @@ export class Avatar3D implements AvatarLike {
     }
     this.vfx.update(dt);
 
-    // Lip sync (after the mixer so it layers over clip-driven morphs).
-    const talking = this.state === "speaking";
-    for (const v of VISEMES) {
-      const target = talking ? (this.visTarget[v] ?? 0) : 0;
-      const now = this.visNow[v] ?? 0;
-      this.visNow[v] = now + (target - now) * (target > now ? 0.6 : 0.3);
-      if (this.visNow[v] > 0.001 || now > 0) this.setMorph(v, this.visNow[v]);
-    }
-    const jawTarget = talking ? Math.min(0.6, this.level * 0.8) : 0;
-    this.jaw += (jawTarget - this.jaw) * (jawTarget > this.jaw ? 0.5 : 0.25);
-    this.setMorph("jawOpen", this.jaw);
-
-    // Expressions for the current emote (ease in/out).
-    const keys = new Set([...Object.keys(this.expr), ...Object.keys(this.exprNow)]);
-    for (const k of keys) {
-      const target = this.expr[k] ?? 0;
-      const now = this.exprNow[k] ?? 0;
-      const next = now + (target - now) * 0.12;
-      this.exprNow[k] = next;
-      this.setMorph(k, next);
-      if (!this.expr[k] && next < 0.002) delete this.exprNow[k];
-    }
-
-    // Yawn (drowsy): mouth stretches open over ~1.6 s, eyes squeeze, a pale puff at the end.
+    // Face: one write pass per frame (see avatar/face.ts). ?face=baseline keeps the previous code for A/B.
     let yawn = 0;
     if (this.yawnT >= 0) {
       this.yawnT += dt;
@@ -710,22 +745,24 @@ export class Avatar3D implements AvatarLike {
       }
       if (y > 1.9) this.yawnT = -1;
     }
-    if (yawn > 0) {
-      this.setMorph("jawOpen", Math.max(this.jaw, yawn));
-      this.setMorph("mouthO", yawn * 0.6);
-      this.setMorph("squint", yawn * 0.8);
-    }
-
     // Blinks (2 frames closing, 1 closed, 3 opening ≈ 140 ms; 15% double blinks). Asleep: eyes shut.
     if (t > this.nextBlink) {
       this.blinkUntil = t + 140;
       this.nextBlink = t + (Math.random() < 0.15 ? 260 : 2000 + Math.random() * 4000);
     }
     const blink = Math.max(t < this.blinkUntil ? 1 : 0, Math.min(1, this.sleepAmt * 1.4), this.brain?.drowsy ? 0.35 : 0);
-    this.setMorph("blink_L", blink);
-    this.setMorph("blink_R", blink);
-    // Snoring cheeks puff with each slow breath.
-    if (this.sleepAmt > 0.05) this.setMorph("cheekPuff", this.sleepAmt * (0.25 + 0.3 * Math.max(0, Math.sin(t / 1000 * 0.9))));
+    if (FACE_MODE === "baseline") this.legacyFace(dt, yawn, blink, t);
+    else {
+      const override: Record<string, number> = { blink_L: blink, blink_R: blink };
+      if (yawn > 0) { override.jawOpen = yawn; override.mouthO = yawn * 0.6; override.squint = yawn * 0.8; }
+      if (this.sleepAmt > 0.05) override.cheekPuff = this.sleepAmt * (0.25 + 0.3 * Math.max(0, Math.sin(t / 1000 * 0.9)));
+      const acting = this.sleeping || this.sleepAmt > 0.3 ? {} : this.director.update(dt);
+      const out = this.face.update({ talking: this.state === "speaking", visemes: this.visTarget, level: this.level,
+        acting, emote: this.expr, override }, dt);
+      for (const k of this.faceKeys) if (!(k in out)) this.setMorph(k, 0);
+      this.faceKeys = new Set(Object.keys(out));
+      for (const [k, v] of Object.entries(out)) this.setMorph(k, v);
+    }
 
     // Glow follows the assistant state.
     const s = this.state;

@@ -93,7 +93,7 @@ def test_next_reply_after_an_interrupt_starts_within_a_second():
     while time.monotonic() - t1 < 3 and not got:
         try:
             gen, chunk = sp._audio.get(timeout=0.05)
-            got = gen == sp._gen and chunk is not None and int(chunk[0]) == 2
+            got = gen == sp._gen and isinstance(chunk, np.ndarray) and int(chunk[0]) == 2
         except Exception:  # noqa: BLE001
             pass
     assert got and time.monotonic() - t1 < 1.0
@@ -108,7 +108,7 @@ def test_sentences_queued_before_an_interrupt_are_never_spoken():
     time.sleep(0.8)
     while not sp._audio.empty():
         gen, chunk = sp._audio.get_nowait()
-        assert chunk is None or gen != sp._gen, "stale audio from before the interrupt would play"
+        assert not isinstance(chunk, np.ndarray) or gen != sp._gen, "stale audio from before the interrupt would play"
 
 
 def test_first_audio_is_reported_once_per_reply():

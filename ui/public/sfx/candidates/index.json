@@ -1,0 +1,189 @@
+{
+ "version": 1,
+ "about": "CC0 candidate takes for blind review (docs/audio/SOURCE_LEDGER.md, tools/sfx/recipes/sprint1.json). Not used unless chosen in the Sound Lab.",
+ "cues": {
+  "boing": {
+   "B": [
+    "sfx/candidates/boing-B_1.ogg",
+    "sfx/candidates/boing-B_2.ogg",
+    "sfx/candidates/boing-B_3.ogg",
+    "sfx/candidates/boing-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/boing-C_1.ogg",
+    "sfx/candidates/boing-C_2.ogg",
+    "sfx/candidates/boing-C_3.ogg",
+    "sfx/candidates/boing-C_4.ogg"
+   ]
+  },
+  "check": {
+   "B": [
+    "sfx/candidates/check-B_1.ogg",
+    "sfx/candidates/check-B_2.ogg",
+    "sfx/candidates/check-B_3.ogg",
+    "sfx/candidates/check-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/check-C_1.ogg",
+    "sfx/candidates/check-C_2.ogg",
+    "sfx/candidates/check-C_3.ogg",
+    "sfx/candidates/check-C_4.ogg"
+   ]
+  },
+  "chest_thump": {
+   "B": [
+    "sfx/candidates/chest_thump-B_1.ogg",
+    "sfx/candidates/chest_thump-B_2.ogg",
+    "sfx/candidates/chest_thump-B_3.ogg",
+    "sfx/candidates/chest_thump-B_4.ogg",
+    "sfx/candidates/chest_thump-B_5.ogg"
+   ],
+   "C": [
+    "sfx/candidates/chest_thump-C_1.ogg",
+    "sfx/candidates/chest_thump-C_2.ogg",
+    "sfx/candidates/chest_thump-C_3.ogg",
+    "sfx/candidates/chest_thump-C_4.ogg",
+    "sfx/candidates/chest_thump-C_5.ogg"
+   ]
+  },
+  "flop": {
+   "B": [
+    "sfx/candidates/flop-B_1.ogg",
+    "sfx/candidates/flop-B_2.ogg",
+    "sfx/candidates/flop-B_3.ogg"
+   ],
+   "C": [
+    "sfx/candidates/flop-C_1.ogg",
+    "sfx/candidates/flop-C_2.ogg",
+    "sfx/candidates/flop-C_3.ogg"
+   ]
+  },
+  "notify": {
+   "B": [
+    "sfx/candidates/notify-B_1.ogg",
+    "sfx/candidates/notify-B_2.ogg",
+    "sfx/candidates/notify-B_3.ogg",
+    "sfx/candidates/notify-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/notify-C_1.ogg",
+    "sfx/candidates/notify-C_2.ogg",
+    "sfx/candidates/notify-C_3.ogg"
+   ]
+  },
+  "rustle": {
+   "B": [
+    "sfx/candidates/rustle-B_1.ogg",
+    "sfx/candidates/rustle-B_2.ogg",
+    "sfx/candidates/rustle-B_3.ogg",
+    "sfx/candidates/rustle-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/rustle-C_1.ogg",
+    "sfx/candidates/rustle-C_2.ogg",
+    "sfx/candidates/rustle-C_3.ogg",
+    "sfx/candidates/rustle-C_4.ogg"
+   ]
+  },
+  "sparkle": {
+   "B": [
+    "sfx/candidates/sparkle-B_1.ogg",
+    "sfx/candidates/sparkle-B_2.ogg",
+    "sfx/candidates/sparkle-B_3.ogg",
+    "sfx/candidates/sparkle-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/sparkle-C_1.ogg",
+    "sfx/candidates/sparkle-C_2.ogg",
+    "sfx/candidates/sparkle-C_3.ogg",
+    "sfx/candidates/sparkle-C_4.ogg"
+   ]
+  },
+  "thump": {
+   "B": [
+    "sfx/candidates/thump-B_1.ogg",
+    "sfx/candidates/thump-B_2.ogg",
+    "sfx/candidates/thump-B_3.ogg",
+    "sfx/candidates/thump-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/thump-C_1.ogg",
+    "sfx/candidates/thump-C_2.ogg",
+    "sfx/candidates/thump-C_3.ogg",
+    "sfx/candidates/thump-C_4.ogg"
+   ]
+  },
+  "ui_click": {
+   "B": [
+    "sfx/candidates/ui_click-B_1.ogg",
+    "sfx/candidates/ui_click-B_2.ogg",
+    "sfx/candidates/ui_click-B_3.ogg",
+    "sfx/candidates/ui_click-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/ui_click-C_1.ogg",
+    "sfx/candidates/ui_click-C_2.ogg",
+    "sfx/candidates/ui_click-C_3.ogg",
+    "sfx/candidates/ui_click-C_4.ogg"
+   ]
+  },
+  "ui_close": {
+   "B": [
+    "sfx/candidates/ui_close-B_1.ogg",
+    "sfx/candidates/ui_close-B_2.ogg",
+    "sfx/candidates/ui_close-B_3.ogg",
+    "sfx/candidates/ui_close-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/ui_close-C_1.ogg",
+    "sfx/candidates/ui_close-C_2.ogg",
+    "sfx/candidates/ui_close-C_3.ogg",
+    "sfx/candidates/ui_close-C_4.ogg"
+   ]
+  },
+  "ui_error": {
+   "B": [
+    "sfx/candidates/ui_error-B_1.ogg",
+    "sfx/candidates/ui_error-B_2.ogg",
+    "sfx/candidates/ui_error-B_3.ogg",
+    "sfx/candidates/ui_error-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/ui_error-C_1.ogg",
+    "sfx/candidates/ui_error-C_2.ogg",
+    "sfx/candidates/ui_error-C_3.ogg",
+    "sfx/candidates/ui_error-C_4.ogg"
+   ]
+  },
+  "ui_open": {
+   "B": [
+    "sfx/candidates/ui_open-B_1.ogg",
+    "sfx/candidates/ui_open-B_2.ogg",
+    "sfx/candidates/ui_open-B_3.ogg",
+    "sfx/candidates/ui_open-B_4.ogg"
+   ],
+   "C": [
+    "sfx/candidates/ui_open-C_1.ogg",
+    "sfx/candidates/ui_open-C_2.ogg",
+    "sfx/candidates/ui_open-C_3.ogg",
+    "sfx/candidates/ui_open-C_4.ogg"
+   ]
+  },
+  "whoosh": {
+   "B": [
+    "sfx/candidates/whoosh-B_1.ogg",
+    "sfx/candidates/whoosh-B_2.ogg",
+    "sfx/candidates/whoosh-B_3.ogg",
+    "sfx/candidates/whoosh-B_4.ogg",
+    "sfx/candidates/whoosh-B_5.ogg"
+   ],
+   "C": [
+    "sfx/candidates/whoosh-C_1.ogg",
+    "sfx/candidates/whoosh-C_2.ogg",
+    "sfx/candidates/whoosh-C_3.ogg",
+    "sfx/candidates/whoosh-C_4.ogg",
+    "sfx/candidates/whoosh-C_5.ogg"
+   ]
+  }
+ }
+}

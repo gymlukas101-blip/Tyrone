@@ -61,7 +61,7 @@ UID: event-assignment-<aid>
 
 When the student has a due-date **override**, Canvas changes the event like this:
 - the `UID` becomes `event-assignment-override-<override_id>`;
-- the summary becomes `"<title> (<override title>)"`, which is where rows like `Final Outline (5 students)` come from;
+- the summary becomes `"<title> (<override title>)"`, which is where rows like `Unit Essay (5 students)` come from;
 - `URL` keeps `#assignment_<aid>`, because the source has `# TODO: event.url` there.
 - The course code is then appended as `[<course_code>]`.
 
@@ -176,7 +176,7 @@ answers an ambiguous result.
    - Boost to-do over done, and the nearest due date (overdue counts as nearest).
 3. **Decide.**
    - Top score ≥ threshold and clearly ahead of the second (for example a margin of ≥ 0.15): open it, and say
-     "Opening *Final Outline* for SUBJ 100."
+     "Opening *Unit Essay* for SUBJ 100."
    - Otherwise show a small "Which one?" card listing up to 4 clickable rows, and say "I found two outlines: …".
    - When the owner says "the first one" or "the speech one", the model calls the tool with the `item_id`.
    - No match at all: say so and offer the Canvas course page. Never open a guess.
@@ -317,8 +317,8 @@ After step 4, fetch `GET …/submissions/self?include[]=submission_history` and 
 Field meanings are in [A2]. Optionally (owner's choice), download the attachment's `url` and compare its **SHA-256**
 with the local hash taken at confirmation. This is the strongest proof that the exact bytes landed.
 
-Report only what was checked. For example: "Verified on Canvas: *Final Outline* (SUBJ 100) submitted at 9:41 PM,
-attempt 2 of 3, `outline-final.pdf` (212 KB). Canvas marks it late."
+Report only what was checked. For example: "Verified on Canvas: *Unit Essay* (SUBJ 100) submitted at 9:41 PM,
+attempt 2 of 3, `essay-final.pdf` (212 KB). Canvas marks it late."
 - If any check fails, say "Canvas answered but I couldn't confirm the submission", open the assignment page, and keep
   the record as `unverified`.
 - Never say "submitted" on a 2xx alone.
@@ -353,7 +353,7 @@ question).
 |---|---|
 | Ask before every outward action (CLAUDE.md) | The model gets only **`prepare_submission`**. There is **no submit tool**. Submission runs in app code after the owner confirms, like email `ApprovalGate`. One confirmation submits one file to one assignment. No standing grants, no "submit all", no scheduled or automatic submits. |
 | The owner sees exactly what goes where | The card shows the course; the assignment title, with a link to it; the due or lock time; late or not; attempt N+1 of M; the submission type; allowed extensions; the file name, full path, size, modified time, SHA-256 (short) and a first-page preview (PDF, image, or plain text); and a "group" warning when it applies. |
-| Confirmation can't be forged | The UI gets a one-time token the model never sees, as in `PendingDraft` and `PermissionGate` approvals. Voice works the email way: Monkey reads back "Submit *outline-final.pdf* to *Final Outline* in SUBJ 100, attempt 2 of 3?" and only a clean yes within 60 s counts (reuse `_CONFIRM`/`_HEDGE`). The owner may require a **click only** (open question). |
+| Confirmation can't be forged | The UI gets a one-time token the model never sees, as in `PendingDraft` and `PermissionGate` approvals. Voice works the email way: Monkey reads back "Submit *essay-final.pdf* to *Unit Essay* in SUBJ 100, attempt 2 of 3?" and only a clean yes within 60 s counts (reuse `_CONFIRM`/`_HEDGE`). The owner may require a **click only** (open question). |
 | The file is the owner's, unaltered | The file comes from an **owner action**: the native picker (`create_file_dialog`, already used in `app.py`), or dropping it on the card (pywebview drop paths, **unverified**), or a model-suggested path that the card shows and the owner confirms. Monkey opens it read-only and hashes it at prepare time and again right before upload; **a changed hash means abort and confirm again**. No conversion, rename, compression, or "fixing". |
 | Monkey never authors the content | Refuse paths Monkey wrote. Keep a ledger of files Monkey created (generated images, exports), plus `%APPDATA%\Monkey`, `%LOCALAPPDATA%\Monkey`, temp folders and Office lock files `~$*`. Refuse empty files. `online_text_entry` is not built until text comes verbatim from an owner file. Optional submission comments are verbatim dictation only. The file's content is **not** sent to Claude by default. Monkey checks *which* file, not *how good* it is. |
 | Attestations stay the owner's | Never send `eula_agreement_timestamp`. Never tick pledges. Fix `USER_ONLY_WORDS` (§2.3). Quizzes, peer reviews and lockdown stay USER_ONLY. |

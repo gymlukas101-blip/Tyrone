@@ -285,6 +285,23 @@ Results: `prototypes/fur-lighting/compare-full.png` and `compare-closeup.png` (b
 
 ---
 
+### 6.x Implemented in the sound rebuild, sprint 1 (`work/monkey-sfx-foley-redesign`)
+- **Interface vocabulary.** These live in one place (`feedback.ts`, `dom.ts` toasts and the dialog observer in `main.ts`), so sight and sound always come together:
+
+  | Moment | Sound |
+  |---|---|
+  | Any button | click |
+  | A dialog opens / closes | open / close |
+  | A ✓ result | confirm |
+  | A ⚠ problem, warning or error | error |
+  | A draft, a task permission or an update ready | "needs you" (`notify`) |
+
+- **One interface sound at a time,** ranked click < open/close < confirm < error < notify. A higher one cuts a ringing lower one with a 12 ms fade. A lower one never cuts a higher one.
+- **Takes are leveled to their cue** on decode (±6 dB), so the ±2 dB variation is real variation, not take mismatch.
+- **Master safety limiter** at −6 dB, with Chromium's makeup gain taken back out.
+- **Loops only through explicit handles** (`Sfx.loop()`): they fade in, fade out and stop on hide. Nothing loops by default; ambience stays off until the owner approves it.
+- **Candidates are reviewed blind,** loudness-matched, before any shipped take is replaced. See `docs/audio/`.
+
 ## 7. UI organization and "juice"
 
 **Layout:**

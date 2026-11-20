@@ -33,7 +33,13 @@ export const fmtTime = (iso?: string) => {
   return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 
+/** Earcon for a toast: set by main.ts. Only results get a sound ("✓ …" confirm, "⚠ …" problem); plain notes stay quiet. */
+let toastSound: ((cue: string, intensity?: number) => void) | null = null;
+export function setToastSound(fn: typeof toastSound) { toastSound = fn; }
+
 export function toast(text: string, ms?: number) {
+  if (text.startsWith("⚠")) toastSound?.("ui_error", 0.7);
+  else if (text.startsWith("✓")) toastSound?.("check", 0.8);
   const t = h("div", { class: "toast" }, text);
   // A modal <dialog> (Settings) sits on the browser's top layer, above everything in <body>. Put the toast inside
   // the open dialog so messages shown while Settings is open are actually visible.

@@ -239,10 +239,10 @@ def test_hung_voice_engine_falls_through_and_never_sticks(monkeypatch):
                      on_fallback=lambda n, e: fell.append(n))
     sp.say("hello there")
     for _ in range(100):
-        if not sp._audio.empty():
+        if any(isinstance(item[1], np.ndarray) for item in list(sp._audio.queue)):
             break
         time.sleep(0.02)
-    assert fell == ["Hangs"] and not sp._audio.empty()   # the second engine produced the sentence
+    assert fell == ["Hangs"] and any(isinstance(item[1], np.ndarray) for item in list(sp._audio.queue))
     forever.set()
 
 
