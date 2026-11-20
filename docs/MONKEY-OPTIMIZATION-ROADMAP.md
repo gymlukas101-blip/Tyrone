@@ -88,7 +88,7 @@ Measure first, so later milestones can show they helped.
 
 - **Latest:** Milestone 1 merged to `main` (the release tag is in the git log and on GitHub Releases).
 - **Branches:**
-  - `feature/hybrid-computer-use`: general computer tasks, not merged. Next step there: a live model run on the Dell (`docs/research/COMPUTER-USE-QUALITY.md` §7).
+  - Hybrid computer use (general computer tasks): merged to `main` on 2026-11-20. Next step there: a live model run on the Dell (`docs/research/COMPUTER-USE-QUALITY.md` §7).
   - `feature/flagship-m1-reliability`: squash-merged; can be deleted.
 - **Known failures:** none in CI.
 - **Unverified on the Dell:** audio reopen after sleep/headset change; the update restart; the Chrome extension in the owner's real Chrome.

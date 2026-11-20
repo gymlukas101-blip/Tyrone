@@ -1,6 +1,6 @@
 # Facial animation audit and Animation 2.0 changes
 
-Branch: `feature/animation-2`. Not merged, not released.
+Released in v0.3.81 (merged from `feature/animation-2`). `?face=baseline` still shows the old face for A/B.
 
 **Scope:** Monkey's face while he listens, thinks and talks. Body clips, gestures and the sleep chain are unchanged.
 

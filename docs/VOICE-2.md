@@ -1,7 +1,7 @@
 # Voice 2.0: faster, more natural turns (first vertical slice)
 
-Branch: `feature/voice-2`. Not merged to `main`. Everything below ran in the cloud container; **nothing here has
-been heard on the Dell yet.**
+Merged to `main` on 2026-11-20 at the owner's request. Everything below ran in the cloud container; **nothing here has
+been heard on the Dell yet.** To fall back to the old endpointing, set `early_commit` to false in settings (`fish_latency` already defaults to "balanced", the old behavior).
 
 ## 1. Audit: what the code did (confirmed from source)
 

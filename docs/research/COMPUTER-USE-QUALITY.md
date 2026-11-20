@@ -1,6 +1,6 @@
 # Computer use: quality report (2026-11-20)
 
-Branch: `feature/hybrid-computer-use`. Design: [ADR 0002](../adr/0002-hybrid-computer-use.md). Research: [COMPUTER-USE-RESEARCH.md](COMPUTER-USE-RESEARCH.md).
+Merged to `main` on 2026-11-20 (was `feature/hybrid-computer-use`). Design: [ADR 0002](../adr/0002-hybrid-computer-use.md). Research: [COMPUTER-USE-RESEARCH.md](COMPUTER-USE-RESEARCH.md).
 
 **Where things ran:**
 - **Linux container:** real Chromium.

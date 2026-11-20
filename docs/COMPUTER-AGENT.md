@@ -187,7 +187,7 @@ What a run tests:
 - **Banana cursor.** Travel ≤ 260 ms plus press ≤ 90 ms per click. Nothing runs while idle (see the cursor README). The cursor-on vs cursor-off evaluation runs are compared above.
 - **Companion.** It renders at 30 fps when visible and stops when hidden.
 
-## General tasks: browser + Windows apps (branch `feature/hybrid-computer-use`)
+## General tasks: browser + Windows apps (hybrid computer use, on `main` since 2026-11-20)
 
 1. In 🖐 **Tasks**, pick **"General task: his browser + apps you pick"**.
 2. Fill in:

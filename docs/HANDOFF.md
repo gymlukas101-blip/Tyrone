@@ -1,10 +1,12 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-20 (release v0.3.62: hotfix for "Too many strict tools (24)" on every message: at most 20 strict tool schemas per request). The owner is now on the Dell XPS 15 9530.
+Last updated 2026-11-20. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
+
+**Not yet tried on the Dell:** Voice 2.0 (early commit, fast voice routing, soft ack; setting `early_commit` = false restores the old endpointing), hybrid computer use (needs a live model run, `docs/research/COMPUTER-USE-QUALITY.md` §7), the new face and lip sync, and the sounds.
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
 
-## In progress on branch `feature/hybrid-computer-use` (not on main)
+## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);
   - Windows UI Automation (owned dialogs included);
