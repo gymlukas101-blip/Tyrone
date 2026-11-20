@@ -39,7 +39,7 @@ class Target:
 
 @dataclass
 class Action:
-    kind: str                     # click | type | select | press | scroll | navigate | wait | read | play | upload | choose_file
+    kind: str                     # click | type | select | press | scroll | navigate | wait | read | play | play_media | upload | choose_file
     target: Target | None = None
     text: str = ""                # for type/select/press; never logged
     url: str = ""                 # for navigate
@@ -108,6 +108,8 @@ def classify(action: Action) -> tuple[Risk, str]:
     name = f"{t.name} {t.role}".strip()
     if action.kind in READ_KINDS:
         return Risk.LOW, "reading"
+    if action.kind == "play_media":
+        return Risk.LOW, "starting the lesson video"
     if action.kind == "navigate":
         return Risk.LOW, "opening an allowed page"
     if action.kind == "press":

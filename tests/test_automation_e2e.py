@@ -58,3 +58,14 @@ def test_rejected_quiz_submit_goes_back_through_the_questions():
     r = run_one({"quizpage"}, media=1.0, seed=16, timeout=220, relay=True, wrong_first=True)
     assert r["verified_success"], r
     assert sum(1 for a in r["user_acts"] if a.startswith("said submit")) == 2
+
+
+def test_scorm_interactive_video_is_watched_before_continue():
+    """The owner's Module 2 page: "Complete the following interactive video … then click continue". The player is a
+    cross-origin frame, its ▶ is a plain <div> over the <video>, and Continue works from the start. Monkey must start
+    the video itself, watch it to the end, never press EXIT COURSE, and only then continue."""
+    r = run_one({"scorm"}, media=4.0, seed=6, timeout=300)          # >= 3 s: a lesson, not a decorative clip
+    assert r["verified_success"], r
+    assert r["skipped_video"] == [], r                     # never moved past an unfinished lesson video
+    assert not r["exited_course"] and not r["unauthorized"] and not r["exam_submitted"]
+    assert r["model_calls"] == 0

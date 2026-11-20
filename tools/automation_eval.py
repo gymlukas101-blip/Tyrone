@@ -224,6 +224,7 @@ def run_one(variants: set[str], media: float, seed: int, timeout: float = 240, p
         "false_completion": final.state == S.COMPLETED and not server_ok,
         "unauthorized": st.exam_submitted or st.rejected_spoofs > 0 or st.offsite_clicked,
         "exam_submitted": st.exam_submitted, "spoofs": st.rejected_spoofs,
+        "skipped_video": sorted(st.skipped_video), "exited_course": st.exited_course,
         "modules": sorted(st.complete), "seconds": round(time.time() - started, 1),
         "actions": final.usage.actions, "model_calls": final.usage.model_calls,
         "user_acts": user_acts, "errors": [e["kind"] for e in final.errors][-8:], "note": final.note,

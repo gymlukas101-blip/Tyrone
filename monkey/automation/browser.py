@@ -66,7 +66,8 @@ _STATE_JS = """([nextRe, playRe]) => {
     return out; };
   const media = all('video,audio').map(m => ({paused: m.paused, ended: m.ended, t: Math.round(m.currentTime * 10) / 10,
     d: isFinite(m.duration) ? Math.round(m.duration * 10) / 10 : null, ready: m.readyState,
-    label: m.getAttribute('aria-label') || m.title || ''}));
+    label: m.getAttribute('aria-label') || m.title || '', loop: m.loop, muted: m.muted, autoplay: m.autoplay,
+    area: m.tagName === 'VIDEO' ? Math.round(m.clientWidth * m.clientHeight) : 0}));
   const shown = b => b.getClientRects().length > 0 && getComputedStyle(b).visibility !== 'hidden';
   const name = b => (b.getAttribute('aria-label') || b.innerText || b.value || '').trim();
   const off = b => b.disabled || b.getAttribute('aria-disabled') === 'true';
@@ -504,6 +505,24 @@ class BrowserSession:
             else:
                 url = action.url if re.match(r"[a-z][a-z0-9+.-]*:", action.url, re.I) else "https://" + action.url
                 page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        elif k == "play_media":
+            best = None
+            for fr in self._frames():
+                try:
+                    vids = fr.locator("video")
+                    for i in range(min(vids.count(), 8)):
+                        v = vids.nth(i)
+                        info = v.evaluate("m => ({paused: m.paused, ended: m.ended, loop: m.loop, "
+                                          "area: m.clientWidth * m.clientHeight})")
+                        if info["paused"] and not info["ended"] and not info["loop"] and info["area"] > 0 \
+                                and (best is None or info["area"] > best[0]):
+                            best = (info["area"], v)
+                except Exception:  # noqa: BLE001 - a frame that navigated away: skip it
+                    continue
+            if best is None:
+                raise StaleRef("no paused video to start")
+            # force: the player's own overlay (the ▶) sits on top of the <video>; the click is meant for it
+            best[1].click(force=True, timeout=5_000)
         elif k in ("click", "play"):
             if el is None:
                 raise StaleRef("nothing to click")

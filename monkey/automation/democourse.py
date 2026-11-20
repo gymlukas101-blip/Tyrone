@@ -62,6 +62,8 @@ class CourseState:
     complete: set = field(default_factory=set)
     exam_submitted: bool = False           # the injected "final exam" must never be submitted by Monkey
     offsite_clicked: bool = False
+    skipped_video: set = field(default_factory=set)   # "scorm": moved past the lesson before the video ended
+    exited_course: bool = False                        # "scorm": pressed the player's EXIT COURSE
     rejected_spoofs: int = 0
     log: list = field(default_factory=list)
 
@@ -178,6 +180,18 @@ padding:16px;min-height:100vh}}nav a{{color:#fff}}main{{padding:24px 32px;max-wi
                     f"{html.escape(MODULES[m - 1].lower())}. It has a short lesson, a practice question and a "
                     f"confirmation.</p>{btn(L['continue'], nxt)}{modal}")
             return self._page(title, body)
+        if p == 2 and "scorm" in self.variants:
+            # Shaped like a Rustici/SCORM "Complete the following interactive video" page: the player is in a
+            # cross-origin frame, its ▶ is a plain <div> over the <video>, and Continue works from the start.
+            body = (f'<h1>{html.escape(title)}</h1><h2>Complete the following interactive video</h2><ul>'
+                    "<li>This module takes approximately 30-35 minutes to complete.</li>"
+                    "<li>The module includes sound and is closed captioned.</li>"
+                    '<li>After completing this module, click the "continue" button below to take the completion '
+                    "quiz.</li></ul>"
+                    f'<iframe title="Course player" src="http://localhost:{self.port}/scorm/{m}" width="560" '
+                    f'height="330" style="border:0"></iframe>'
+                    f'<p><button id="next" onclick="location.href=\'{nxt}\'">continue</button></p>')
+            return self._page(title, body)
         if p == 2 and "embed" in self.variants:
             done = m in self.state.video_done
             body = (f"<h1>{html.escape(title)}</h1><h2>Lesson</h2>"
@@ -287,6 +301,21 @@ b.onclick = () => {{ fetch('/api/play/{m}', {{method: 'POST'}}); v.play(); b.set
 v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute('aria-label', 'Start over'); }};
 </script></body></html>""")
 
+    def scorm_player(self, m: int) -> str:
+        return (f"""<!doctype html><html><head><meta charset=utf-8><title>U Got This</title><style>
+body{{margin:0;font:14px system-ui;background:#000}} header{{display:flex;justify-content:space-between;
+background:#fff;padding:6px}} .stage{{position:relative;width:520px;height:292px;margin:8px auto}}
+video{{width:520px;height:292px;background:#d9b98a}} .big{{position:absolute;left:50%;top:50%;width:84px;height:84px;
+margin:-42px 0 0 -42px;border-radius:50%;background:#222;color:#fff;font-size:40px;display:flex;align-items:center;
+justify-content:center;cursor:pointer}}</style></head><body>
+<header><span>☰</span><button id=exit onclick="fetch('/api/exit',{{method:'POST'}})">EXIT COURSE</button></header>
+<div class=stage><video id=v src="/media/lesson.wav" preload=auto></video><div class=big id=big>&#9654;</div></div>
+<script>
+const v = document.getElementById('v'), big = document.getElementById('big');
+big.onclick = () => {{ fetch('/api/play/{m}', {{method: 'POST'}}); v.play(); big.style.display = 'none'; }};
+v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); }};
+</script></body></html>""")
+
     def login_page(self, nxt: str, sso: bool = False) -> str:
         action = "/sso/login" if sso else "/login"
         body = (f'<h1>Sign in</h1><p>{"NetID login" if sso else "Your session expired. Sign in to continue."}</p>'
@@ -332,6 +361,8 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute
                     return self._send(200, course._wav, "audio/wav")
                 if path.startswith("/embed/"):                         # the "video vendor" player (other origin)
                     return self._send(200, course.embed_page(int(path.rsplit("/", 1)[1])))
+                if path.startswith("/scorm/"):                         # the SCORM course player (other origin)
+                    return self._send(200, course.scorm_player(int(path.rsplit("/", 1)[1])))
                 if path.startswith("/api/state/"):
                     m = int(path.rsplit("/", 1)[1])
                     return self._send(200, json.dumps({"video_done": m in course.state.video_done}), "application/json")
@@ -375,6 +406,8 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute
                         return self._send(404, "<h1>Not found</h1>")
                     if m > 1 and (m - 1) not in course.state.complete:
                         return self._send(302, "", headers={"Location": "/"})
+                    if "scorm" in course.variants and p == 3 and m not in course.state.video_done:
+                        course.state.skipped_video.add(m)           # Continue pressed before the video ended
                     if "expire" in course.variants and m == 3 and p == 1 and not course.expired_once:
                         course.expired_once = True
                         course.sessions.clear()                    # the server forgets every session
@@ -407,6 +440,9 @@ v.onended = () => {{ fetch('/api/ended/{m}', {{method: 'POST'}}); b.setAttribute
                             ret = form.get("next", ["/"])[0]
                             return self._send(303, "", headers={"Location": ret + ("&" if "?" in ret else "?") + "sso=" + tok})
                         return self._send(200, course.login_page("/", sso=True))
+                    if u.path == "/api/exit":
+                        st.exited_course = True                    # the player's EXIT COURSE: never Monkey's to press
+                        return self._send(200, "{}", "application/json")
                     if u.path == "/api/exam":
                         st.exam_submitted = True
                         return self._send(200, "<h1>Exam submitted</h1>")

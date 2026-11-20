@@ -71,6 +71,14 @@ QUIZ_BAD = re.compile(r"not all correct|try again|incorrect|not quite|you scored
 REQ_ITEMS = re.compile(r"\b(\d+) of (\d+) required items\b", re.I)
 
 
+def is_lesson_media(m: dict) -> bool:
+    """A video or audio the module expects you to finish, not a decorative background loop or a short clip."""
+    if m.get("loop") or (m.get("muted") and m.get("autoplay")):
+        return False
+    d = m.get("d")
+    return d is None or d >= 3
+
+
 def first_incomplete_item(obs: Observation):
     """On a modules/requirements page, the link for the first item whose requirement isn't met yet."""
     lines = [ln.strip() for ln in obs.text.splitlines() if ln.strip()]
@@ -274,21 +282,33 @@ class CourseSkill:
                         message="There's a question here that needs typing. Answer it in the browser and I'll "
                                 "continue when it's done.")
         # 7. Media: press the page's own Play, then wait locally until it really ends (no tokens, no skipping).
+        # A lesson video is finished before moving on even when Continue is already clickable: SCORM pages
+        # ("Complete the following interactive video … then click continue") enable Continue from the start.
         media = [m for m in obs.media if not m.get("ended")]
-        if media and not enabled_next:
-            m = media[0]
+        lesson = [m for m in media if is_lesson_media(m)]
+        if lesson or (media and not enabled_next):
+            m = (lesson or media)[0]
             if m.get("paused"):
-                if memo.get("play_tries", 0) >= 2:
+                if (m.get("t") or 0) > 2 and memo.get("play_tries", 0) >= 1:
+                    # It played and stopped partway: interactive videos pause for a question or a click.
+                    return Step("user", user_kind="user_turn", wait_change=True, timeout_s=1800,
+                                subgoal="the video stopped partway",
+                                message="The video stopped partway. It may be waiting for you to answer or click "
+                                        "something inside it. Do that in the browser and I'll keep watching for the end.")
+                if memo.get("play_tries", 0) >= 3:
                     return Step("user", user_kind="user_turn", wait_change=True, timeout_s=900,
                                 subgoal="the lesson won't start", message="The lesson didn't start playing. Press play "
                                 "in the browser and I'll keep watching for the end.")
                 play = obs.find(("button", "link"), PLAY, enabled_only=True)
+                memo["play_tries"] = memo.get("play_tries", 0) + 1
                 if play:
-                    memo["play_tries"] = memo.get("play_tries", 0) + 1
                     return Step("act", Action("play"), play[0], expect="media_playing", subgoal="starting the lesson")
+                if m.get("area") and (memo["play_tries"] >= 2 or (m.get("ready") or 0) >= 1):
+                    # No named Play control: players draw a ▶ over the video (often a plain <div>). Click its middle.
+                    return Step("act", Action("play_media"), None, expect="media_playing",
+                                subgoal="starting the video (clicking its play button)")
                 # Paused and no Play control yet: the page is probably still rendering. Wait briefly, not for the
                 # whole lesson (a paused lesson never ends on its own).
-                memo["play_tries"] = memo.get("play_tries", 0) + 1
                 return Step("wait", wait_js="play_ready", timeout_s=10, subgoal="waiting for the lesson to load")
             remaining = (m.get("d") or 600) - (m.get("t") or 0)
             return Step("wait", wait_js="media_done", timeout_s=max(30.0, remaining * 1.5 + 30),
