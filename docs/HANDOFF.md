@@ -16,7 +16,13 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
   - `run_browser` (20 fixtures);
   - `run_windows` (13 native tasks × monkey / agent-desktop / windows-mcp);
   - `run_hybrid` (browser → Notepad + Save As → browser).
-- **Next:** see the backlog in the quality report.
+- **Measured on the GitHub Windows runner:**
+  - Monkey's UIA backend: 13/13 native tasks.
+  - agent-desktop: 8/12.
+  - Windows-MCP: 10/12, but it moved the real mouse in 8 of them.
+  - Browser fixtures: 20/20.
+  - The hybrid task with the real Notepad and Save As dialog passed in 8.7 s.
+- **Next:** the backlog in [the quality report](research/COMPUTER-USE-QUALITY.md) (a live model run on the Dell comes first).
 
 ## Computer tasks (merged to main 2026-11-20)
 - Computer tasks: a durable TaskManager, an execution-layer permission gate, a managed Edge browser through Playwright with the
