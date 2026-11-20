@@ -41,7 +41,7 @@ desktop = [
   "pywinauto>=0.6.9; sys_platform == 'win32'",
   "websockets>=13",          # the local bridge the Monkey for Chrome extension connects to
 ]
-dev = ["pytest>=8", "pyinstaller>=6.10"]
+dev = ["pytest>=8", "pytest-xdist>=3.6", "pyinstaller>=6.10"]
 
 [project.scripts]
 monkey = "monkey.__main__:main"
