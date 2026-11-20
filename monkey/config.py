@@ -54,6 +54,7 @@ class Settings:
     conversation_idle_s: int = 90     # ...which is when you say "thanks"/"bye", or after this many seconds of quiet
     trace_text: bool = False          # keep what you asked in local turn traces (routing evals); off = timings only
     early_commit: bool = True          # end your turn sooner when what you said is a finished thought (Voice 2.0)
+    fish_latency: str = "balanced"     # Fish TTS latency mode: "balanced" (default) or "low" (A/B on the Dell)
     end_silence: str = "normal"       # how long a pause ends your turn: "quick" 0.9 s | "normal" 1.4 s | "patient" 2 s
     # Brain
     monthly_budget_usd: float = 25.0

@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 STOP_PHRASES = ("monkey stop", "stop monkey")
-EARLY_MS = 480            # pause length that triggers a background transcription (early commit)
+EARLY_MS = 320            # pause length that starts a background transcription (early commit; ends no turn by itself)
 TRAIL_OFF_EXTRA_MS = 640  # extra wait when the words so far trail off
 SPEC_WAIT_S = 6.0         # longest we wait for an in-flight pause transcription before transcribing afresh
 

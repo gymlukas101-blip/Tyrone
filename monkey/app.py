@@ -274,7 +274,8 @@ class MonkeyApp:
         s = self.cfg.settings
         fish = FishTTS(lambda: keys.get("fish"), lambda: self.cfg.settings.fish_voice_id,
                        lambda: self.cfg.settings.fish_model, allow_free=lambda: self.cfg.settings.fish_allow_free,
-                       on_model_change=lambda m: self.cfg.update(fish_model=m))
+                       on_model_change=lambda m: self.cfg.update(fish_model=m),
+                       latency=lambda: self.cfg.settings.fish_latency)
         fish.enabled = lambda: self.cfg.settings.offline_voice != "only"
         self.offline_voice = self._make_offline_voice()
         self.speaker = Speaker(
