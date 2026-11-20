@@ -394,3 +394,75 @@ def test_extension_is_served_from_a_folder_updates_dont_replace(monkeypatch, tmp
     assert (p / "manifest.json").is_file() and (p / "background.js").is_file()
     (p / "background.js").write_text("old")                            # an older copy is refreshed on next start
     assert AutomationService.extension_folder() == p and (p / "background.js").read_text() != "old"
+
+
+import pytest as _pytest
+
+from monkey.automation.permissions import Action as _A, Risk as _R, Target as _T, classify as _classify
+
+
+@_pytest.mark.parametrize("keys,target,expected", [
+    ("Enter", _T(role="button", name="Send"), _R.HIGH),
+    ("Space", _T(role="button", name="Delete account"), _R.HIGH),
+    ("Enter", _T(role="button", name="Submit quiz"), _R.USER_ONLY),
+    ("Enter", _T(role="button", name="Continue"), _R.MEDIUM),           # never below MEDIUM for Enter
+    ("Enter", None, _R.MEDIUM),
+    ("Control+Enter", None, _R.HIGH),                                  # sends mail in Gmail/Outlook
+    ("Alt+S", None, _R.HIGH),
+    ("Delete", None, _R.HIGH),
+    ("Shift+Delete", None, _R.HIGH),
+    ("Alt+F4", None, _R.HIGH),
+    ("Control+W", None, _R.HIGH),
+    ("Tab", None, _R.LOW),
+    ("ArrowDown", None, _R.LOW),
+    ("Escape", None, _R.LOW),
+    ("x", None, _R.MEDIUM),                                            # unknown keys are never LOW
+    ("Control+K", None, _R.MEDIUM),
+    ("Tab Tab Enter", _T(role="button", name="Send"), _R.HIGH),        # a sequence takes its riskiest key
+])
+def test_key_presses_are_as_risky_as_what_they_press(keys, target, expected):
+    assert _classify(_A("press", target=target, text=keys))[0] == expected
+
+
+def test_enter_on_a_focused_send_button_asks_in_the_browser(tmp_path):
+    _pytest.importorskip("playwright")
+    from tools.automation_eval import browser_path
+
+    if browser_path() is None:
+        _pytest.skip("no Chromium here")
+    from monkey.automation.browser import BrowserSession
+    from monkey.automation.permissions import PermissionGate
+    from monkey.automation.tasks import Task
+
+    s = BrowserSession(tmp_path / "p", PermissionGate(), headless=True, channel=None,
+                       executable_path=browser_path(), allowed_domains=["*"]).start()
+    try:
+        s.page.set_content("<input aria-label='To'><button id=b onclick=\"document.title='sent'\">Send</button>")
+        s.page.focus("#b")
+        r = s.act(Task(objective="o", allowed_domains=["*"]), _A("press", text="Enter"))
+        assert not r.ok and r.decision.needs_approval
+        assert s.page.title() != "sent"
+    finally:
+        s.close()
+
+
+@_pytest.mark.parametrize("keys,target,expected", [
+    ("Tab", _T(role="button", name="Sign in"), _R.LOW),                         # regression: still just Tab
+    ("Escape", _T(role="button", name="Submit quiz"), _R.LOW),
+    ("PageDown", _T(role="textbox", name="Password", input_type="password", sensitive=True), _R.LOW),
+    ("ArrowDown", _T(role="radio", name="B) 1914", in_question=True), _R.USER_ONLY),
+    ("Space", _T(role="checkbox", name="All of the above", in_question=True), _R.USER_ONLY),
+    ("Enter", _T(role="textbox", name="Type a message"), _R.HIGH),
+    ("Enter", _T(role="textbox", name="Search"), _R.MEDIUM),
+    ("^{ENTER}", None, _R.HIGH),                                               # pywinauto syntax
+    ("%{F4}", None, _R.HIGH),
+    ("{DELETE}", None, _R.HIGH),
+    ("{TAB}", None, _R.LOW),
+])
+def test_key_press_edge_cases(keys, target, expected):
+    assert _classify(_A("press", target=target, text=keys))[0] == expected
+
+
+def test_typed_line_break_counts_as_enter():
+    assert _classify(_A("type", target=_T(role="textbox", name="Message"), text="hi\n"))[0] == _R.HIGH
+    assert _classify(_A("type", target=_T(role="textbox", name="Notes"), text="a\nb"))[0] == _R.MEDIUM

@@ -39,7 +39,7 @@ def test_no_temp_files_left(tmp_path):
     st = SecretStore(tmp_path / "s.dat")
     for i in range(5):
         st.set(f"k{i}", "v")
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["s.dat"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["s.dat", "s.dat.bak"]   # no temp files; one backup
 
 
 def test_keys_set_get_hint_status(monkeypatch):

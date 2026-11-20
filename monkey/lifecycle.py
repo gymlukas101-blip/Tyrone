@@ -23,23 +23,41 @@ def install_dir() -> Path | None:
     return Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else None
 
 
-def release_for_exit(app=None, timeout: float = 6.0) -> int:
-    """Close what Monkey started: computer-task sessions (gracefully, bounded), then any child processes left.
-    Returns how many child processes had to be ended."""
+def release_for_exit(app=None, timeout: float = 6.0, keep: set[int] | None = None) -> int:
+    """Close what Monkey started: computer-task sessions (gracefully, bounded), then any child processes left
+    (except `keep`, e.g. the helper that relaunches Monkey). Returns how many child processes had to be ended."""
     if app is not None and getattr(app, "automation", None) is not None:
         th = threading.Thread(target=lambda: _quiet(app.automation.shutdown), daemon=True)
         th.start()
         th.join(timeout)
-    return kill_children()
+    return kill_children(keep=keep)
 
 
-def kill_children(grace: float = 2.0) -> int:
+def spawn_detached(args: list[str], delay_s: float = 2.0):
+    """Start `args` after `delay_s`, in a process that outlives Monkey (its own process group / session)."""
+    import subprocess
+
+    if sys.platform == "win32":
+        # No DETACHED_PROCESS: combined with CREATE_NO_WINDOW it's ignored at best, and a fully detached cmd.exe gets
+        # no hidden console for `timeout` to read, which then fails instantly. A new process group outlives our exit.
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200) | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        cmd = f'cmd /c timeout /t {int(delay_s)} /nobreak >nul & start "" {subprocess.list2cmdline(args)}'
+        return subprocess.Popen(cmd, shell=False, creationflags=flags, close_fds=True)
+    return subprocess.Popen(["sh", "-c", f'sleep {delay_s}; exec "$@"', "sh", *args], start_new_session=True,
+                            close_fds=True)
+
+
+def kill_children(grace: float = 2.0, keep: set[int] | None = None) -> int:
     try:
         import psutil
     except ImportError:
         return 0
     try:
-        kids = psutil.Process().children(recursive=True)
+        keep = set(keep or ())
+        kids = [p for p in psutil.Process().children(recursive=True) if p.pid not in keep]
+        for k in list(kids):                           # nor anything the kept helper started
+            if any(a.pid in keep for a in _ancestors(k)):
+                kids.remove(k)
     except Exception:  # noqa: BLE001
         return 0
     for p in kids:
@@ -48,6 +66,13 @@ def kill_children(grace: float = 2.0) -> int:
     for p in alive:
         _quiet(p.kill)
     return len(kids)
+
+
+def _ancestors(p) -> list:
+    try:
+        return p.parents()
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def kill_leftovers(folder: Path | None = None) -> list[str]:

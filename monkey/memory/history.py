@@ -44,6 +44,26 @@ class Hit:
         return f"[{tag}{flag}] {self.text}"
 
 
+def _stem(w: str) -> str:
+    """Tiny stemmer so a fact's words match the user's own wording: live/lives/living/lived → "liv"."""
+    if len(w) > 4 and w.endswith("ies"):
+        w = w[:-3] + "y"
+    elif len(w) > 4 and w.endswith(("sses", "shes", "ches", "xes", "zes")):
+        w = w[:-2]
+    elif len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+        w = w[:-1]
+    for suf in ("ing", "ed"):
+        if len(w) > len(suf) + 2 and w.endswith(suf):
+            w = w[: -len(suf)]
+            break
+    return w[:-1] if len(w) > 3 and w.endswith("e") else w
+
+
+def _stems(text: str) -> list[str]:
+    """Whole words, lower-cased, stop words dropped, light stemming ("lives" → "live", but "olives" ≠ "live")."""
+    return [_stem(w) for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if w not in STOP]
+
+
 def terms(query: str) -> list[str]:
     words = re.findall(r"[a-z0-9]+", query.lower())
     out = []
@@ -226,6 +246,10 @@ class HistoryStore:
                 hits += self._search_episodes(c, q, query, limit, exclude_session)
             if scope in ("all", "conversations"):
                 hits += self._search_messages(c, q, query, limit, exclude_session)
+        if not include_sensitive:
+            # Health, family, money... from past chats are never surfaced unless asked for (persona rule), whether
+            # they sit in a fact, an episode summary or a raw message.
+            hits = [h for h in hits if not (h.sensitive or (h.kind != "fact" and F.SENSITIVE.search(h.text or "")))]
         # current facts first, then recency; FTS bm25 is negative (lower = better)
         hits.sort(key=lambda h: (h.status != "current", h.score, -_day_num(h.date)))
         return hits[:limit]
@@ -281,6 +305,38 @@ class HistoryStore:
         return c.execute(sql + f"({cond}) LIMIT ?", [f"%{t}%" for t in ts] + [limit]).fetchall()
 
     # ------------------------------------------------------------------ retention, export, delete
+    def forget(self, text: str) -> dict:
+        """Forget means forget: tombstone the fact and delete past messages and episode summaries that state it
+        (all of its distinctive words present), so neither search nor per-turn recall brings it back."""
+        self.tombstone(text)
+        fact = _stems(text)
+        need = max(1, -(-len(fact) * 4 // 5)) if fact else 0      # ceil(80%) of the distinctive words
+
+        def says_it(body: str) -> bool:
+            words = _stems(body or "")
+            if not fact or not words:
+                return False
+            if len(fact) <= 2:                    # short facts: the same words, in order, next to each other
+                n = len(fact)
+                return any(words[i:i + n] == fact for i in range(len(words) - n + 1))
+            have = set(words)                      # longer facts: most of the distinctive words, as whole words
+            return sum(1 for t in fact if t in have) >= need
+        msgs = eps = 0
+        with self._lock, self._conn() as c:
+            for r in c.execute("SELECT id, text FROM messages").fetchall():
+                if says_it(r["text"]):
+                    c.execute("DELETE FROM messages WHERE id = ?", (r["id"],))
+                    msgs += 1
+            for r in c.execute("SELECT session_id, summary, decisions, open_items FROM episodes").fetchall():
+                body = " ".join([r["summary"] or ""] + json.loads(r["decisions"] or "[]") +
+                                json.loads(r["open_items"] or "[]"))
+                if says_it(body):
+                    c.execute("DELETE FROM episodes WHERE session_id = ?", (r["session_id"],))
+                    if self.fts:
+                        c.execute("DELETE FROM episodes_fts WHERE session_id = ?", (r["session_id"],))
+                    eps += 1
+        return {"messages": msgs, "episodes": eps}
+
     def tombstone(self, text: str, kind: str = "fact") -> None:
         h = hashlib.sha256(F.normalize(text).encode()).hexdigest()
         with self._lock, self._conn() as c:

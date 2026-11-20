@@ -311,7 +311,7 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
 
     st, w = _safe(src.weather)
     if st == "ok" and w:
-        sections.append(Section("Weather", "ok", [str(w.get("summary") or w.get("short") or w)[:140]]))
+        sections.append(Section("Weather", "ok", [weather_line(w)]))
     else:
         sections.append(Section("Weather", "unavailable" if st != "not_connected" else st, [], "Weather unavailable."))
 
@@ -396,3 +396,27 @@ class MorningRoutine:
 
 def brief_json(b: dict) -> str:
     return json.dumps(b, indent=1, default=str)
+
+
+def weather_line(w: dict) -> str:
+    """One readable line from the real weather source ({location, periods: [{name, temp, short, wind}]}), e.g.
+    "Madison: Today 64°F, Sunny, wind 10 mph SW; Tonight 48°F". Older/other shapes with "summary" still work."""
+    if not isinstance(w, dict):
+        return str(w)[:140]
+    if w.get("summary") or (w.get("short") and not w.get("periods")):
+        return str(w.get("summary") or w.get("short"))[:140]
+    periods = w.get("periods") or []
+    if not periods:
+        return "Weather unavailable."
+    p0 = periods[0]
+    parts = [f"{p0.get('name', 'Now')} {p0.get('temp', '')}".strip()]
+    if p0.get("short"):
+        parts.append(str(p0["short"]))
+    if p0.get("wind"):
+        parts.append(f"wind {p0['wind']}")
+    line = ", ".join(parts)
+    if len(periods) > 1:
+        p1 = periods[1]
+        line += f"; {p1.get('name', '')} {p1.get('temp', '')}".rstrip()
+    loc = (w.get("location") or "").strip()
+    return (f"{loc}: {line}" if loc else line)[:160]

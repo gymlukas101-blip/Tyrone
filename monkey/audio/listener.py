@@ -145,12 +145,18 @@ class Listener:
             return self._stream_factory(self._callback)
         import sounddevice as sd
 
-        return sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16",
-                              blocksize=FRAME_SAMPLES, callback=self._callback)
+        from .devices import PA_LOCK
+
+        with PA_LOCK:
+            st = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16",
+                                blocksize=FRAME_SAMPLES, callback=self._callback)
+            st.start()
+            return st
 
     def start(self) -> None:
         self._stream = self._open_stream()
-        self._stream.start()
+        if self._stream_factory is not None:
+            self._stream.start()
         self._last_frame = time.monotonic()
         self._thread = threading.Thread(target=self._loop, name="listener", daemon=True)
         self._thread.start()
@@ -160,13 +166,16 @@ class Listener:
         self._close_stream()
 
     def _close_stream(self) -> None:
-        st, self._stream = self._stream, None
-        if st is not None:
-            try:
-                st.stop()
-                st.close()
-            except Exception:  # noqa: BLE001
-                pass
+        from .devices import PA_LOCK
+
+        with PA_LOCK:
+            st, self._stream = self._stream, None
+            if st is not None:
+                try:
+                    st.stop()
+                    st.close()
+                except Exception:  # noqa: BLE001
+                    pass
 
     def push_to_talk(self) -> None:
         """Start recording immediately (hotkey or mic button)."""
@@ -216,12 +225,12 @@ class Listener:
         self._close_stream()
         try:
             if self._stream_factory is None:
-                import sounddevice as sd
+                from .devices import reset_portaudio
 
-                sd._terminate()          # refresh the device list (new default after plugging in a headset)
-                sd._initialize()
+                reset_portaudio()        # refresh the device list; the speaker reopens its stream too
             self._stream = self._open_stream()
-            self._stream.start()
+            if self._stream_factory is not None:
+                self._stream.start()
             self._last_frame = time.monotonic()
             self._reopens = 0
             if self.on_reconnect is not None:

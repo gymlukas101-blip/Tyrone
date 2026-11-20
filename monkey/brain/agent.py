@@ -246,7 +246,8 @@ class Agent:
         if self.ledger is None or not self.persist:
             return
         try:
-            self.history = [{"role": m["role"], "content": [_jsonable(b) for b in m["content"]]
+            # Keep every key (an effort message carries `output_config`); only the content blocks are normalised.
+            self.history = [{**m, "content": [_jsonable(b) for b in m["content"]]
                              if isinstance(m["content"], list) else m["content"]} for m in self.history]
             self.ledger.put_state(STATE_KEY, {"history": self.history, "conv_effort": self._conv_effort,
                                               "effort_now": self._effort_now, "session_id": self.session_id,

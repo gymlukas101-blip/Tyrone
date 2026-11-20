@@ -177,6 +177,9 @@ class MonkeyApp:
         handlers: list[logging.Handler] = [handler]
         if sys.stderr is not None:  # a windowed .exe has no console
             handlers.append(logging.StreamHandler())
+        from . import logsafe
+
+        logsafe.install(handlers)             # no API keys, tokens, private calendar links or emails in the log
         logging.basicConfig(level=logging.INFO, handlers=handlers,
                             format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -190,7 +193,9 @@ class MonkeyApp:
         sig = (key, ws)
         if self.client is None or getattr(self, "_client_sig", None) != sig:
             headers = {workspace.HEADER: ws} if ws else None
-            self.client = anthropic.Anthropic(api_key=key, max_retries=2, default_headers=headers)
+            # SDK default is a 600 s read timeout: a stalled connection would freeze Monkey for 10 minutes.
+            self.client = anthropic.Anthropic(api_key=key, max_retries=2, default_headers=headers,
+                                              timeout=anthropic.Timeout(120.0, connect=5.0))
             self._client_sig = sig
             self.agent.client = self.client
             self.services.anthropic_client = self.client
@@ -534,9 +539,11 @@ class MonkeyApp:
         self._publish_state()
 
     def _on_wake(self) -> None:
+        # Cancel the reply first, *then* silence the speaker: the other order lets a sentence the agent finishes in
+        # between get queued again, and he talks over what you're saying.
+        self.agent.cancel()
         if self.speaker:
             self.speaker.stop()
-        self.agent.cancel()
         self._start_conversation()
         self._listening = True
         self.ui.emit("wake", {})
@@ -1717,19 +1724,16 @@ class Api:
         """Relaunch Monkey (after an import). Waits for this copy to exit so the single-instance lock is free."""
         exe = sys.executable
         args = [exe, *sys.argv[1:]] if getattr(sys, "frozen", False) else [exe, "-m", "monkey"]
-        try:
-            if sys.platform == "win32":
-                cmdline = subprocess.list2cmdline(args)
-                subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" {cmdline}', shell=False,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            else:
-                subprocess.Popen(["sh", "-c", 'sleep 2; exec "$@"', "sh", *args])
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{exc}. Quit Monkey from the tray and open it again."}
         from . import lifecycle
 
+        try:
+            helper = lifecycle.spawn_detached(args, delay_s=2)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{exc}. Quit Monkey from the tray and open it again."}
+
         def bye():
-            lifecycle.release_for_exit(self._app)
+            # The relaunch helper is detached *and* excluded: cleaning up Monkey's children must not kill it.
+            lifecycle.release_for_exit(self._app, keep={helper.pid})
             os._exit(0)
         threading.Timer(0.3, bye).start()
         return {"ok": True}

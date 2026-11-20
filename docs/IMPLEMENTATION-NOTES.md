@@ -354,3 +354,32 @@ Now (`monkey/memory/export.py`):
   - If an update attempt didn't take, Monkey says so once and asks you to press Restart & update again.
   - Tests: `tests/test_lifecycle.py`.
 - **For a machine already stuck on an older build:** end `node.exe` in Task Manager (or reboot), then Restart & update.
+
+## 2026-11-20: flagship program, Milestone 1 (reliability and safety)
+- **Audit:** four independent audits (`docs/MONKEY-OPTIMIZATION-AUDIT.md`).
+- **Fixed, each with a regression test:**
+  - key-press approval bypass (P0);
+  - forget now purges history and episodes;
+  - sensitive content kept out of automatic recall;
+  - effort messages keep `output_config` when the conversation is saved;
+  - the key store never erases keys;
+  - logs are redacted;
+  - email voice confirmation is strict and reads back CC;
+  - the injection guard lasts the whole conversation, and outside links aren't opened;
+  - no remote media in markdown;
+  - Claude and classifier timeouts;
+  - the speaker reopens after a PortAudio reset, and wake cancels the reply before silencing the speaker;
+  - brief weather line;
+  - restart helper detached;
+  - "Any website" data-out check.
+- **Docs:** `docs/MONKEY-ARCHITECTURE-DECISIONS.md`, `docs/MONKEY-OPTIMIZATION-ROADMAP.md`, `docs/MONKEY-EVALUATION-BASELINE.md`.
+- **Independent review, then fixed before the merge:**
+  - key presses are scored before the target checks (Tab on a focused "Sign in" is just Tab); pywinauto key syntax (`^{ENTER}`, `%{F4}`) is understood; a line break in typed text counts as Enter; arrows/Space on quiz options are yours; Enter in a message box asks;
+  - the data-out check skips pages with nothing loaded, counts long paths, and compares sites properly for `.co.uk`/`.ac.uk`;
+  - "Yes. Send it.", "Yes, perfect." and "send it now" confirm; "yes, send it to everyone" doesn't;
+  - audio: the speaker closes its stream before PortAudio resets, reopens once, retries when no output device was available, and the microphone opens and closes under the same lock;
+  - the restart helper is no longer fully detached (its `timeout` needs a hidden console);
+  - the classifier has no SDK retries, so its 4 s cap holds;
+  - a deleted key file means no keys (the backup only covers a file that exists but can't be read);
+  - docs: statuses say what is tested and where; the roadmap puts measurement and supply chain before new UI.
+- **Tested in the container only.** Audio reopen and the update restart still need a check on the Dell.

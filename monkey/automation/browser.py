@@ -74,6 +74,20 @@ _STATE_JS = """([nextRe, playRe]) => {
   const nx = new RegExp(nextRe, 'i'), pl = new RegExp(playRe, 'i');
   return {media, next: btns.some(b => nx.test(name(b)) && !off(b)), play: btns.some(b => pl.test(name(b)) && !off(b))};
 }"""
+_FOCUS_JS = """() => { let el = document.activeElement;
+  while (el) { const inner = (el.shadowRoot && el.shadowRoot.activeElement) ||
+    (el.tagName === 'IFRAME' && (() => { try { return el.contentDocument.activeElement } catch (e) { return null } })());
+    if (!inner || inner === el) break; el = inner; }
+  if (!el || el === document.body) return {};
+  const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || '').toLowerCase();
+  const role = el.getAttribute('role') || ({a: 'link', button: 'button', select: 'combobox', textarea: 'textbox'}[tag] ||
+    (tag === 'input' ? (['submit', 'button', 'reset'].includes(type) ? 'button' : ['checkbox', 'radio'].includes(type) ?
+    type : 'textbox') : ''));
+  const label = el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) ||
+    (['submit', 'button'].includes(type) ? el.value : '') || el.innerText || el.getAttribute('title') || '';
+  const q = el.closest('fieldset, [role=radiogroup], .question, [data-question]');
+  return {role, name: String(label).trim().slice(0, 120), type, href: el.getAttribute('href') || '', inQuestion: !!q}; }"""
+
 _POINT_JS = """([x, y]) => { const el = document.elementFromPoint(x, y); if (!el) return null;
   const c = el.closest('a,button,input,select,textarea,[role],label') || el;
   return {role: c.getAttribute('role') || ({A:'link',BUTTON:'button',INPUT:(c.type==='checkbox'?'checkbox':c.type==='radio'?'radio':'textbox'),
@@ -463,6 +477,8 @@ class BrowserSession:
         """Authorize, then perform. A refused action is reported, never performed."""
         if el is not None and action.target is None:
             action.target = el.target()
+        if action.kind == "press" and action.target is None:
+            action.target = self.focused_target()      # Enter on a focused "Send" is pressing "Send"
         d = self.gate.authorize(scope, action, page_url=self.page.url if self.page else "", paused=paused)
         if not d.allowed:
             return ActResult(False, d.reason, d)
@@ -534,6 +550,18 @@ class BrowserSession:
             self.page.mouse.click(x, y)
         finally:
             c.release()
+
+    def focused_target(self) -> Target | None:
+        """What a key press would act on: the focused element (through open shadow roots and same-origin frames)."""
+        try:
+            info = self.page.evaluate(_FOCUS_JS) or {}
+        except Exception:  # noqa: BLE001
+            return None
+        if not info.get("role") and not info.get("name"):
+            return None
+        return Target(role=info.get("role", ""), name=info.get("name", ""), input_type=info.get("type", ""),
+                      href=info.get("href", ""), sensitive=info.get("type") == "password",
+                      in_question=bool(info.get("inQuestion")))
 
     def target_at(self, x: int, y: int) -> Target:
         info = self.page.evaluate(_POINT_JS, [x, y]) or {}

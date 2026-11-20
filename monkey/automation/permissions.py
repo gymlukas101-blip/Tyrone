@@ -102,6 +102,13 @@ def classify(action: Action) -> tuple[Risk, str]:
         return Risk.LOW, "reading"
     if action.kind == "navigate":
         return Risk.LOW, "opening an allowed page"
+    if action.kind == "press":
+        # Scored by the key *and* what it lands on (Tab on a focused "Sign in" is still just Tab).
+        return _press_risk(action.text, action.target)
+    if action.kind == "type" and "\n" in (action.text or ""):
+        r, why = _press_risk("Enter", action.target)       # a line break in typed text presses Enter
+        if r > Risk.MEDIUM:
+            return r, why
     if t.sensitive or t.input_type in ("password",) or (action.kind == "type" and SENSITIVE_FIELD.search(name)):
         return Risk.FORBIDDEN, "sensitive field (passwords, codes and card numbers are yours to type)"
     if action.kind in ("type", "select") and t.in_question:
@@ -114,8 +121,8 @@ def classify(action: Action) -> tuple[Risk, str]:
         return Risk.USER_ONLY, "ticking a statement about you is yours to do"
     if action.kind == "type":
         return Risk.MEDIUM, "editing a field (nothing is submitted)"
-    if action.kind in ("select", "press"):
-        return (Risk.MEDIUM, "choosing an option") if action.kind == "select" else _press_risk(action.text)
+    if action.kind == "select":
+        return Risk.MEDIUM, "choosing an option"
     if HIGH_WORDS.search(t.name or ""):
         return Risk.HIGH, "this sends, submits, buys, deletes or changes something"
     if MEDIUM_WORDS.search(t.name or ""):
@@ -127,11 +134,91 @@ def classify(action: Action) -> tuple[Risk, str]:
     return Risk.MEDIUM, "an unfamiliar control"
 
 
-def _press_risk(keys: str) -> tuple[Risk, str]:
-    k = (keys or "").lower()
-    if k in ("enter", "return") or "enter" in k:
-        return Risk.MEDIUM, "Enter can submit a form"
-    return Risk.LOW, "a navigation key"
+# Keys that send, delete or close things on their own (mail clients, editors, browsers, Explorer).
+_DANGER_KEYS = re.compile(r"^(?:(?:control|ctrl|meta|cmd)\+(?:shift\+)?(?:enter|return|w|q|d|delete)|"
+                          r"alt\+(?:s|f4|enter|return)|(?:shift\+)?(?:delete|del)|control\+shift\+w)$", re.I)
+_NAV_KEYS = {"tab", "shift+tab", "arrowup", "arrowdown", "arrowleft", "arrowright", "up", "down", "left", "right",
+             "pageup", "pagedown", "home", "end", "escape", "esc"}
+_ACTIVATE_KEYS = {"enter", "return", "space", " ", "numpadenter", "spacebar"}
+
+
+_PYWIN = {"^": "control+", "%": "alt+", "+": "shift+"}
+_COMPOSER = re.compile(r"\b(message|reply|comment|post|chat|tweet|send|compose|write a)\b", re.I)
+
+
+def normalize_keys(keys: str) -> list[str]:
+    """Playwright names ("Control+Enter Tab") and pywinauto syntax ("^{ENTER}", "%{F4}", "{DELETE}") → one form."""
+    k = (keys or "").strip()
+    if "{" in k or (k[:1] in _PYWIN and len(k) > 1):
+        out = []
+        for m in re.finditer(r"([\^%+]*)(\{[^}]+\}|.)", k):
+            mods = "".join(_PYWIN[c] for c in m.group(1))
+            key = m.group(2).strip("{}").split()[0] if m.group(2).startswith("{") else m.group(2)
+            if key.strip():
+                out.append(mods + key.lower())
+        return out
+    return [x for x in re.split(r"[\s,]+", k) if x]
+
+
+def _press_risk(keys: str, target: Target | None = None) -> tuple[Risk, str]:
+    """A key press is as risky as what it does: Enter/Space on a focused control *is* pressing that control (so
+    "Send", "Submit quiz", "Delete account" get their own risk), and some chords send/delete/close by themselves.
+    Several keys in one press ("Tab Tab Enter") take the riskiest one. Unknown keys are MEDIUM, never LOW."""
+    worst: tuple[Risk, str] = (Risk.LOW, "a navigation key")
+    t = target
+    for k in normalize_keys(keys) or [""]:
+        kl = k.lower()
+        if _DANGER_KEYS.match(kl):
+            r = (Risk.HIGH, f"{k} can send, delete or close something")
+        elif kl in _NAV_KEYS:
+            # Arrow keys on a quiz option change the answer; elsewhere they just move.
+            if t is not None and t.in_question and t.role in ("radio", "option", "checkbox", "combobox", "listbox") \
+                    and kl not in ("tab", "shift+tab", "escape", "esc"):
+                r = (Risk.USER_ONLY, "an answer to a question is yours to give")
+            else:
+                r = (Risk.LOW, "a navigation key")
+        elif kl in ("space", " ", "spacebar") and t is not None and t.in_question:
+            r = (Risk.USER_ONLY, "an answer to a question is yours to give")
+        elif kl in ("enter", "return", "numpadenter") and t is not None and \
+                t.role in ("textbox", "searchbox", "combobox") and _COMPOSER.search(t.name or ""):
+            r = (Risk.HIGH, "Enter here sends the message")
+        elif kl in _ACTIVATE_KEYS or kl.endswith("+enter") or kl.endswith("+return"):
+            if target is not None and (target.name or target.role):
+                cr, why = classify(Action("click", target=target))
+                r = (max(cr, Risk.MEDIUM), why if cr > Risk.MEDIUM else "Enter/Space presses the focused control")
+            else:
+                r = (Risk.MEDIUM, "Enter can submit a form")
+        else:
+            r = (Risk.MEDIUM, "a key that may change something")
+        if r[0] > worst[0]:
+            worst = r
+    return worst
+
+
+_SECOND_LEVEL = {"co", "com", "ac", "org", "net", "gov", "edu", "ne", "or"}
+
+
+def registrable(host: str) -> str:
+    """example.co.uk / attacker.example — the part a site owner controls (small public-suffix heuristic)."""
+    parts = [p for p in (host or "").lower().rstrip(".").split(".") if p]
+    if len(parts) >= 3 and parts[-2] in _SECOND_LEVEL and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def _looks_like_data_out(url: str, page_url: str) -> bool:
+    """A typed address to another site that carries a lot of data (query, fragment or a long path)."""
+    try:
+        u = urlsplit(url if re.match(r"[a-z][a-z0-9+.-]*:", url or "", re.I) else f"https://{url}")
+        cur = (urlsplit(page_url).hostname or "") if page_url else ""
+    except ValueError:
+        return True
+    if not cur:
+        return False                      # nothing loaded yet (about:blank, the start page): no page data to carry
+    host = (u.hostname or "").lower()
+    if registrable(host) == registrable(cur):
+        return False
+    return len(u.path) + len(u.query) + len(u.fragment) > 80
 
 
 def url_allowed(url: str, allowed_domains: list[str]) -> tuple[bool, str]:
@@ -195,6 +282,13 @@ class PermissionGate:
             ok, msg = url_allowed(action.url, scope.allowed_domains)
             if not ok:
                 return Decision(False, Risk.FORBIDDEN, msg)
+            if "*" in (scope.allowed_domains or []) and _looks_like_data_out(action.url, page_url):
+                # "Any website" is the owner's choice, so ordinary navigation never asks. But a typed address to a
+                # *different* site that carries a long query string is the shape of page-steered data theft: ask.
+                if self._consume(scope.id, action.fingerprint(page_url)):
+                    return Decision(True, Risk.HIGH, "you approved this")
+                return Decision(False, Risk.HIGH, "this opens another site with a lot of data in the address",
+                                needs_approval=True)
         if action.target is not None and action.target.href and not action.target.href.startswith("#"):
             from urllib.parse import urljoin
 

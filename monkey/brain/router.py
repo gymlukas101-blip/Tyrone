@@ -160,6 +160,8 @@ CLASSIFIER_PROMPT = (
 
 def classify_with_haiku(client, text: str) -> tuple[str, int, bool, str, object]:
     """Returns (task, difficulty, needs_web, reason, usage)."""
+    if hasattr(client, "with_options"):
+        client = client.with_options(max_retries=0)   # the SDK's 2 retries would turn the 4 s cap into ~13 s
     resp = client.messages.parse(
         model=HAIKU,
         max_tokens=1024,
@@ -167,6 +169,7 @@ def classify_with_haiku(client, text: str) -> tuple[str, int, bool, str, object]
         system=CLASSIFIER_PROMPT,
         messages=[{"role": "user", "content": f"<request>{text[:2000]}</request>"}],
         output_format=TaskGuess,
+        timeout=4.0,              # a slow classifier must not hold up the reply: past this it's "general"
     )
     g: TaskGuess = resp.parsed_output
     return g.task, max(1, min(5, int(g.difficulty))), bool(g.needs_web), g.reason, resp.usage

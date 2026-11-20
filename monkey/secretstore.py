@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 _IS_WIN = sys.platform == "win32"
@@ -78,14 +79,36 @@ class SecretStore:
 
     # Re-read the file on every call: it's tiny, and it means a value saved by another Monkey process
     # (or before a restart) is always what we see.
-    def _load(self) -> dict[str, str]:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-        except FileNotFoundError:
-            return {}
+    def _load(self, strict: bool = False) -> dict[str, str]:
+        """The saved secrets. A missing file is empty. Any *other* read problem (antivirus or OneDrive holding the
+        file, another Monkey process mid-write) is retried, then the last good backup is used; with `strict` (every
+        write) it raises instead, so a hiccup can never turn into "save {} over all your keys"."""
+        last: Exception | None = None
+        for attempt in range(4):
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict):
+                    raise ValueError("not a key file")
+                return {str(k): str(v) for k, v in data.items()}
+            except FileNotFoundError:
+                return {}                           # no key file (fresh install or deliberately deleted): no keys.
+                                                    # The backup only covers a file that exists but can't be read.
+            except (OSError, ValueError) as exc:
+                last = exc
+                time.sleep(0.05 * (attempt + 1))
+        try:                                        # fall back to the last good copy
+            data = json.loads(self._backup.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
         except (OSError, ValueError):
-            return {}
+            pass
+        if strict:
+            raise OSError(f"Monkey couldn't read its key file safely ({type(last).__name__}); nothing was changed")
+        return {}
+
+    @property
+    def _backup(self) -> Path:
+        return self.path.with_name(self.path.name + ".bak")
 
     def _save(self, data: dict[str, str]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,6 +119,12 @@ class SecretStore:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.path)
+            try:                                    # a second copy of the file just written: the last good state
+                import shutil
+
+                shutil.copy2(self.path, self._backup)
+            except OSError:
+                pass
         except BaseException:
             try:
                 os.unlink(tmp)
@@ -114,13 +143,13 @@ class SecretStore:
 
     def set(self, name: str, value: str) -> None:  # noqa: A003
         with self._lock:
-            data = self._load()
+            data = self._load(strict=True)
             data[name] = _protect(value.encode("utf-8"))
             self._save(data)
 
     def delete(self, name: str) -> None:
         with self._lock:
-            data = self._load()
+            data = self._load(strict=True)
             if data.pop(name, None) is not None:
                 self._save(data)
 

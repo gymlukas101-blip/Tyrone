@@ -42,7 +42,16 @@ _SEND_INTENT = re.compile(
     r"(?:go ahead and |please )?(send it|send that|send the (?:e-?mail|draft|message)|ship it|fire (?:it|that) off)\b",
     re.I,
 )
-_CONFIRM = re.compile(r"^\s*(?:yes|yeah|yep|yup|confirm(?:ed)?|do it|send|correct|that'?s right|bet)\b", re.I)
+# A confirmation must be *only* a yes (a few filler words allowed). "yes, but make it shorter" is an edit request,
+# not a send; anything that isn't a clean yes leaves the draft unsent.
+_YES_WORDS = r"(?:yes|yeah|yep|yup|confirm(?:ed)?|do it|send it|send|correct|that'?s right|bet|go ahead|perfect)"
+_FILLER = r"(?:please|now|thanks|thank you|ok(?:ay)?|sure|great|looks good|sounds good)"
+# The whole utterance is yes-words and filler (any punctuation between them) with at least one yes-word:
+# "Yes. Send it.", "Yes, perfect.", "Send it now" pass; "yes but make it shorter" does not.
+_CONFIRM = re.compile(rf"^[\s,.!]*(?:{_FILLER}[\s,.!]+)*{_YES_WORDS}(?:[\s,.!]+(?:{_YES_WORDS}|{_FILLER}))*[\s,.!]*$",
+                      re.I)
+_HEDGE = re.compile(r"\b(but|change|edit|fix|first|instead|shorter|longer|add|remove|wait|actually|except|rewrite)\b",
+                    re.I)
 _CANCEL = re.compile(r"\b(cancel|don'?t send|do not send|hold (?:up|on)|wait|never ?mind|stop|no)\b", re.I)
 
 CONFIRM_WINDOW_S = 60
@@ -117,7 +126,7 @@ class ApprovalGate:
             if _CANCEL.search(text):
                 self.cancel(d.draft_id)
                 return "cancelled", "Aight, I won't send it. The draft's still saved."
-            if _CONFIRM.search(text):
+            if _CONFIRM.search(text) and not _HEDGE.search(text):
                 try:
                     self._send(d)
                     return "sent", f"Done. Sent to {self._who(d)}."
@@ -137,7 +146,13 @@ class ApprovalGate:
     # ---- internals ---------------------------------------------------
     @staticmethod
     def _who(d: PendingDraft) -> str:
-        return ", ".join(d.to) if d.to else "nobody"
+        """Everyone who will get it, read back before sending: To, then CC (by name, or a count past three)."""
+        to = ", ".join(d.to) if d.to else "nobody"
+        cc = list(getattr(d, "cc", None) or [])
+        if not cc:
+            return to
+        cc_txt = ", ".join(cc) if len(cc) <= 3 else f"{len(cc)} people ({', '.join(sorted({c.split('@')[-1] for c in cc}))})"
+        return f"{to}, with a copy to {cc_txt}"
 
     def _send(self, d: PendingDraft) -> PendingDraft:
         sender = self._senders.get(d.account)
