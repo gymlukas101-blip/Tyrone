@@ -12,6 +12,7 @@ import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
+import { flash, pop, pulse, shake } from "./feedback";
 import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
@@ -417,18 +418,33 @@ function healthCard(hd: any) {
 }
 
 // ------------------------------------------------------------------ events from Python
+let lastVoice = "idle";
+let lastConversation = false;
+let stoppedAt = 0;
 function onEvent(name: string, p: any) {
+  if (name === "stopped") stoppedAt = performance.now();
   // A reply, a new card or a draft to approve must never land behind the Today view: go back to the chat.
   if (todayOpen() && ["user", "delta", "panel", "draft", "emails", "calendar", "images", "approval"].includes(name)) {
     toggleToday(false, false);
   }
   switch (name) {
     case "state":
+      if (p.state === "transcribing" && lastVoice === "listening") { pulse($("#stateLabel")); pop("👂 Got it"); }
+      if (lastConversation && p.conversation === false) pop("👋 Talk soon");
+      if (p.conversation !== undefined) lastConversation = !!p.conversation;
+      lastVoice = p.state;
       setState(p.state);
       if (p.state === "idle") botBubble = null;
       $("#convChip").hidden = !(p.conversation && p.state === "listening");
       break;
     case "level": avatar.setLevel(p.v); break;
+    case "ack": {                      // the reply is slow to start: one short "hmm" from his own vocal kit, no words
+      const a3 = (window as any).__monkeyAvatarObj;
+      a3?.sfx?.play?.("vocal/hmm", 0.7);
+      pop("💭 Hmm…");
+      break;
+    }
+    case "stopped": pop("✋ Stopped", "warn"); shake($("#stateLabel")); break;
     case "visemes": avatar.setVisemes(p); break;
     case "user": addMsg("user", p.text); botBubble = null; break;
     case "delta": {
@@ -485,18 +501,25 @@ function onEvent(name: string, p: any) {
         h("a", { href: s.url, onclick: (e: Event) => { e.preventDefault(); api.open_url(s.url); } }, s.title || s.url))));
       break;
     case "opened": addMsg("sys", `Opened ${p.url}`); break;
-    case "memory": if (appState.settings.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`); break;
+    case "memory":
+      pop(p.command === "forget" ? "🧠 Forgotten" : p.command === "update" ? "🧠 Updated" : "🧠 Remembered", "good");
+      if (appState?.settings?.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`);
+      break;
     case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
-    case "warning": addMsg("sys", "⚠ " + p.message); break;
+    case "warning": addMsg("sys", "⚠ " + p.message); flash("warn"); break;
     case "automation": { const m = automationEvent(p); moodEmote(m); resolver.setMood(m); break; }
     case "automation_propose": void openTasks(p); break;
     case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
     case "automation_enabled": void refreshTasks(); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
-    case "heard": if (!p.text) addMsg("sys", "Didn't catch that."); break;
-    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); break;
-    case "hint": $("#hint").textContent = p.text; break;
+    case "heard": if (!p.text) { addMsg("sys", "Didn't catch that."); pop("❓ Didn't catch that"); } break;
+    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
+    case "hint":
+      $("#hint").textContent = p.text;
+      if (/^🎙/.test(p.text)) pop("🎙 Mic back", "good");
+      else if (p.text === "Stopped." && performance.now() - stoppedAt > 1000) pop("✋ Stopped", "warn");
+      break;
   }
 }
 window.__monkeyEvents = (events) => { for (const [n, p] of events) { try { onEvent(n, p); } catch (e) { console.error(n, e); } } };
