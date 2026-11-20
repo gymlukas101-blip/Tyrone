@@ -195,6 +195,21 @@ async function showHistory(taskId: string) {
   dlg.showModal();
 }
 
+function browserPick(st: AutoState): HTMLElement {
+  const sel = h("select", {},
+    h("option", { value: "chrome", selected: (st.browser ?? "chrome") === "chrome" }, "Google Chrome"),
+    h("option", { value: "edge", selected: st.browser === "edge" }, "Microsoft Edge")) as HTMLSelectElement;
+  sel.addEventListener("change", async () => {
+    await api.save_settings({ automation_browser: sel.value });
+    if (state) state.browser = sel.value;
+    toast(sel.value === "chrome" && st.chrome_installed === false ? "Chrome isn't installed, so Monkey will use Edge until it is." : "Saved. The next task opens in it.", 4000);
+  });
+  const note = st.windows_supported && (st.browser ?? "chrome") === "chrome" && st.chrome_installed === false
+    ? " Chrome isn't installed on this PC, so Edge is used." : "";
+  return h("label", { class: "field" }, h("span", {}, "Monkey's browser"), sel,
+    h("small", { class: "meta" }, `His own window and profile (sign in there once); your normal browser isn't touched.${note}`));
+}
+
 /** The Tasks dialog: on/off switch, the permission flow, the live panel and past tasks. */
 export async function openTasks(prefill?: { objective?: string; start_url?: string }) {
   await refresh();
@@ -260,6 +275,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     appBox,
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
+    browserPick(st),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
     h("label", { class: "field toggle" }, helpers, h("span", {}, "Also allow the sign-in and video sites courses use (your school's login, Duo, Microsoft, Canvas, Kaltura, Panopto, YouTube, Vimeo). Anything else, he asks you first.")),
     h("label", { class: "field toggle" }, askMore, h("span", {}, "Ask me before he types into or saves anything, too")),

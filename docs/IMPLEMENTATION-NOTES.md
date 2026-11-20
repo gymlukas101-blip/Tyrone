@@ -333,3 +333,11 @@ Now (`monkey/memory/export.py`):
   - After an approval, redo exactly the approved call right away.
   - WinForms controls without a Name get a numeric AutomationId that changes when the control is recreated; identity falls back to role + name, if unique.
   - A label with an AccessibleName hides its text changes from UIA.
+## 2026-11-20: Monkey's browser is Chrome first
+- **Setting:** `automation_browser` = `chrome` (default) or `edge`.
+  - `pick_channel()` uses Chrome when it is installed (Program Files, LocalAppData, or the App Paths registry), else Edge.
+  - Chooser in 🖐 Tasks.
+- **Separate profiles:**
+  - `automation-browser-chrome` for Chrome;
+  - Edge keeps `automation-browser`, so its earlier sign-ins aren't lost.
+- First Chrome run means signing in once (NetID/Duo).

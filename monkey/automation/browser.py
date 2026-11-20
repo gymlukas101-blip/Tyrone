@@ -1,7 +1,8 @@
 """The managed browser: a Playwright persistent context on an isolated Monkey profile.
 
-* Windows: Microsoft Edge that is already installed (`channel="msedge"`), so nothing extra is downloaded. The profile
-  lives in %LOCALAPPDATA%\\Monkey\\automation-browser, never the user's own Chrome/Edge profile (Chrome 136+ refuses
+* Windows: Google Chrome if it's installed (the owner's preference), else Microsoft Edge (always there); nothing
+  extra is downloaded. Each has its own Monkey profile in %LOCALAPPDATA%\\Monkey\\automation-browser[-chrome], never
+  the user's own Chrome/Edge profile (Chrome 136+ refuses
   remote control of the default profile, and we never copy cookies or passwords out of it). Playwright talks to the
   browser over a pipe, so there is no open DevTools port on the machine.
 * Elements are addressed by Playwright's AI accessibility snapshot refs (`[ref=e12]`), re-found by role + name when
@@ -155,9 +156,42 @@ class ActResult:
     decision: Decision | None = None
 
 
-def default_profile_dir(data_dir: Path) -> Path:
+def chrome_installed() -> bool:
+    """Google Chrome (stable) on this PC: the per-machine or per-user install, or its App Paths registration."""
+    if sys.platform != "win32":
+        return False
+    for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("LOCALAPPDATA")):
+        if base and (Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe").is_file():
+            return True
+    try:
+        import winreg
+
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                with winreg.OpenKey(root, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as k:
+                    if Path(winreg.QueryValue(k, None)).is_file():
+                        return True
+            except OSError:
+                continue
+    except ImportError:
+        pass
+    return False
+
+
+def pick_channel(preference: str = "chrome") -> str:
+    """Playwright channel for Monkey's browser: the preferred one if installed, else the other (Edge ships with
+    Windows, so it's always the fallback)."""
+    if preference == "edge":
+        return "msedge"
+    return "chrome" if chrome_installed() else "msedge"
+
+
+def default_profile_dir(data_dir: Path, channel: str = "msedge") -> Path:
+    """Separate profiles per browser (a Chrome and an Edge profile can't share a folder). Edge keeps the original
+    folder so its existing sign-ins survive."""
+    name = "automation-browser-chrome" if channel == "chrome" else "automation-browser"
     local = os.environ.get("LOCALAPPDATA")
-    return (Path(local) / "Monkey" / "automation-browser") if local else (Path(data_dir) / "automation-browser")
+    return (Path(local) / "Monkey" / name) if local else (Path(data_dir) / name)
 
 
 class BrowserSession:
@@ -169,7 +203,7 @@ class BrowserSession:
         self.profile_dir = str(profile_dir)
         self.gate = gate
         self.headless = headless
-        self.channel = channel if channel is not None else ("msedge" if sys.platform == "win32" else None)
+        self.channel = channel if channel is not None else (pick_channel() if sys.platform == "win32" else None)
         self.executable_path = executable_path or os.environ.get("MONKEY_BROWSER_PATH") or None
         self.allowed_domains: list[str] = list(allowed_domains or [])
         self._pw = None
