@@ -44,6 +44,7 @@ opinion                    4.57   2.40   1.44→1.12 0.63→0.00   0.05    0.55 
 chat                       4.73   2.34   1.84→1.04 0.54→0.00   0.05    0.55 0.15→0.15 0.80→0.55
 
 p50: 4.26 s → 2.39 s   p95: 4.81 s → 3.10 s
+(after starting the pause transcription at 320 ms instead of 480, per the research: p50 2.23 s, p95 2.94 s)
 cut-offs during mid-thought pauses: 1 → 0
 classifier calls on the critical path: 3 → 0
 ```
