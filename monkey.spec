@@ -11,7 +11,11 @@ datas = [
     ("monkey/skills", "monkey/skills"),
     ("monkey/automation/cursor", "monkey/automation/cursor"),     # banana cursor: svg, controller js, pngs, manifest
     ("extension/chrome", "extension/chrome"),                     # Monkey for Chrome (load unpacked from here)
+    ("THIRD_PARTY_NOTICES.md", "."),                               # models, data and web-library licenses
 ]
+import os
+if os.path.exists("THIRD_PARTY_LICENSES.txt"):                    # generated in CI by tools/notices.py
+    datas.append(("THIRD_PARTY_LICENSES.txt", "."))
 # playwright: its driver (node + package) drives the installed Microsoft Edge for computer tasks; no browser is bundled.
 for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi", "_sounddevice_data", "playwright"):
     try:

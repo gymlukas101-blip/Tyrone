@@ -383,3 +383,12 @@ Now (`monkey/memory/export.py`):
   - a deleted key file means no keys (the backup only covers a file that exists but can't be read);
   - docs: statuses say what is tested and where; the roadmap puts measurement and supply chain before new UI.
 - **Tested in the container only.** Audio reopen and the update restart still need a check on the Dell.
+
+## 2026-11-20: flagship Milestone 2 (voice reliability, measurement) and Milestone 3 (release trust)
+- **Speaker races (D4–D6):** speaking state and the pending count change together under one lock, and the UI is told in order on its own thread; the stall watchdog waits while an engine is still inside its deadline; an interrupt makes the engine thread stop reading, closing the generator so Pocket frees its model at once; sentences queued before an interrupt are never spoken.
+- **Echo guard (`monkey/audio/echo.py`):** in conversation mode a transcript that is mostly his own recent sentence is ignored; the mic reopens after the device's output latency plus 0.3 s.
+- **"Monkey, stop":** a second keyword (also "stop monkey") silences him while he talks and never starts a recording.
+- **Turn traces (`monkey/trace.py`):** per-turn monotonic stage marks from the mic (speech start, last voiced, end of turn) through STT, routing, context, first token, first sentence, TTS, first audible audio (output latency included) and barge-in silence; routing labels, rounds, cost, escalation and a "you corrected him next turn" signal. No speech text unless the owner turns on "Keep what I ask in local traces". `python -m tools.voice_report`, `python -m tools.bench_routing --from-traces`, and a Speed group in Check everything.
+- **Importance:** only phrases aimed at Monkey ("this is important", "take your time") raise the tier; "any important emails?" no longer does.
+- **Supply chain:** hashed lockfiles and a drift check, SHA-pinned actions, notices in the installer, an audit job that reports without blocking releases.
+- **Tests:** `tests/test_m2_voice.py`, `tests/test_supply_chain.py`. Container only: audio timing on the Dell is unverified.

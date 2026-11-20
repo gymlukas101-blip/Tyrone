@@ -45,10 +45,13 @@ class Route:
 
 
 # ---------------------------------------------------------------- rules
+# Only phrases aimed at Monkey count. "Any important emails?", "make sure the alarm is on" or an email that says
+# "critical" in its text are content, not a request to think harder (they used to send the turn to the top tier).
 _HIGH = re.compile(
-    r"\b(this is important|it'?s important|important|take your time|think (?:hard|carefully|it through)|"
-    r"carefully|critical|high priority|top priority|really need this|make sure|double[- ]check|"
-    r"don'?t mess (?:this|it) up|be thorough|thoroughly|deep dive)\b",
+    r"\b(this is (?:really |very |super )?important|it'?s (?:really |very |super )?important|"
+    r"(?:really|very|super) important (?:that you|to me)|important,? so|take your time|"
+    r"think (?:hard|carefully|it through)|be careful|high priority|top priority|really need this|"
+    r"double[- ]check (?:this|it|your)|don'?t mess (?:this|it) up|be thorough|thoroughly|deep dive)\b",
     re.I,
 )
 _LOW = re.compile(r"\b(quick(?:ly)?|real quick|fast|briefly|short answer|tl;?dr|no big deal|whatever)\b", re.I)

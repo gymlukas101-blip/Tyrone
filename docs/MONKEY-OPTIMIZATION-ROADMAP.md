@@ -10,7 +10,7 @@ Dependency-ordered. Each item has a definition of done (DoD). The progress recor
 - **Results (container):** full suite 469 passed, 4 skipped; end-to-end course 6/6.
 - **Not yet checked on the Dell:** audio reopen after sleep or a headset change; the update restart.
 
-## Milestone 2: voice reliability and measurement
+## Milestone 2: voice reliability and measurement (built on `feature/flagship-m2-voice`)
 
 Measure first, so later milestones can show they helped.
 
@@ -29,11 +29,12 @@ Measure first, so later milestones can show they helped.
    - **Change:** a redacted per-turn trace (route reason, model, effort, rounds, cost, latency, correction signals), a `bench_routing --from-traces` mode, and an importance regex that only fires on phrases like "this is important".
    - **DoD:** a live classifier accuracy number exists; misroutes are listed per task.
 
-## Milestone 3: release trust
+## Milestone 3: release trust (built on `feature/flagship-m2-voice`)
 
 5. **Supply chain and licensing.** Every push to `main` ships to the owner's PC, so this comes before feature work.
-   - **Change:** hashed lockfile, SHA-pinned actions, Dependabot, LICENSE and third-party notices (Playwright, openWakeWord CC BY-NC-SA).
-   - **DoD:** CI fails on lockfile drift; notices ship in the installer.
+   - **Change:** hashed lockfiles (`requirements/*.lock`, `tools/lock.sh`), SHA-pinned actions, an informational vulnerability audit job, third-party notices (`THIRD_PARTY_NOTICES.md` plus a generated `THIRD_PARTY_LICENSES.txt`).
+   - **DoD:** CI fails on lockfile drift (`tools/check_lock.py`); notices ship in the installer.
+   - **Left for the owner:** a LICENSE for Monkey's own code (your choice of terms), and whether to turn on Dependabot (it opens pull requests and sends notifications, so it needs your OK).
 
 ## Milestone 4: avatar and companion
 
