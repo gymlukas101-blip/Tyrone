@@ -67,7 +67,14 @@ def test_native_open_dialog_is_in_scope_and_filled(app, tmp_path):
     c, d = _computer(app, tmp_path)
     c.observe("uia")
     c.do("click", {"name": "Browse...", "role": "button"})
-    assert c.wait_for({"kind": "file_dialog"}, 10, "uia").verified
+    if not c.wait_for({"kind": "file_dialog"}, 10, "uia").verified:
+        from monkey.automation.computer.drivers.uia import describe_windows
+
+        import json
+        print("FIXTURE", app.hwnd(), "PID", d.scope._pid(app.hwnd()))
+        print("WINDOWS", json.dumps(describe_windows(), indent=0))
+        print("DIALOGS", d.scope.dialogs(), [d._find_file_name(h) for h in d.scope.dialogs()])
+        pytest.fail("file dialog not detected")
     out = c.do("choose_file", None, path=str(f))
     assert out.error is None and out.verified, out
     assert app.wait_line(r"^picked:.*pick\.txt$")

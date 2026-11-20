@@ -256,6 +256,12 @@ class UIADriver(Driver):
         v = self.observe()
         same = [c for c in v.elements if c.role == el.role and c.name == el.name
                 and c.automation_id == el.automation_id]
+        if not same and (not el.automation_id or el.automation_id.isdigit()):
+            # Win32/WinForms controls without a developer-set id get a numeric one (the control id/handle) that
+            # changes when the control is recreated: then role + name is the identity, if it's unique.
+            same = [c for c in v.elements if c.role == el.role and c.name == el.name]
+            if len(same) > 1:
+                raise DriverError(ErrorKind.AMBIGUOUS, f"several controls are called '{el.name[:40]}'")
         if not same:
             raise DriverError(ErrorKind.STALE, f"{el.role} '{el.name[:40]}' isn't there any more")
         if len(same) > 1 and twins_before >= len(same):
@@ -279,7 +285,7 @@ class UIADriver(Driver):
             try:
                 ei = w.element_info
                 if ROLE.get((ei.control_type or "").lower(), "") == el.role and (ei.name or "")[:200] == el.name \
-                        and (ei.automation_id or "") == el.automation_id:
+                        and (ei.automation_id or "") == el.automation_id and w.is_enabled() is not None:
                     return w
             except Exception:  # noqa: BLE001 - the element died
                 pass
@@ -622,6 +628,12 @@ def _value(w) -> str:
         except Exception:  # noqa: BLE001
             continue
     return ""
+
+
+def describe_windows() -> list[dict]:
+    """Diagnostics: every visible top-level window with class, owner and process id."""
+    return [{"hwnd": h, "class": class_of(h), "title": _title(h)[:60], "owner": owner_of(h), "pid": pid_of(h)}
+            for h in top_windows()]
 
 
 __all__ = ["UIADriver", "Scope", "CAPABILITY", "user_idle_ms", "Rect", "sys"]

@@ -14,7 +14,7 @@ function Add($c, $x, $y, $w = 140, $h = 28) { $c.Left = $x; $c.Top = $y; $c.Widt
 
 $name = Add (New-Object System.Windows.Forms.TextBox) 20 20 200; $name.AccessibleName = "Name"
 $greet = Add (New-Object System.Windows.Forms.Button) 240 18; $greet.Text = "Greet"
-$out = Add (New-Object System.Windows.Forms.Label) 20 56 400; $out.Text = "(nothing yet)"; $out.AccessibleName = "Result"
+$out = Add (New-Object System.Windows.Forms.Label) 20 56 400; $out.Text = "(nothing yet)"
 $greet.Add_Click({ $out.Text = "Hello, " + $name.Text; L ("greet:" + $name.Text) })
 
 $sub = Add (New-Object System.Windows.Forms.CheckBox) 20 90 200; $sub.Text = "Subscribe to updates"
