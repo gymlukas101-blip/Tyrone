@@ -14,6 +14,7 @@ import numpy as np
 
 from .loudness import Leveler
 from .tts import TTS_RATE
+from .lipsync import TextLipSync, blend
 from .visemes import estimate_visemes
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ class Speaker:
         self.leveler = Leveler()
         self.on_visemes = on_visemes
         self._prev_rms = 0.0
+        self.text_lipsync = True          # sentence text picks the mouth shapes, audio times them (lipsync.py)
+        self._lip: TextLipSync | None = None
         self.on_state = on_state
         self._sentences: queue.Queue[str | None] = queue.Queue()
         self._audio: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=400)
@@ -160,6 +163,7 @@ class Speaker:
 
         if self._speaking:
             self._stop_at = time.monotonic()      # the next audio callback reports when it actually went quiet
+        self._lip = None                          # no stale words may drive the next reply's mouth
         with self._lock:
             self._gen += 1
             self._pending = 0
@@ -282,6 +286,8 @@ class Speaker:
                 continue                          # queued before an interrupt: never speak it
             engines = self.engines if forced is None else [forced]
             self._in_engine = True
+            if self.text_lipsync:
+                self._audio.put((gen, ("text", sentence)))       # tells the callback which words this audio carries
             try:
                 self._speak_one(engines, sentence, gen, forced)
             finally:
@@ -319,6 +325,9 @@ class Speaker:
                 gen, chunk = nxt
                 if gen != self._gen:
                     continue                      # from a reply that was interrupted: never play it or count it
+                if isinstance(chunk, tuple):      # ("text", sentence): the next audio speaks these words
+                    self._lip = TextLipSync(chunk[1])
+                    continue
                 if chunk is None:
                     with self._lock:
                         if gen == self._gen:
@@ -342,7 +351,9 @@ class Speaker:
         rms = float(np.sqrt(np.mean(out.astype(np.float32) ** 2))) if filled else 0.0
         self.on_level(min(1.0, rms / 6000.0))
         if self.on_visemes is not None and (filled or self._prev_rms):
-            self.on_visemes(estimate_visemes(out, TTS_RATE, self._prev_rms))  # one 1024-pt FFT: microseconds
+            spec = estimate_visemes(out, TTS_RATE, self._prev_rms)          # one 1024-pt FFT: microseconds
+            lip = self._lip
+            self.on_visemes(blend(lip.feed(rms), spec) if lip is not None and filled else spec)
         self._prev_rms = rms
         if filled == 0 and self._speaking:
             with self._lock:                      # re-check under the lock: say() may have just queued more
