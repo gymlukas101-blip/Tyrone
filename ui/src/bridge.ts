@@ -112,7 +112,34 @@ export interface Api {
   calibrate_cancel(): Promise<{ ok: boolean }>;
   calibration_results(): Promise<CalResults>;
   calibration_apply(picks: Record<string, string>): Promise<{ ok: boolean; error?: string; changed?: string[] }>;
+  // computer tasks
+  window_role?(): Promise<"main" | "overlay">;
+  automation_state(): Promise<AutoState>;
+  automation_enable(on: boolean): Promise<AutoState>;
+  automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
+                   confirmMedium: boolean, helperSites?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+  automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
+  automation_control(action: "pause" | "resume" | "stop" | "done", taskId: string): Promise<{ ok: boolean; error?: string }>;
+  automation_approve(taskId: string, approvalId: string, token: string, allow: boolean): Promise<{ ok: boolean; error?: string }>;
+  automation_reply(taskId: string, text: string): Promise<{ ok: boolean; message: string }>;
+  automation_history(taskId: string): Promise<{ ok: boolean; error?: string; task?: AutoTask; log?: AuditRow[] }>;
+  automation_stop_all(): Promise<{ ok: boolean }>;
+  automation_windows(): Promise<{ ok: boolean; windows: { hwnd: number; title: string; process: string; sensitive: boolean }[] }>;
+  overlay(action: string, value?: any): Promise<{ ok: boolean; mode?: string }>;
 }
+
+export interface AutoTask {
+  id: string; objective: string; mode: string; state: string; note: string; subgoal: string; start_url: string;
+  allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string;
+    info?: { question?: string; options?: string[]; statement?: string; host?: string; word?: string; button?: string;
+      recommend?: { letter: string; reason: string } } } | null;
+  progress: { steps: number; modules_done: number }; usage: { actions: number; model_calls: number; usd: number; elapsed_s: number };
+  created: number; updated: number; outcome: Record<string, any> | null; errors: { kind: string; detail: string }[];
+}
+export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string }
+export interface AuditRow { ts: number; kind: string; risk: string; target: string; host: string; outcome: string }
+export interface AutoState { enabled: boolean; tasks: AutoTask[]; active: string | null; approvals: Approval[];
+  demo_url: string; stop_hotkey: string; windows_supported: boolean }
 
 export interface PolicyChoice { model: string; effort: string; label: string; usd: number; first_words_s: number; per_month_usd: number }
 export interface PolicyRow {
@@ -289,6 +316,7 @@ function mockApi(): Api {
     async transfer_seen() { return { ok: true }; },
     async open_documents_folder() { return { ok: true }; },
     async open_memory_folder() {},
+    ...demoAutomation(emit, later),
     async memory_search(q: string) {
       return { ok: true, hits: q ? [
         { kind: "fact", ref: "f1a2b3c4", text: "Comet Quest ranked mode ships before survival (demo)", date: "2026-11-18", source: "projects.md", status: "current", score: -2, sensitive: false },
@@ -477,5 +505,52 @@ function demoCalibration() {
           outputs: [{ kind: "Email draft", to: "lee@wisc.edu", subject: "Re: BIO 151 lab report",
             text: "Hi Professor Lee,\n\nThanks for the heads up, and sorry for missing the deadline. Could I have a two-day extension on lab report 5? I can have it in by Thursday at 5 PM.\n\nThanks,\nSam" }] }] },
     },
+  };
+}
+
+// ------------------------------------------------------------------ demo: computer tasks (scripted, no backend)
+function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, fn: () => void) => void) {
+  const st: AutoState = { enabled: false, tasks: [], active: null, approvals: [], demo_url: "", stop_hotkey: "ctrl+alt+q",
+                          windows_supported: false };
+  const push = (t: AutoTask, avatar: string) => emit([["automation", { task: t, avatar, control: ["RUNNING", "WAITING", "VERIFYING"].includes(t.state), approvals: [] }]]);
+  return {
+    async window_role() { return new URLSearchParams(location.search).has("overlay") ? "overlay" as const : "main" as const; },
+    async automation_state() { return st; },
+    async automation_enable(on: boolean) { st.enabled = on; return st; },
+    async automation_demo() { return { ok: true, url: "http://127.0.0.1:8765/", domain: "127.0.0.1",
+      objective: "Work through all 4 modules of the demo safety training. I'll answer the questions and tick the confirmations myself." }; },
+    async automation_start(objective: string, url: string, domains: string[]) {
+      const t: AutoTask = { id: "t_demo", objective, mode: "managed_browser", state: "RUNNING", note: "Looking at the screen…", subgoal: "",
+        start_url: url, allowed_domains: domains, pending: null, progress: { steps: 0, modules_done: 0 },
+        usage: { actions: 0, model_calls: 0, usd: 0, elapsed_s: 0 }, created: Date.now() / 1000, updated: Date.now() / 1000, outcome: null, errors: [] };
+      st.tasks = [t, ...st.tasks]; st.active = t.id;
+      const steps: [number, Partial<AutoTask>, string][] = [
+        [800, { note: "opening module 1", progress: { steps: 1, modules_done: 0 } }, "working"],
+        [1800, { state: "WAITING", note: "the lesson is playing; I'll continue when it ends" }, "waiting"],
+        [4200, { state: "NEEDS_INPUT", note: "There's a question here, and the answers are yours.",
+                 pending: { kind: "user_turn", message: "There's a question here, and the answers are yours. Answer it in the browser and I'll continue." } }, "help"],
+      ];
+      for (const [ms, patch, av] of steps) later(ms, () => { Object.assign(t, patch); push(t, av); });
+      return { ok: true, task: t };
+    },
+    async automation_control(action: string) {
+      const t = st.tasks[0];
+      if (!t) return { ok: false, error: "no task" };
+      if (action === "pause") Object.assign(t, { state: "PAUSED", note: "Paused. Press Resume when you're ready." });
+      if (action === "resume" || action === "done") Object.assign(t, { state: "RUNNING", note: "Thanks! Looking again…", pending: null });
+      if (action === "stop") Object.assign(t, { state: "CANCELLED", note: "Stopped. Nothing else will be clicked.", pending: null });
+      push(t, t.state === "PAUSED" ? "paused" : "working");
+      if (action === "done") later(1500, () => { Object.assign(t, { state: "COMPLETED", note: "Done: the course page shows 4 of 4 complete.",
+        progress: { steps: 38, modules_done: 4 }, outcome: { result: "completed" } }); push(t, "celebrate"); });
+      return { ok: true };
+    },
+    async automation_approve() { return { ok: true }; },
+    async automation_reply(_id: string, text: string) { return { ok: true, message: `${text}: checking it…` }; },
+    async automation_history() { return { ok: true, task: st.tasks[0], log: [
+      { ts: Date.now() / 1000, kind: "click", risk: "LOW", target: "link Start module 1", host: "127.0.0.1", outcome: "done" },
+      { ts: Date.now() / 1000, kind: "play", risk: "LOW", target: "button Play lesson", host: "127.0.0.1", outcome: "done" }] }; },
+    async automation_stop_all() { return { ok: true }; },
+    async automation_windows() { return { ok: true, windows: [] }; },
+    async overlay() { return { ok: true }; },
   };
 }

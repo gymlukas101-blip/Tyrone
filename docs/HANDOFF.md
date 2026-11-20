@@ -4,6 +4,13 @@ Last updated 2026-11-19 (release v0.3.37: Google sign-in cancel/expiry handling,
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
 
+## In progress on branch `feature/computer-agent` (not on main)
+- Computer tasks: a durable TaskManager, an execution-layer permission gate, a managed Edge browser through Playwright with the
+  official Claude browser toolset, a deterministic course skill, a demo course, a Windows UIA driver, the companion window,
+  and the animated banana cursor. Status, the Windows test procedure and results: `docs/COMPUTER-AGENT.md`.
+- Banana cursor base art: waiting for the owner's reference PNG as a *file* (`docs/cursor/REFERENCE-ANALYSIS.md`).
+- Speech fix shipped on main (v0.3.54+): Whisper on the CPU (NVIDIA without CUDA DLLs broke speech recognition on the Dell).
+
 ## Recently shipped
 - **v0.3.33–0.3.34: Google sign-in.** The sign-in browser actually opens now:
   - a named `webbrowser` controller and `monkey/links.py` replace the global patch that recursed;

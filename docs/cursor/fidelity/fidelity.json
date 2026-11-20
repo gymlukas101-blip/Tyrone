@@ -1,0 +1,110 @@
+{
+  "default": {
+    "32": {
+      "silhouette_iou": 0.993,
+      "ssim_luma": 0.989,
+      "mean_rgb_error": 1.4
+    },
+    "48": {
+      "silhouette_iou": 0.992,
+      "ssim_luma": 0.985,
+      "mean_rgb_error": 1.6
+    },
+    "64": {
+      "silhouette_iou": 0.993,
+      "ssim_luma": 0.983,
+      "mean_rgb_error": 1.7
+    },
+    "96": {
+      "silhouette_iou": 0.929,
+      "ssim_luma": 0.634,
+      "mean_rgb_error": 14.6
+    },
+    "128": {
+      "silhouette_iou": 0.994,
+      "ssim_luma": 0.972,
+      "mean_rgb_error": 2.0
+    }
+  },
+  "hover": {
+    "32": {
+      "silhouette_iou": 0.59,
+      "ssim_luma": 0.183,
+      "mean_rgb_error": 53.1
+    },
+    "48": {
+      "silhouette_iou": 0.599,
+      "ssim_luma": 0.087,
+      "mean_rgb_error": 55.4
+    },
+    "64": {
+      "silhouette_iou": 0.587,
+      "ssim_luma": 0.158,
+      "mean_rgb_error": 51.8
+    },
+    "96": {
+      "silhouette_iou": 0.584,
+      "ssim_luma": 0.181,
+      "mean_rgb_error": 51.6
+    },
+    "128": {
+      "silhouette_iou": 0.582,
+      "ssim_luma": 0.192,
+      "mean_rgb_error": 55.0
+    }
+  },
+  "click": {
+    "32": {
+      "silhouette_iou": 0.583,
+      "ssim_luma": 0.415,
+      "mean_rgb_error": 47.5
+    },
+    "48": {
+      "silhouette_iou": 0.501,
+      "ssim_luma": 0.102,
+      "mean_rgb_error": 62.5
+    },
+    "64": {
+      "silhouette_iou": 0.493,
+      "ssim_luma": 0.087,
+      "mean_rgb_error": 62.6
+    },
+    "96": {
+      "silhouette_iou": 0.527,
+      "ssim_luma": 0.119,
+      "mean_rgb_error": 61.5
+    },
+    "128": {
+      "silhouette_iou": 0.566,
+      "ssim_luma": 0.174,
+      "mean_rgb_error": 58.1
+    }
+  },
+  "busy": {
+    "32": {
+      "silhouette_iou": 0.656,
+      "ssim_luma": 0.438,
+      "mean_rgb_error": 41.6
+    },
+    "48": {
+      "silhouette_iou": 0.827,
+      "ssim_luma": 0.846,
+      "mean_rgb_error": 16.3
+    },
+    "64": {
+      "silhouette_iou": 0.811,
+      "ssim_luma": 0.739,
+      "mean_rgb_error": 18.2
+    },
+    "96": {
+      "silhouette_iou": 0.782,
+      "ssim_luma": 0.519,
+      "mean_rgb_error": 23.5
+    },
+    "128": {
+      "silhouette_iou": 0.758,
+      "ssim_luma": 0.412,
+      "mean_rgb_error": 27.9
+    }
+  }
+}

@@ -78,6 +78,12 @@ LOCAL_TOOLS: list[dict] = [
           "(you can't change settings for them). section: check (Check everything: tests every part and makes a "
           "report they can copy), start, accounts, sound, brief, memory, feel or advanced.",
           {"section": {"type": "string", "enum": ["check", "start", "accounts", "sound", "brief", "memory", "feel", "advanced"]}}),
+    _tool("propose_computer_task", "Offer to do a long, multi-step job in Monkey's own browser window: working "
+          "through course modules or a required training, routine web forms, clicking through a site. This only opens "
+          "a permission window on screen, prefilled with the objective and start page; the user decides, picks what "
+          "you may touch, and presses Start. You can't start it yourself. start_url may be empty if you don't know it. "
+          "Never for answering quizzes/exams/attestations, sending messages or buying things.",
+          {"objective": S, "start_url": S}),
     _tool("emote", "Make your 3D avatar react with a short animation. Use sparingly, at most once per reply: "
           "good news -> happy or flex, a joke -> laugh, greeting -> wave, the user finished something -> dance, "
           "bad news -> sad, wow -> surprised.",
@@ -483,6 +489,11 @@ class ToolRunner:
     def t_open_settings(self, section: str = "start"):
         self.s.emit("open_settings", {"section": section})
         return f"Opened Settings at '{section}' on screen."
+
+    def t_propose_computer_task(self, objective: str, start_url: str = ""):
+        self.s.emit("automation_propose", {"objective": objective[:300], "start_url": start_url[:300]})
+        return ("Opened the computer-task window on screen with that filled in. The user checks the sites it may use "
+                "and presses Start (or not). Tell them briefly; don't claim it has started.")
 
     def t_emote(self, name: str):
         self.s.emit("emote", {"name": name})

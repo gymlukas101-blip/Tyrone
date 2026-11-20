@@ -1,0 +1,172 @@
+{
+  "sprite": {
+    "file": "banana_sprite.png",
+    "width": 203,
+    "height": 276,
+    "hotspot": [
+      14,
+      6
+    ],
+    "source": "isolated from the owner's concept sheet (DEFAULT state), original pixels"
+  },
+  "source": "banana.svg (original low-poly vector; one geometry for every state)",
+  "viewBox": 128,
+  "hotspot": [
+    7.56,
+    4.44
+  ],
+  "hotspotNote": "pointer tip in viewBox units; the tip is drawn exactly on the action coordinate",
+  "pngs": {
+    "default": [
+      {
+        "file": "png/default_32.png",
+        "size": 32,
+        "tip": [
+          23,
+          23
+        ]
+      },
+      {
+        "file": "png/default_48.png",
+        "size": 48,
+        "tip": [
+          33,
+          33
+        ]
+      },
+      {
+        "file": "png/default_64.png",
+        "size": 64,
+        "tip": [
+          42,
+          42
+        ]
+      },
+      {
+        "file": "png/default_96.png",
+        "size": 96,
+        "tip": [
+          62,
+          62
+        ]
+      }
+    ],
+    "hover": [
+      {
+        "file": "png/hover_32.png",
+        "size": 32,
+        "tip": [
+          23,
+          23
+        ]
+      },
+      {
+        "file": "png/hover_48.png",
+        "size": 48,
+        "tip": [
+          33,
+          33
+        ]
+      },
+      {
+        "file": "png/hover_64.png",
+        "size": 64,
+        "tip": [
+          42,
+          42
+        ]
+      },
+      {
+        "file": "png/hover_96.png",
+        "size": 96,
+        "tip": [
+          62,
+          62
+        ]
+      }
+    ],
+    "pressed": [
+      {
+        "file": "png/pressed_32.png",
+        "size": 32,
+        "tip": [
+          23,
+          23
+        ]
+      },
+      {
+        "file": "png/pressed_48.png",
+        "size": 48,
+        "tip": [
+          33,
+          33
+        ]
+      },
+      {
+        "file": "png/pressed_64.png",
+        "size": 64,
+        "tip": [
+          42,
+          42
+        ]
+      },
+      {
+        "file": "png/pressed_96.png",
+        "size": 96,
+        "tip": [
+          62,
+          62
+        ]
+      }
+    ],
+    "busy": [
+      {
+        "file": "png/busy_32.png",
+        "size": 32,
+        "tip": [
+          23,
+          23
+        ]
+      },
+      {
+        "file": "png/busy_48.png",
+        "size": 48,
+        "tip": [
+          33,
+          33
+        ]
+      },
+      {
+        "file": "png/busy_64.png",
+        "size": 64,
+        "tip": [
+          42,
+          42
+        ]
+      },
+      {
+        "file": "png/busy_96.png",
+        "size": 96,
+        "tip": [
+          62,
+          62
+        ]
+      }
+    ]
+  },
+  "timings": {
+    "press_ms": 70,
+    "release_ms": 110,
+    "ripple_ms": 320,
+    "glow_in_ms": 130,
+    "glow_out_ms": 170
+  },
+  "palette": {
+    "pointer": "#fff7dc",
+    "peel": "#fde8a2",
+    "fruit": "#ffd21c",
+    "stem": "#8e5426",
+    "edge": "#4d2b0f",
+    "glow": "#ffd60a"
+  }
+}

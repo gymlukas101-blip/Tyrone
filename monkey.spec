@@ -9,8 +9,10 @@ datas = [
     ("monkey/brain/persona.md", "monkey/brain"),
     ("monkey/brain/model_policy.json", "monkey/brain"),
     ("monkey/skills", "monkey/skills"),
+    ("monkey/automation/cursor", "monkey/automation/cursor"),     # banana cursor: svg, controller js, pngs, manifest
 ]
-for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi", "_sounddevice_data"):
+# playwright: its driver (node + package) drives the installed Microsoft Edge for computer tasks; no browser is bundled.
+for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi", "_sounddevice_data", "playwright"):
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -28,6 +30,8 @@ hiddenimports = (
     + collect_submodules("keyring.backends")
     + collect_submodules("googleapiclient")
     + collect_submodules("garminconnect")
+    + collect_submodules("playwright")
+    + collect_submodules("pywinauto")
     + [
         "pyttsx3.drivers", "pyttsx3.drivers.sapi5", "comtypes.client",
         "win32com", "win32com.client", "pythoncom", "pywintypes",

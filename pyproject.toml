@@ -35,6 +35,10 @@ desktop = [
   "psutil>=5.9",
   "send2trash>=1.8",
   "pywin32>=308; sys_platform == 'win32'",
+  # computer tasks: Playwright drives the Edge that ships with Windows (no browser download);
+  # pywinauto reads/acts on one picked window through UI Automation.
+  "playwright>=1.65",
+  "pywinauto>=0.6.9; sys_platform == 'win32'",
 ]
 dev = ["pytest>=8", "pyinstaller>=6.10"]
 
@@ -52,4 +56,5 @@ build-backend = "setuptools.build_meta"
 include = ["monkey*"]
 
 [tool.setuptools.package-data]
-monkey = ["brain/*.md", "brain/*.json"]
+monkey = ["brain/*.md", "brain/*.json", "automation/cursor/*.svg", "automation/cursor/*.js",
+          "automation/cursor/*.json", "automation/cursor/png/*.png"]

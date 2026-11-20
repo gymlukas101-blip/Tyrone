@@ -291,3 +291,18 @@ Now (`monkey/memory/export.py`):
 - Each group is isolated, with a 20 s timeout. Network checks are free reads.
 - **Copy report** gives scrubbed text with no keys, tokens, JSON blobs, emails or links (tests seed real-looking secrets and assert they're absent).
 - Tests: `tests/test_health.py` and additions to `tests/test_google_bench.py`.
+
+
+## 2026-11-19: computer tasks + banana cursor (branch feature/computer-agent)
+- `monkey/automation/`: the task model and store (`tasks.py`), the gate (`permissions.py`), the Playwright managed browser and
+  the official toolset adapter (`browser.py`), the course skill (`course.py`), the Claude planner (`planner.py`), the manager
+  loop (`manager.py`), the Windows UIA driver (`desktop.py`), the app service (`service.py`), the demo course (`democourse.py`),
+  the banana cursor (`cursor/`, `cursor_events.py`, `cursor_native.py`).
+- App: Tasks dialog, companion window (`OverlayApi`, `desktop_overlay.py` region click-through), e-stop hotkey
+  `ctrl+alt+q`, tray items, `propose_computer_task` chat tool, cursor settings and preview.
+- Lessons:
+  - Playwright's AI snapshot refs gain a frame prefix after navigation (`f1e18`).
+  - YAML-quoted lines appear when a name contains a colon.
+  - The sync API is bound to one thread, so all tasks run on one worker.
+  - A "paused, no Play button yet" lesson must not start the long wait.
+  - The banana must snap to its target before pressing.

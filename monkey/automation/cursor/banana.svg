@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Monkey's banana pointer: an original low-poly vector following the owner's reference sheet.
+       ONE geometry for every state; effects are layered on top by the cursor controller.
+       Hotspot = the sharp tip of the pointer (see manifest.json), never the image centre. -->
+  <defs>
+    <!-- coarse outer shape of each piece (no fill: <use> paints it for the edge + extrusion) -->
+    <g id="bshape">
+      <path d="M8.6 4.2 L56 41 L40 58 L18 60 Z"/>
+      <path d="M54 41 L62 35 L74 33.5 L85 38 L91.5 49 L91 61 L88 73 L83 66 L80 54 L72 47 L62 48 L56 53 Z"/>
+      <path d="M17 56 L8 59 L1 68 L1 80 L6 91 L12 101 L16 92 L17 80 L22 70 L32 63 L42 61 L33 56 Z"/>
+      <path d="M30 74 L37 62 L56 54 L66 60 L76 74 L86 95 L88 104 L72 109 L52 98 Z"/>
+      <path d="M71 104 L82 99 L90 106 L91 113 L81 117 L71 112 Z"/>
+    </g>
+  </defs>
+  <g transform="translate(3 0)" stroke-linejoin="round" stroke-linecap="round">
+    <use xlink:href="#bshape" href="#bshape" fill="#2c1605" stroke="#2c1605" stroke-width="6" transform="translate(-2.2 2.6)"/>
+    <use xlink:href="#bshape" href="#bshape" fill="#4d2b0f" stroke="#4d2b0f" stroke-width="4.6"/>
+    <!-- pointer: pale cream, faceted -->
+    <path fill="#fff7dc" d="M8.6 4.2 L56 41 L38 50 L20 58 Z"/>
+    <path fill="#f6e3a8" d="M8.6 4.2 L20 58 L12 59 Z"/>
+    <path fill="#eed692" d="M8.6 4.2 L29 33 L20 58 Z"/>
+    <path fill="#fcefc4" d="M29 33 L56 41 L38 50 Z"/>
+    <!-- banana body: golden, elongated, running down-right -->
+    <path fill="#ffd21c" d="M37 62 L56 54 L64 64 L46 74 Z"/>
+    <path fill="#ffc712" d="M30 74 L37 62 L46 74 L40 84 Z"/>
+    <path fill="#ffe14e" d="M46 74 L64 64 L72 80 L56 90 Z"/>
+    <path fill="#f2ae0a" d="M40 84 L46 74 L56 90 L50 96 Z"/>
+    <path fill="#e59c06" d="M64 64 L66 60 L76 74 L86 95 L80 94 L72 80 Z"/>
+    <path fill="#ffd52a" d="M56 90 L72 80 L80 94 L68 102 Z"/>
+    <path fill="#f4b20c" d="M50 96 L56 90 L68 102 L72 107 L60 103 Z"/>
+    <path fill="#e8a108" d="M68 102 L80 94 L86 95 L88 104 L72 107 Z"/>
+    <!-- stem tip: beveled brown block -->
+    <path fill="#8e5426" d="M71 104 L82 99 L90 106 L80 111 Z"/>
+    <path fill="#5f3412" d="M80 111 L90 106 L91 113 L81 117 Z"/>
+    <path fill="#74411b" d="M71 104 L80 111 L81 117 L71 112 Z"/>
+    <!-- right peel flap: inside of the peel (shadowed), then the curled crescent over it -->
+    <path fill="#c48b22" d="M56 53 L62 48 L72 47 L80 54 L83 66 L79 64 L72 56 L63 56 Z"/>
+    <path fill="#fde8a2" d="M54 41 L62 35 L66 41 L59 46 L56 53 Z"/>
+    <path fill="#fff5d2" d="M62 35 L74 33.5 L74 40 L66 41 Z"/>
+    <path fill="#fbe7a6" d="M74 33.5 L85 38 L81 44 L74 40 Z"/>
+    <path fill="#f4d68a" d="M85 38 L91.5 49 L86 52 L81 44 Z"/>
+    <path fill="#ecc66e" d="M91.5 49 L91 61 L86 60 L86 52 Z"/>
+    <path fill="#e2b558" d="M91 61 L88 73 L83 66 L86 60 Z"/>
+    <path fill="#f7dd94" d="M59 46 L66 41 L74 40 L81 44 L86 52 L86 60 L83 66 L80 54 L72 47 L62 48 L56 53 Z"/>
+    <!-- left peel flap: curled petal hanging down to the left, with its inside showing -->
+    <path fill="#d9a43a" d="M17 80 L22 70 L32 63 L42 61 L37 66 L28 72 L22 82 L16 92 Z"/>
+    <path fill="#fff4cf" d="M17 56 L33 56 L42 61 L32 63 L20 62 Z"/>
+    <path fill="#fde7a2" d="M17 56 L20 62 L10 66 L8 59 Z"/>
+    <path fill="#f6dc94" d="M8 59 L10 66 L5 75 L1 68 Z"/>
+    <path fill="#efcf7d" d="M1 68 L5 75 L6 84 L1 80 Z"/>
+    <path fill="#e6c068" d="M1 80 L6 84 L10 94 L12 101 L6 91 Z"/>
+    <path fill="#f3d585" d="M10 66 L20 62 L32 63 L22 70 L17 80 L16 92 L12 101 L10 94 L6 84 L5 75 Z"/>
+    <!-- rim light on the lit edges -->
+    <path fill="none" stroke="#fffbea" stroke-width="1.1" opacity=".95" d="M9.4 5.8 L54 40.6 M62.5 35.6 L74 34.3 L84 38.6 M8.6 59.6 L17 56.8 L32 56.8"/>
+  </g>
+</svg>

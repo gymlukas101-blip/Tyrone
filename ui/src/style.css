@@ -411,3 +411,96 @@ section.attention, details.attention { outline: 3px solid var(--banana, #ffd23f)
 button:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
 #cards .card.folded h3::after { content: "▸ open"; margin-left: 12px; font-size: 13px; font-weight: 700; opacity: .9; }
 #cards { max-height: 55%; }
+
+/* ---------------- computer tasks */
+#controlBanner { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; gap: 8px;
+  align-items: center; padding: 6px 10px; border-radius: 999px; background: color-mix(in srgb, var(--bad) 22%, var(--panel));
+  border: 2px solid var(--bad); font-weight: 700; box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 25%, transparent); }
+#controlBanner[hidden] { display: none; }
+.mini.danger, .ghost.danger { border-color: var(--bad); color: #ffb3c0; }
+.taskpanel { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.taskpanel .taskhead { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.taskpanel .tasknote { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.taskpanel p { margin: 0; }
+.taskpanel .needs { border: 2px solid var(--accent); border-radius: 10px; padding: 8px 10px; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.taskpanel .needs p { margin: 0 0 6px; }
+.taskpanel .row, .taskform .row, .ov-ctl { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.taskpanel .row .ghost.mini, .ov-ctl .ghost.mini { margin-left: 0; }
+.meta.ok { color: var(--ok); }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap;
+  background: var(--panel2); border: 1px solid var(--line); }
+.badge.s-running, .badge.s-verifying { background: #10406a; border-color: var(--normal); }
+.badge.s-waiting { background: #3b3b10; border-color: var(--accent); }
+.badge.s-needs_input { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.badge.s-completed { background: #0f5a26; border-color: var(--ok); }
+.badge.s-failed, .badge.s-blocked { background: #5a0f1f; border-color: var(--bad); }
+.tasksdlg { width: min(640px, 94vw); max-height: 88vh; overflow: auto; background: var(--panel); color: var(--text);
+  border: 2px solid var(--line); border-radius: 16px; padding: 14px 18px; }
+.tasksdlg::backdrop, .histdlg::backdrop { background: #0009; }
+.tasksdlg .taskstop { display: flex; justify-content: space-between; align-items: center; }
+.tasksdlg h3 { margin: 0; }
+.tasksdlg section { margin-top: 12px; display: grid; gap: 8px; }
+.tasksdlg .field { display: grid; gap: 4px; }
+.tasksdlg .field.toggle { grid-template-columns: auto 1fr; align-items: start; gap: 8px; }
+.tasksdlg .field.toggle small, .tasksdlg .modes small { color: var(--muted); }
+.tasksdlg textarea, .tasksdlg input:not([type]), .tasksdlg input[type=text] { width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; }
+.tasksdlg .modes { display: grid; gap: 4px; }
+.tasksdlg .modes .off { opacity: .55; }
+.tasksdlg .keynote.bad { color: #ff8a80; font-weight: 700; margin: 0; }
+.tasksdlg .pastlist { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.histdlg { width: min(560px, 94vw); max-height: 80vh; overflow: auto; background: var(--panel); color: var(--text); border: 2px solid var(--line); border-radius: 14px; }
+.histlist { font-size: 12px; padding-left: 20px; }
+body.computer-control #avatar { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bad) 60%, transparent)); }
+
+/* ---------------- companion window (frameless, always on top; empty areas are click-through on Windows) */
+body.overlay { background: transparent; }
+body.overlay #app { display: block; height: 100vh; }
+#ov { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; height: 100%; }
+#ov .ov-avatar { position: relative; width: 128px; height: 128px; border-radius: 50%; overflow: hidden; cursor: grab;
+  background: radial-gradient(circle at 50% 40%, var(--panel2), var(--bg) 75%); border: 3px solid var(--line); flex: none; }
+#ov .ov-avatar #avatar { width: 100%; height: 100%; max-height: none; aspect-ratio: auto; }
+#ov .ov-ring { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; z-index: 2; }
+#ov .ov-ring[data-on="1"] { box-shadow: inset 0 0 0 4px var(--bad); animation: ovpulse 1.6s ease-in-out infinite; }
+#ov .ov-ring[data-help="1"] { box-shadow: inset 0 0 0 4px var(--accent); }
+@keyframes ovpulse { 50% { box-shadow: inset 0 0 0 7px color-mix(in srgb, var(--bad) 55%, transparent); } }
+#ov .ov-panel { width: 100%; display: grid; gap: 6px; padding: 8px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--line); font-size: 12.5px; }
+#ov .ov-title { font-weight: 800; }
+#ov .taskpanel.compact { padding: 6px 8px; gap: 4px; }
+#ov .taskpanel.compact .needs { padding: 0; border: 0; background: none; }
+#ov .taskpanel.compact .tasknote { font-size: 12px; }
+#ov[data-mode="minimized"] { padding: 2px; }
+#ov[data-mode="minimized"] .ov-avatar { width: 88px; height: 88px; }
+#ov[data-mode="minimized"] .ov-panel { display: none; }
+#ov[data-mode="expanded"] .ov-avatar { width: 220px; height: 220px; }
+@media (prefers-reduced-motion: reduce) { #ov .ov-ring[data-on="1"] { animation: none; } }
+
+/* ---------------- banana cursor settings + preview */
+.cursorsettings { display: grid; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.cursorsettings h5 { margin: 0; font-size: 15px; }
+.cursorstage { position: relative; height: 150px; border-radius: 12px; background: #22262c; overflow: hidden;
+  display: flex; gap: 22px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px; }
+.cursorstage .cs-layer { position: absolute; inset: 0; pointer-events: none; }
+.cs-btn { padding: 8px 14px; border-radius: 8px; background: #2f7d46; color: #fff; font-weight: 700; transition: transform .1s; }
+.cs-btn.pressed { transform: translateY(2px); filter: brightness(1.15); }
+.cs-link { color: #8fd3ff; text-decoration: underline; }
+.cs-text { color: #9aa3ad; }
+.cs-drop { border: 2px dashed #6b7480; color: #9aa3ad; border-radius: 8px; padding: 8px 12px; }
+.cs-ctl { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-ctl .ghost.mini { margin-left: 0; }
+.taskpanel .needs .opts { display: grid; gap: 5px; margin: 4px 0; }
+.taskpanel .needs .opt { display: flex; align-items: center; gap: 8px; text-align: left; padding: 5px 8px; border-radius: 10px;
+  background: var(--panel); border: 1.5px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
+.taskpanel .needs .opt b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--panel2); border: 1.5px solid var(--line); flex: none; }
+.taskpanel .needs .opt:hover { border-color: var(--accent); }
+.taskpanel .needs .opt.picked { border-color: #ffd60a; box-shadow: 0 0 0 2px rgba(255, 214, 10, .25); }
+.taskpanel .needs .opt.picked b { background: #ffd60a; color: #3a2206; border-color: #4d2b0f; }
+.pickbadge { margin-left: auto; white-space: nowrap; font-size: 11px; font-weight: 900; color: #3a2206; padding: 2px 8px;
+  border-radius: 10px; background: linear-gradient(180deg, #ffe866, #ffc400); border: 1.5px solid #4d2b0f;
+  box-shadow: 0 2px 0 #4d2b0f; }
+.taskpanel .needs .q { margin: 0 0 4px; font-weight: 700; }
+.taskpanel .needs .why { font-style: italic; }
+#ov .taskpanel.compact .needs .opt { padding: 3px 6px; font-size: 12px; }
+#ov .taskpanel.compact .pickbadge { font-size: 10px; padding: 1px 6px; }

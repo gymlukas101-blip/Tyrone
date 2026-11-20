@@ -46,6 +46,7 @@ class UIBus:
 
     def __init__(self):
         self.window = None
+        self.windows: list = []          # extra windows that get the same events (the companion overlay)
         self._q: queue.Queue[tuple[str, dict]] = queue.Queue()
         self._level: float | None = None
         self._visemes: dict | None = None
@@ -75,10 +76,12 @@ class UIBus:
                 batch.append(("visemes", self._visemes))
                 self._visemes = None
             if batch:
-                try:
-                    self.window.evaluate_js(f"window.__monkeyEvents && window.__monkeyEvents({json.dumps(batch, default=str)})")
-                except Exception as exc:  # noqa: BLE001 - window may be closing
-                    log.debug("evaluate_js failed: %s", exc)
+                js = f"window.__monkeyEvents && window.__monkeyEvents({json.dumps(batch, default=str)})"
+                for w in [self.window, *self.windows]:
+                    try:
+                        w.evaluate_js(js)
+                    except Exception as exc:  # noqa: BLE001 - window may be closing or hidden
+                        log.debug("evaluate_js failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------- app
@@ -159,6 +162,9 @@ class MonkeyApp:
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
         self.updater = Updater(self.ui.emit, enabled=lambda: self.cfg.settings.auto_update)
+        from .automation.service import AutomationService
+
+        self.automation = AutomationService(self)          # idle until computer tasks are turned on and started
 
     # ------------------------------------------------------------------ setup
     def _setup_logging(self) -> None:
@@ -385,6 +391,13 @@ class MonkeyApp:
             keyboard.add_hotkey(self.cfg.settings.push_to_talk_hotkey, self.push_to_talk)
         except Exception as exc:  # noqa: BLE001
             log.warning("hotkey unavailable: %s", exc)
+        try:
+            import keyboard
+
+            # Emergency stop for computer tasks: works from any app, even with Monkey's windows hidden.
+            keyboard.add_hotkey(self.cfg.settings.automation_stop_hotkey, self.automation.emergency_stop)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("emergency-stop hotkey unavailable: %s", exc)
 
     # ------------------------------------------------------------------ state + events
     def _emit(self, name: str, payload: dict | None = None) -> None:
@@ -590,6 +603,15 @@ class MonkeyApp:
             self.ui.emit("emote", {"name": "sleep"})
 
     def ask(self, text: str, importance: str | None = None, typed: bool = False) -> None:
+        # A letter ("B") or "I confirm" while a computer task is waiting on a question/confirmation goes to the task.
+        reply = self.automation.handle_reply(text) if getattr(self, "automation", None) else None
+        if reply is not None:
+            if not typed:
+                self.ui.emit("user", {"text": text})
+            self.ui.emit("delta", {"text": reply})
+            self.ui.emit("done", {"text": reply})
+            self._say(reply)
+            return
         if self._ensure_client() is None:
             self._emit("error", {"message": "Paste your Claude key in Settings → Start here first."})
             return
@@ -1715,6 +1737,73 @@ class Api:
         self._app._open_path(Path.home() / "Documents")
         return {"ok": True}
 
+    # ------------------------------------------------------------ computer tasks (docs/adr/0001-computer-agent.md)
+    def window_role(self):
+        return "main"
+
+    def automation_state(self):
+        return self._app.automation.state()
+
+    def automation_enable(self, on: bool):
+        self._app.cfg.update(computer_access=bool(on))
+        if not on:
+            self._app.automation.emergency_stop()
+        self._app.ui.emit("automation_enabled", {"on": bool(on)})
+        _overlay_visibility(self._app)
+        return self._app.automation.state()
+
+    def automation_start(self, objective: str, start_url: str, domains: list, mode: str = "managed_browser",
+                         send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True):
+        return self._app.automation.start(objective, start_url, list(domains or []), mode, send_screenshots,
+                                          confirm_medium, helper_sites=bool(helper_sites))
+
+    def automation_demo(self):
+        return self._app.automation.demo_start()
+
+    def automation_control(self, action: str, task_id: str):
+        return self._app.automation.control(action, task_id)
+
+    def automation_approve(self, task_id: str, approval_id: str, token: str, allow: bool = True):
+        return self._app.automation.approve(task_id, approval_id, token, allow)
+
+    def automation_reply(self, task_id: str, text: str):
+        return self._app.automation.reply(task_id, text)
+
+    def automation_history(self, task_id: str):
+        return self._app.automation.history(task_id)
+
+    def automation_stop_all(self):
+        self._app.automation.emergency_stop()
+        return {"ok": True}
+
+    def automation_windows(self):
+        return self._app.automation.windows()
+
+    def overlay(self, action: str, value=None):
+        """show | hide | mode (compact/expanded/minimized) | geometry ({x,y,w,h}) | expand (bring the main window)."""
+        a = self._app
+        win = getattr(a, "_overlay_window", None)
+        if action == "geometry" and isinstance(value, dict):
+            a.cfg.update(overlay_geom={k: int(v) for k, v in value.items() if k in ("x", "y", "w", "h")})
+        elif action == "mode" and value in ("compact", "expanded", "minimized"):
+            a.cfg.update(overlay_mode=value)
+            size = {"compact": (260, 352), "expanded": (380, 610), "minimized": (96, 96)}[value]
+            if win is not None:
+                win.resize(*size)
+        elif action in ("show", "hide"):
+            a.cfg.update(overlay_enabled=action == "show")
+            _overlay_visibility(a)
+        elif action == "expand":
+            main = getattr(a, "_main_window", None)
+            if main is not None:
+                main.show()
+                main.restore()
+        elif action == "hit" and isinstance(value, dict):
+            from . import desktop_overlay
+
+            desktop_overlay.set_hit_rects(value.get("rects", []), float(value.get("dpr", 1)))
+        return {"ok": True, "mode": a.cfg.settings.overlay_mode}
+
     def open_memory_folder(self):
         folder = Path(self._app.memory.memory_root)
         if sys.platform == "win32":
@@ -1724,6 +1813,24 @@ class Api:
 
 
 # ---------------------------------------------------------------------------- tray + window
+class OverlayApi(Api):
+    """The companion window's API: identical, but it knows it's the overlay (so the UI renders the compact view)."""
+
+    def window_role(self):
+        return "overlay"
+
+
+def _overlay_visibility(app: MonkeyApp) -> None:
+    win = getattr(app, "_overlay_window", None)
+    if win is None:
+        return
+    want = app.cfg.settings.computer_access and app.cfg.settings.overlay_enabled
+    try:
+        win.show() if want else win.hide()
+    except Exception:  # noqa: BLE001
+        log.debug("overlay show/hide failed", exc_info=True)
+
+
 def _tray(app: MonkeyApp, window) -> None:
     try:
         import pystray
@@ -1754,6 +1861,11 @@ def _tray(app: MonkeyApp, window) -> None:
     menu = pystray.Menu(
         pystray.MenuItem("Show Monkey", lambda i, it: (window.show(), window.restore()), default=True),
         pystray.MenuItem("Push to talk", lambda i, it: app.push_to_talk()),
+        pystray.MenuItem("Show companion", lambda i, it: (app.cfg.update(overlay_enabled=True),
+                                                          _overlay_visibility(app)),
+                         visible=lambda it: bool(app.cfg.settings.computer_access)),
+        pystray.MenuItem("Stop all computer tasks", lambda i, it: app.automation.emergency_stop(),
+                         visible=lambda it: bool(app.cfg.settings.computer_access)),
         pystray.MenuItem("Mute microphone", toggle_mute,
                          checked=lambda it: bool(app.listener and app.listener.muted)),
         pystray.MenuItem("Quit", quit_app),
@@ -1847,6 +1959,24 @@ def run() -> None:
         background_color="#0d0f17",
     )
     app.ui.window = window
+    app._main_window = window
+    # The companion: a small frameless always-on-top window with the same avatar, shown while computer tasks are on.
+    g = dict(app.cfg.settings.overlay_geom or {})
+    from .desktop_overlay import position_on_screen
+
+    if not position_on_screen(g.get("x"), g.get("y")):           # first run, or that monitor was unplugged
+        g = {}
+    size = {"compact": (260, 352), "expanded": (380, 610), "minimized": (96, 96)}.get(app.cfg.settings.overlay_mode,
+                                                                                      (260, 352))
+    overlay = webview.create_window(
+        "Monkey companion", url=str(index), js_api=OverlayApi(app), width=size[0], height=size[1],
+        x=g.get("x"), y=g.get("y"), frameless=True, on_top=True, transparent=True, easy_drag=False, focus=False,
+        hidden=not (app.cfg.settings.computer_access and app.cfg.settings.overlay_enabled), resizable=False,
+        min_size=(80, 80), shadow=False,
+        background_color="#000000",
+    )
+    app._overlay_window = overlay
+    app.ui.windows.append(overlay)
 
     def on_closing():
         # Closing the window hides Monkey to the tray; he keeps listening. Say so the first few times.
@@ -1873,6 +2003,12 @@ def run() -> None:
             pass
         app.start_audio()
         _tray(app, window)
+        try:
+            from . import desktop_overlay
+
+            desktop_overlay.install(overlay, "Monkey companion")       # click-through, no focus, hidden from capture
+        except Exception:  # noqa: BLE001
+            log.warning("companion window extras unavailable", exc_info=True)
         app.updater.start_background()
         app.after_install_tasks()
 
@@ -1993,7 +2129,7 @@ def selftest() -> int:
 
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")
-        for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray",
+        for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray", "playwright.sync_api",
                     "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack", "psutil", "send2trash"):
             try:
                 __import__(mod)
