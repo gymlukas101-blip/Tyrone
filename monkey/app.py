@@ -624,6 +624,7 @@ class MonkeyApp:
         if self.speaker:
             self.speaker.stop()
         self.end_conversation("told to stop")
+        self.ui.emit("stopped", {})                  # the UI shows it too (it must read with the sound off)
         self.ui.emit("hint", {"text": "Stopped."})
         self._publish_state()
 
