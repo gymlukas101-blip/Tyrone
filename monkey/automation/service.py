@@ -149,6 +149,23 @@ class AutomationService:
                 pass
 
     # ---- your own Chrome (Monkey for Chrome extension) ---------------------------------------------------------
+    def _chrome_not_ready(self) -> str:
+        """With "My Chrome" picked, the extension must be paired and a tab shared before a task can start."""
+        if getattr(self.app.cfg.settings, "automation_browser", "chrome") != "my_chrome":
+            return ""
+        try:
+            st = self.bridge().status()
+        except Exception as exc:  # noqa: BLE001
+            return f"Monkey couldn't reach the Chrome connection ({exc}). Pick “Monkey's own Chrome window” or restart Monkey."
+        if st.get("extension_connected") and st.get("tabs", 0) > 0:
+            return ""
+        if st.get("extension_connected"):
+            return ("Your Chrome is connected but no tab is shared yet: open the page in Chrome, click the 🍌 Monkey "
+                    "icon and press “Let Monkey use this tab”, then press Allow and start again.")
+        return ("Your Chrome isn't connected yet. Do the one-time setup above (load the extension, paste the code, press "
+                "Pair), share the tab with “Let Monkey use this tab”, then press Allow and start again. Or pick "
+                "“Monkey's own Chrome window” under Where Monkey works.")
+
     def bridge(self):
         """The local relay the extension connects to; started on first use and kept running while Monkey runs."""
         if getattr(self, "_bridge", None) is None:
@@ -267,6 +284,9 @@ class AutomationService:
         objective = (objective or "").strip()
         if len(objective) < 4:
             return {"ok": False, "error": "Say what Monkey should do (one sentence is enough)."}
+        needs_browser = skill != "general" or bool((start_url or "").strip()) or not apps
+        if needs_browser and (err := self._chrome_not_ready()):
+            return {"ok": False, "error": err}       # say it now, not as a task that fails a second after "Started"
         if skill == "general":
             return self._start_general(objective, start_url, ["*"] if any_site else domains, send_screenshots,
                                        confirm_medium, window, apps or [], files or [], allow_physical)

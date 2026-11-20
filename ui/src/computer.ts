@@ -288,12 +288,19 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   const err = h("p", { class: "keynote" });
   const start = async () => {
     err.textContent = ""; err.className = "keynote";
-    const r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
+    const fail = (msg: string) => { err.className = "keynote bad"; err.textContent = `⚠ ${msg}`; err.scrollIntoView({ block: "nearest" }); };
+    let r: { ok: boolean; error?: string };
+    try {
+      r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
       "managed_browser", shots.checked, askMore.checked, helpers.checked && !general.checked, anySite.checked,
       general.checked ? "general" : "course", apps.value.split(/[,\s]+/).filter(Boolean),
       files.value.split(/\n+/).map((x) => x.trim()).filter(Boolean), physical.checked);
-    if (!r.ok) { err.className = "keynote bad"; err.textContent = `⚠ ${r.error}`; return; }
-    toast("Started. Watch the Monkey browser window; you can Pause or Stop anytime.", 5000);
+    } catch (e) {                                   // a crash in the app must still answer the click
+      return fail(`Couldn't start: ${(e as Error)?.message ?? e}`);
+    }
+    if (!r.ok) return fail(r.error ?? "Couldn't start.");
+    toast(st.browser === "my_chrome" ? "Started in the Chrome tab you shared. You can Pause or Stop anytime."
+      : "Started. Watch the Monkey browser window; you can Pause or Stop anytime.", 5000);
     void refresh();
   };
   const busy = !!current && (LIVE.includes(current.state) || current.state === "PAUSED");

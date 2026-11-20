@@ -466,3 +466,32 @@ def test_key_press_edge_cases(keys, target, expected):
 def test_typed_line_break_counts_as_enter():
     assert _classify(_A("type", target=_T(role="textbox", name="Message"), text="hi\n"))[0] == _R.HIGH
     assert _classify(_A("type", target=_T(role="textbox", name="Notes"), text="a\nb"))[0] == _R.MEDIUM
+
+
+def test_my_chrome_not_connected_refuses_at_start_with_the_fix(tmp_path):
+    """The owner's report: with "My Chrome" picked and the extension not paired, Allow and start looked like it did
+    nothing (the task was created, then failed in the background). It must refuse up front and say what to do."""
+    from types import SimpleNamespace
+
+    from monkey.automation.service import AutomationService
+
+    settings = SimpleNamespace(computer_access=True, automation_browser="my_chrome")
+    svc = AutomationService(SimpleNamespace(cfg=SimpleNamespace(settings=settings, data_dir=tmp_path)))
+    status = {"extension_connected": False, "tabs": 0}
+    svc._bridge = SimpleNamespace(status=lambda: dict(status))
+    created = []
+    svc._mgr = SimpleNamespace(create=lambda *a, **k: created.append(a) or SimpleNamespace(id="t", public=lambda: {"id": "t"}),
+                               start=lambda *_: None)
+
+    r = svc.start("help complete module 2", "https://canvas.wisc.edu/courses/1", [], any_site=True)
+    assert not r["ok"] and "isn't connected" in r["error"] and "Pair" in r["error"]
+    status.update(extension_connected=True)
+    r = svc.start("help complete module 2", "https://canvas.wisc.edu/courses/1", [], any_site=True)
+    assert not r["ok"] and "no tab is shared" in r["error"]
+    assert created == []                                   # nothing was started that would fail a second later
+    # a general task that only uses Windows apps doesn't need Chrome
+    status.update(extension_connected=False)
+    r = svc.start("tidy my notes", "", [], skill="general", apps=["notepad"], any_site=False)
+    assert r["ok"] and len(created) == 1
+    settings.automation_browser = "chrome"
+    assert svc._chrome_not_ready() == ""                   # Monkey's own window: no extension needed
