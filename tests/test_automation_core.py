@@ -357,6 +357,13 @@ def test_any_website_scope_still_keeps_the_action_gate():
 
 
 def test_closed_popup_falls_back_to_the_previous_tab(tmp_path):
+    import pytest
+
+    pytest.importorskip("playwright")
+    from tools.automation_eval import browser_path as _bp
+
+    if _bp() is None:
+        pytest.skip("no Chromium here")
     from monkey.automation.browser import BrowserSession
     from monkey.automation.permissions import PermissionGate
     from tools.automation_eval import browser_path
