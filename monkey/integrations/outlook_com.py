@@ -8,8 +8,10 @@ locally. "New Outlook" has no COM interface - install/switch to classic Outlook.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -75,6 +77,41 @@ def installed_version() -> str:
         return ""
 
 
+NEW_OUTLOOK = ("This PC is running the new Outlook, which other apps can't read. Open classic Outlook "
+               "(search \"Outlook (classic)\" in Start; if it opens the new one, switch off \"New Outlook\" at its "
+               "top right), sign in with your wisc.edu address, then press Connect again.")
+NOT_STARTED = ("Classic Outlook didn't open. Start \"Outlook (classic)\" from the Start menu, sign in with your "
+               "wisc.edu address, then press Connect again.")
+NOT_ANSWERING = ("Outlook is open but isn't ready yet. If it's asking you to sign in or set up your account, finish "
+                 "that with your wisc.edu address, then press Connect again. (If Outlook was already open before, "
+                 "close it fully and press Connect: Monkey will open it.)")
+
+
+class OutlookConnectError(RuntimeError):
+    pass
+
+
+def process_names() -> set[str]:
+    """Lower-case names of running processes ("outlook.exe" = classic Outlook, "olk.exe" = new Outlook)."""
+    try:
+        import psutil
+
+        out = set()
+        for p in psutil.process_iter(["name"]):
+            n = (p.info.get("name") or "").lower()
+            if n:
+                out.add(n)
+        return out
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def launch_visible() -> None:
+    """Open classic Outlook as a normal window, so you can see it and finish any sign-in or first-run setup.
+    (Starting it through COM would run it hidden, where a setup screen waits forever and nothing seems to happen.)"""
+    os.startfile("outlook.exe")  # type: ignore[attr-defined]  # Windows only; resolves via App Paths
+
+
 class OutlookProvider:
     """Implements both MailProvider and CalendarProvider."""
 
@@ -103,6 +140,52 @@ class OutlookProvider:
 
     def _ns(self):
         return self._app().GetNamespace("MAPI")
+
+    # ---- the Connect button ---------------------------------------------
+    def connect(self, wait_s: float = 90.0, launch: Callable[[], None] = launch_visible,
+                procs: Callable[[], set[str]] = process_names, attach: Callable | None = None,
+                sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+                on_status: Callable[[str], None] = lambda s: None) -> list[Email]:
+        """Open classic Outlook visibly if it isn't running, wait until it's signed in and answering, read one email.
+
+        Never starts Outlook hidden. Raises OutlookConnectError with a plain-language next step."""
+        names = procs()
+        if "outlook.exe" not in names:
+            on_status("Opening Outlook… if it asks, sign in with your wisc.edu address.")
+            try:
+                launch()
+            except OSError as exc:
+                raise OutlookConnectError(NOT_STARTED) from exc
+        deadline = clock() + wait_s
+        saw_new = False
+        while True:
+            names = procs()
+            if "outlook.exe" in names:
+                try:
+                    return self._probe(attach)
+                except Exception:  # noqa: BLE001 - still starting, or waiting on a sign-in screen: keep waiting
+                    pass
+            elif "olk.exe" in names:
+                saw_new = True
+            if clock() >= deadline:
+                break
+            sleep(1.0)
+        if "outlook.exe" not in procs():
+            raise OutlookConnectError(NEW_OUTLOOK if saw_new else NOT_STARTED)
+        raise OutlookConnectError(NOT_ANSWERING)
+
+    def _probe(self, attach: Callable | None = None) -> list[Email]:
+        """Attach to the running Outlook only (never launch) and read the newest inbox item."""
+        with _com():
+            if attach is None:
+                import win32com.client  # type: ignore
+
+                attach = win32com.client.GetActiveObject
+            app = attach("Outlook.Application")
+            items = app.GetNamespace("MAPI").GetDefaultFolder(FOLDER_INBOX).Items
+            items.Sort("[ReceivedTime]", True)
+            item = items.GetFirst()
+            return [self._to_email(item)] if item is not None and getattr(item, "Class", None) == CLASS_MAIL else []
 
     # ---- mail ----------------------------------------------------------
     def _to_email(self, item, with_body=False) -> Email:

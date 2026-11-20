@@ -581,6 +581,7 @@ const KEY_INFO: [string, string, string][] = [
 const keyWarnings: Record<string, string> = {};   // keys saved but rejected by the service (shown in red until fixed)
 let settingsOpenDetails = new Set<string>();
 
+let outlookMsg = "";   // last Connect result, kept across Settings re-renders
 async function openSettings(section?: string) {
   appState = await api.get_state();
   applyChrome(appState);
@@ -805,12 +806,25 @@ async function openSettings(section?: string) {
         })(),
         h("h5", {}, "🏫 School email (wisc.edu)"),
         h("div", { class: "field" }, status(!!appState.connections.outlook), h("span", {}, "wisc.edu Outlook"),
-          h("button", { class: "ghost", type: "button", onclick: async () => {
-            const r = await api.test_outlook(); resultToast(r, "Outlook connected"); openSettings();
+          h("button", { class: "ghost", type: "button", onclick: async (ev: Event) => {
+            const btn = ev.currentTarget as HTMLButtonElement;
+            btn.disabled = true;
+            btn.textContent = "Opening Outlook…";
+            outlookMsg = "Opening classic Outlook. If it asks you to sign in or set up, use your wisc.edu address; "
+              + "Monkey waits up to 90 seconds.";
+            const note = document.getElementById("outlookNote");
+            if (note) note.textContent = outlookMsg;
+            let r: { ok: boolean; error?: string; count?: number };
+            try { r = await api.test_outlook(); } catch (e) { r = { ok: false, error: String(e) }; }
+            outlookMsg = r.ok ? "✓ Connected to your wisc.edu Outlook." : `⚠ ${r.error}`;
+            resultToast(r, "Outlook connected");
+            appState = await api.get_state();
+            openSettings();
           } }, appState.connections.outlook ? "Test connection" : "Connect"),
           appState.connections.outlook && h("button", { class: "ghost", type: "button", onclick: async () => {
-            await api.disconnect_outlook(); toast("Outlook disconnected: Monkey won't open it"); openSettings();
+            await api.disconnect_outlook(); outlookMsg = ""; toast("Outlook disconnected: Monkey won't open it"); openSettings();
           } }, "Disconnect")),
+        h("div", { class: "field" }, h("span", {}, ""), h("span", { class: "meta", id: "outlookNote", role: "status" }, outlookMsg)),
         field("Canvas site", "canvas_base_url", "url"),
         h("div", { class: "field" }, h("span", {}, "Email writing style"),
           h("button", { class: "ghost", type: "button", onclick: async () => {

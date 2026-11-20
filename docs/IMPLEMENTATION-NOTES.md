@@ -383,3 +383,12 @@ Now (`monkey/memory/export.py`):
   - a deleted key file means no keys (the backup only covers a file that exists but can't be read);
   - docs: statuses say what is tested and where; the roadmap puts measurement and supply chain before new UI.
 - **Tested in the container only.** Audio reopen and the update restart still need a check on the Dell.
+
+## 2026-11-20: Outlook Connect did nothing
+- **Cause:** Connect started Outlook through COM, which runs it hidden. On a PC where classic Outlook had never been opened and signed in, that hidden Outlook waited on its first-run sign-in screen, so the call never returned: no window, no message.
+- **Fix (`monkey/integrations/outlook_com.py` `connect`, `Api.test_outlook`):**
+  - Connect opens classic Outlook as a normal window, waits up to 90 s for it to answer (so you can sign in with your wisc.edu address), then reads one email.
+  - It only attaches to a running Outlook; it never starts one hidden.
+  - The whole call has a deadline and always comes back with a next step: new Outlook detected, Outlook didn't start, or Outlook isn't ready yet.
+  - Settings shows "Opening Outlook…" while it waits and keeps the result under the button.
+- **Tests:** `tests/test_outlook_optin.py` (sign-in wait, already open, new Outlook, won't start, always answers). Windows behaviour itself is unverified until it runs on the Dell.

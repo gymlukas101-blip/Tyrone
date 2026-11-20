@@ -1475,13 +1475,37 @@ class Api:
         o, st = self._app.outlook, self._app.cfg.settings
         if sys.platform != "win32":
             return {"ok": False, "error": "Outlook only works on Windows"}
+        from .integrations.outlook_com import NEW_OUTLOOK, OutlookConnectError, process_names
+
         if not installed():
-            return {"ok": False, "error": "Classic Outlook isn't installed (the \"new Outlook\" can't be read by apps). "
-                                         "Install Microsoft 365 Apps from UW's Office 365 page, or use a calendar link."}
-        try:
-            got = o.list_recent(max_results=1)
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{exc}. Make sure classic Outlook is installed and signed in to wisc.edu."}
+            if "olk.exe" in process_names():
+                return {"ok": False, "error": NEW_OUTLOOK}
+            return {"ok": False, "error": "Classic Outlook isn't installed on this PC (the \"new Outlook\" can't be read "
+                                         "by apps). Install Microsoft 365 Apps from UW's Office 365 page (it includes "
+                                         "classic Outlook), or use a calendar link instead."}
+
+        # A deadline around the whole thing: Outlook's COM calls can block while it shows a dialog, and the button
+        # must always come back with an answer.
+        result: dict = {}
+
+        def run():
+            try:
+                result["got"] = o.connect(wait_s=90.0, on_status=lambda m: self._app._emit("hint", {"text": m}))
+            except OutlookConnectError as exc:
+                result["error"] = str(exc)
+            except Exception as exc:  # noqa: BLE001
+                result["error"] = f"Outlook answered with an error ({type(exc).__name__}). Make sure classic " \
+                                  "Outlook is open and signed in to wisc.edu, then press Connect again."
+
+        t = threading.Thread(target=run, name="outlook-connect", daemon=True)
+        t.start()
+        t.join(110.0)
+        if t.is_alive():
+            return {"ok": False, "error": "Outlook didn't answer in time. If it's showing a sign-in or setup window, "
+                                          "finish that, then press Connect again."}
+        if "error" in result:
+            return {"ok": False, "error": result["error"]}
+        got = result.get("got", [])
         st.outlook_connected = True
         self._app.cfg.save()
         return {"ok": True, "count": len(got)}

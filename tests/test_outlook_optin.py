@@ -54,3 +54,110 @@ def test_outlook_connected_defaults_off():
     from monkey.config import Settings
 
     assert Settings().outlook_connected is False
+
+
+# ---- the Connect button opens Outlook visibly and always comes back with an answer ----------------------------
+class _Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
+class _Mail:
+    Class = oc.CLASS_MAIL
+    EntryID, SenderName, SenderEmailType, SenderEmailAddress, To = "1", "Prof", "SMTP", "p@wisc.edu", ""
+    Subject, Body, UnRead, ConversationID = "Hi", "hello", True, ""
+
+    class ReceivedTime:
+        year, month, day, hour, minute, second = 2026, 11, 20, 9, 0, 0
+
+
+def _outlook_app(ready_after: float, clock: _Clock):
+    def attach(name):
+        if clock() < ready_after:
+            raise OSError("Operation unavailable")          # starting, or waiting on a sign-in screen
+        items = types.SimpleNamespace(Sort=lambda *a: None, GetFirst=lambda: _Mail())
+        folder = types.SimpleNamespace(Items=items)
+        ns = types.SimpleNamespace(GetDefaultFolder=lambda i: folder)
+        return types.SimpleNamespace(GetNamespace=lambda n: ns)
+    return attach
+
+
+@pytest.fixture
+def no_com(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pythoncom", types.SimpleNamespace(CoInitialize=lambda: None,
+                                                                       CoUninitialize=lambda: None))
+
+
+def test_connect_opens_outlook_visibly_and_waits_for_sign_in(no_com):
+    clock, launched, running = _Clock(), [], set()
+
+    def launch():
+        launched.append(1)
+        running.add("outlook.exe")
+    got = oc.OutlookProvider().connect(wait_s=90, launch=launch, procs=lambda: set(running),
+                                       attach=_outlook_app(ready_after=25, clock=clock),
+                                       sleep=clock.sleep, clock=clock)
+    assert launched == [1] and len(got) == 1 and got[0].subject == "Hi"
+    assert 25 <= clock() < 30                                 # waited while you signed in, then connected
+
+
+def test_connect_uses_an_already_open_outlook_without_launching(no_com):
+    clock = _Clock()
+    got = oc.OutlookProvider().connect(launch=lambda: pytest.fail("must not launch"), procs=lambda: {"outlook.exe"},
+                                       attach=_outlook_app(0, clock), sleep=clock.sleep, clock=clock)
+    assert len(got) == 1
+
+
+def test_connect_explains_new_outlook(no_com):
+    clock = _Clock()
+    with pytest.raises(oc.OutlookConnectError) as e:
+        oc.OutlookProvider().connect(wait_s=10, launch=lambda: None, procs=lambda: {"olk.exe"},
+                                     attach=_outlook_app(0, clock), sleep=clock.sleep, clock=clock)
+    assert "new Outlook" in str(e.value) and "classic" in str(e.value)
+
+
+def test_connect_gives_a_next_step_when_outlook_never_answers(no_com):
+    clock = _Clock()
+    with pytest.raises(oc.OutlookConnectError) as e:
+        oc.OutlookProvider().connect(wait_s=10, launch=lambda: None, procs=lambda: {"outlook.exe"},
+                                     attach=_outlook_app(10_000, clock), sleep=clock.sleep, clock=clock)
+    assert "sign in" in str(e.value) and clock() >= 10
+
+
+def test_connect_reports_outlook_that_wont_start(no_com):
+    clock = _Clock()
+
+    def launch():
+        raise OSError("The system cannot find the file specified")
+    with pytest.raises(oc.OutlookConnectError) as e:
+        oc.OutlookProvider().connect(launch=launch, procs=set, sleep=clock.sleep, clock=clock)
+    assert "Outlook (classic)" in str(e.value)
+
+
+def test_connect_button_always_answers(monkeypatch):
+    """The API wraps connect() in a deadline and turns errors into a message, never a silent hang."""
+    from types import SimpleNamespace
+
+    from monkey import app as appmod
+
+    monkeypatch.setattr(appmod.sys, "platform", "win32")
+    monkeypatch.setattr(oc, "installed", lambda: True)
+    saved = []
+    cfg = SimpleNamespace(settings=SimpleNamespace(outlook_connected=False), save=lambda: saved.append(1))
+
+    def boom(**kw):
+        raise oc.OutlookConnectError(oc.NEW_OUTLOOK)
+    fake = SimpleNamespace(outlook=SimpleNamespace(connect=boom), cfg=cfg, _emit=lambda *a: None)
+    api = appmod.Api.__new__(appmod.Api)
+    api._app = fake
+    r = api.test_outlook()
+    assert r["ok"] is False and "new Outlook" in r["error"] and not saved
+    fake.outlook = SimpleNamespace(connect=lambda **kw: [object()])
+    r = api.test_outlook()
+    assert r == {"ok": True, "count": 1} and cfg.settings.outlook_connected is True and saved
