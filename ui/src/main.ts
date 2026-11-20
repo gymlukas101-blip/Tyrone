@@ -15,7 +15,7 @@ import { cursorSettings } from "./cursor";
 import { flash, pop, pulse, setFeedbackSound, shake } from "./feedback";
 import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
-import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
+import { automationEvent, computerEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
@@ -575,6 +575,7 @@ function onEvent(name: string, p: any) {
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); flash("warn"); break;
     case "automation": { const m = automationEvent(p); moodEmote(m); resolver.setMood(m); break; }
+    case "computer_event": computerEvent(p); break;
     case "automation_propose": void openTasks(p); notifySound(); break;
     case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
     case "automation_enabled": void refreshTasks(); break;
@@ -1689,6 +1690,7 @@ async function bootOverlay() {
         else if (n === "visemes") avatar.setVisemes(p);
         else if (n === "emote" && p.name !== "sleep") avatar.emote(p.name);
         else if (n === "automation") setMood(automationEvent(p));
+        else if (n === "computer_event") computerEvent(p);
         else if (n === "automation_stopped" || n === "automation_enabled") void refreshTasks();
       } catch (e) { console.error(n, e); }
     }

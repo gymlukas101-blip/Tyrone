@@ -1,0 +1,66 @@
+name: computer-bench
+# Real-Windows measurements for computer use (GitHub windows-latest: a real interactive Windows session, not the
+# user's PC). Never publishes anything; results are uploaded as a build artifact.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feature/**"]
+    paths: ["monkey/automation/**", "tools/computer_bench/**", "tests/test_computer_use.py",
+            "tests/test_uia_driver_windows.py", ".github/workflows/computer-bench.yml"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v7
+      - name: Install Monkey + benchmark clients
+        run: |
+          pip install ".[desktop,dev]" fastmcp
+          python -m playwright install chromium
+          npm install -g agent-desktop@1.3.1
+          uv python install 3.14
+      - name: Computer-use tests (browser fixtures, hybrid orchestration)
+        run: pytest -q tests/test_computer_use.py
+      - name: Profile one UIA observe (diagnostic)
+        run: python -m tools.computer_bench.profile_uia
+        timeout-minutes: 10
+        continue-on-error: true
+      - name: Leftover fixture processes (diagnostic)
+        shell: pwsh
+        run: Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object Id, ProcessName, MainWindowTitle, Responding | Format-Table -AutoSize
+      - name: Windows UIA driver tests (WinForms fixture)
+        env:
+          MONKEY_UIA_TESTS: "1"
+        run: pytest -q -s -o faulthandler_timeout=45 tests/test_uia_driver_windows.py
+        timeout-minutes: 6
+        continue-on-error: true
+      - name: Browser fixtures (real Chromium on Windows)
+        run: python -m tools.computer_bench.run_browser --out bench-browser-windows.json
+        timeout-minutes: 12
+        continue-on-error: true
+      - name: Leftover windows before the desktop bench (diagnostic)
+        shell: pwsh
+        run: Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object Id, ProcessName, MainWindowTitle, Responding | Format-Table -AutoSize
+      - name: Desktop backends compared (monkey / agent-desktop / windows-mcp)
+        env:
+          ANONYMIZED_TELEMETRY: "false"
+        run: python -m tools.computer_bench.run_windows --out bench-windows.json
+        timeout-minutes: 25
+        continue-on-error: true
+      - name: Hybrid workflow (Monkey browser -> real Notepad + Save As dialog -> browser)
+        run: python -m tools.computer_bench.run_hybrid --out bench-hybrid.json
+        timeout-minutes: 6
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: computer-bench
+          path: bench-*.json

@@ -31,7 +31,7 @@ log = logging.getLogger("monkey.automation")
 
 AVATAR = {S.READY: "idle", S.RUNNING: "working", S.WAITING: "waiting", S.NEEDS_INPUT: "help", S.PAUSED: "paused",
           S.BLOCKED: "blocked", S.VERIFYING: "thinking", S.COMPLETED: "celebrate", S.FAILED: "sad",
-          S.CANCELLED: "idle"}
+          S.CANCELLED: "idle", S.PLANNING: "thinking", S.RECOVERING: "working"}
 
 
 @dataclass
@@ -48,7 +48,8 @@ class _Flags:
 class TaskManager:
     def __init__(self, store: TaskStore, gate: PermissionGate, session_factory: Callable[[Task], BrowserSession],
                  emit: Callable[[str, dict], None] = lambda n, p: None, planner=None, skill=None,
-                 max_session_losses: int = 2, advisor=None):
+                 max_session_losses: int = 2, advisor=None, goal_planner=None, trace_dir=None, action_cache=None,
+                 grounder=None, native_cursor=None):
         self.store = store
         self.gate = gate
         self.session_factory = session_factory
@@ -57,6 +58,11 @@ class TaskManager:
         self.skill = skill or CourseSkill()
         self.max_session_losses = max_session_losses
         self.advisor = advisor          # (question, options) -> {"index", "reason"}: a suggestion; the user decides
+        self.goal_planner = goal_planner   # general tasks (browser + Windows apps): computer.goal.ClaudeGoalPlanner
+        self.trace_dir = trace_dir         # per-task JSONL traces (user data folder, never the repo)
+        self.action_cache = action_cache   # verified steps replayed without a model call
+        self.grounder = grounder           # visual fallback (only for tasks where screenshots are allowed)
+        self.native_cursor = native_cursor # banana over the real desktop for Windows-app steps
         self._replies: dict[str, dict] = {}
         self.session: BrowserSession | None = None
         self._flags: dict[str, _Flags] = {}
@@ -236,7 +242,10 @@ class TaskManager:
         started = time.time()
         try:
             self._set(t, S.RUNNING, "Looking at the screen…")
-            self._loop(t, f)
+            if t.skill == "general":
+                self._goal_loop(t, f, started)
+            else:
+                self._loop(t, f)
         except Exception as exc:  # noqa: BLE001 - a bug must end the task cleanly, never leave it "running"
             log.exception("task %s crashed", task_id)
             t.error("crash", type(exc).__name__)
@@ -442,6 +451,62 @@ class TaskManager:
                     self._needs_user(t, f, obs, "The site doesn't show the course as complete, and I can't find "
                                                 "what's left. Can you take a look?")
                     verify_fails = 0
+
+    # ---- general tasks: the hybrid computer-use loop ------------------------------------------------------------
+    def _goal_loop(self, t: Task, f: _Flags, t0: float) -> None:
+        """Browser + Windows apps through computer.Computer, planned by computer.goal (skills/cache first, Claude
+        when needed). Pause/stop/budgets/approvals/restart behave exactly like course tasks."""
+        from pathlib import Path
+
+        from .computer import Computer, Trace
+        from .computer.drivers.browser import BrowserDriver
+        from .computer.goal import GoalRunner
+
+        if self.goal_planner is None:
+            t.outcome = {"result": "error", "detail": "no planner"}
+            self._set(t, S.FAILED, "General tasks need Claude (add your Anthropic key in Settings).")
+            return
+        host = _ManagerHost(self, t, f, t0)
+        drivers = {}
+        if t.start_url or t.mode == "managed_browser" and not t.apps:
+            drivers["browser"] = BrowserDriver(self._ensure_session(t))
+        if t.window or t.apps:
+            try:
+                d = host.open_driver("uia", task=t)
+                if d is not None:
+                    drivers["uia"] = d
+            except Exception as exc:  # noqa: BLE001 - the app isn't open yet: the planner can select it later
+                log.info("no window yet: %s", exc)
+        trace = Trace(t.id, Path(self.trace_dir) / f"{t.id}.jsonl" if self.trace_dir else None, emit=self.emit)
+        visual = None
+        if t.send_screenshots and self.grounder is not None and drivers:
+            from .computer.drivers.visual import VisualDriver
+
+            visual = VisualDriver(next(iter(drivers.values())), self.grounder)
+        comp = Computer(t, self.gate, drivers, trace, should_stop=lambda: self._should_stop(f), visual=visual,
+                        save=lambda: self._save(t))
+        if "browser" in drivers:
+            self._reconcile(t, self.session)
+        while True:
+            res = GoalRunner(t, comp, self.goal_planner, host, cache=self.action_cache).run()
+            if res != "stopped" or t.terminal:
+                return
+            if f.stop.is_set() or self.gate.stopped.is_set():
+                self._set(t, S.CANCELLED, "Stopped. Nothing else will be clicked.")
+                t.outcome = {"result": "cancelled"}
+                return
+            if f.pause.is_set():
+                self._set(t, S.PAUSED, "Paused. Press Resume when you're ready.")
+                if self._quitting.is_set():
+                    return
+                while f.pause.is_set() and not f.stop.is_set() and not self.gate.stopped.is_set():
+                    f.wake.wait(0.5)
+                    f.wake.clear()
+                if f.stop.is_set() or self.gate.stopped.is_set():
+                    continue
+                self._set(t, S.RUNNING, "Resuming: looking at the screen again…")
+                continue
+            return
 
     # ---- pieces --------------------------------------------------------------------------------------------------
     def _ask_new_site(self, t: Task, s: BrowserSession, f: _Flags, memo: dict) -> bool:
@@ -727,3 +792,60 @@ class TaskManager:
             return True
         self._set(t, S.RUNNING, f"Not done yet: {ev['done']} of {ev['total']} complete. Continuing…")
         return False
+
+
+class _ManagerHost:
+    """What computer.goal.GoalRunner needs from the TaskManager: state changes, waits, approvals, sessions."""
+
+    def __init__(self, m: TaskManager, t: Task, f: _Flags, t0: float):
+        self.m, self.t, self.f, self.t0 = m, t, f, t0
+
+    def set_state(self, task, state: S, note: str = "") -> None:
+        if task.state != state or note:
+            self.m._set(task, state, note)
+
+    def save(self, task) -> None:
+        self.m._save(task)
+
+    def should_stop(self) -> bool:
+        return self.m._should_stop(self.f)
+
+    def over_budget(self, task) -> str:
+        return self.m._over_budget(task, self.t0)
+
+    def wait_user(self, task, timeout_s: float):
+        self.m._wait_user(task, self.f, None, timeout_s)
+        return None
+
+    def request_approval(self, task, action, page_url: str, risk) -> str:
+        a = self.m.gate.request(task.id, action, page_url, Risk[risk] if isinstance(risk, str) else risk)
+        self.m._publish(task)
+        return a.id
+
+    def open_driver(self, kind: str, task=None, process: str = "", title: str = "", reopen: bool = False):
+        t = task or self.t
+        if kind == "browser":
+            from .computer.drivers.browser import BrowserDriver
+
+            return BrowserDriver(self.m._ensure_session(t))
+        if kind == "uia":
+            from .computer.drivers.uia import UIADriver
+            from .desktop import list_windows
+
+            allowed = {a.lower() for a in (t.apps or [])}
+            want = (process or "").lower()
+            hwnd = 0
+            wins = [w for w in list_windows() if not w.sensitive]
+            if t.window and not want:
+                h = int(t.window.get("hwnd") or 0)
+                hwnd = h if any(w.hwnd == h for w in wins) else next(
+                    (w.hwnd for w in wins if w.process.lower() == str(t.window.get("process", "")).lower()), 0)
+            if not hwnd:
+                hwnd = next((w.hwnd for w in wins if w.process.lower() in allowed and (not want or
+                             w.process.lower() == want) and (not title or title.lower() in w.title.lower())), 0)
+            if not hwnd:
+                return None
+            info = next(w for w in wins if w.hwnd == hwnd)
+            t.window = {"hwnd": hwnd, "title": info.title[:120], "process": info.process}
+            return UIADriver(hwnd, allow_physical=bool(t.allow_physical), cursor=self.m.native_cursor)
+        return None

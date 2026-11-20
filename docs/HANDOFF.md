@@ -1,8 +1,28 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-19 (release v0.3.37: Google sign-in cancel/expiry handling, schedule hint, Settings → Check everything). The owner is now on the Dell XPS 15 9530.
+Last updated 2026-11-20 (release v0.3.62: hotfix for "Too many strict tools (24)" on every message: at most 20 strict tool schemas per request). The owner is now on the Dell XPS 15 9530.
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
+
+## In progress on branch `feature/hybrid-computer-use` (not on main)
+- **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
+  - the managed browser (Playwright);
+  - Windows UI Automation (owned dialogs included);
+  - a visual fallback (Claude computer toolset as a grounder).
+- **The `Computer` layer:** capability router, typed outcomes and errors with bounded recovery, idempotency ledger, write-ahead intents, structured trace.
+- **General tasks:** `TaskManager` runs `skill="general"` tasks through `computer/goal.py` (skills, then verified cache, then the Claude planner; verify before "done").
+- **Docs:** [ADR 0002](adr/0002-hybrid-computer-use.md), [research report](research/COMPUTER-USE-RESEARCH.md), [quality report](research/COMPUTER-USE-QUALITY.md).
+- **Bench:** `tools/computer_bench/`, run in CI by `.github/workflows/computer-bench.yml` (Windows runner):
+  - `run_browser` (20 fixtures);
+  - `run_windows` (13 native tasks × monkey / agent-desktop / windows-mcp);
+  - `run_hybrid` (browser → Notepad + Save As → browser).
+- **Measured on the GitHub Windows runner:**
+  - Monkey's UIA backend: 13/13 native tasks.
+  - agent-desktop: 8/12.
+  - Windows-MCP: 10/12, but it moved the real mouse in 8 of them.
+  - Browser fixtures: 20/20.
+  - The hybrid task with the real Notepad and Save As dialog passed in 8.7 s.
+- **Next:** the backlog in [the quality report](research/COMPUTER-USE-QUALITY.md) (a live model run on the Dell comes first).
 
 ## Computer tasks (merged to main 2026-11-20)
 - Computer tasks: a durable TaskManager, an execution-layer permission gate, a managed Edge browser through Playwright with the

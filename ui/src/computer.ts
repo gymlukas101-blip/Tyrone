@@ -1,6 +1,6 @@
 // Computer tasks: the permission flow, the live task panel, and the floating companion view.
 // Everything consequential happens in Python behind PermissionGate; this file only asks and shows.
-import type { Api, AutoState, AutoTask, Approval } from "./bridge";
+import type { Api, AutoState, AutoTask, Approval, ComputerEvent } from "./bridge";
 import { h, toast } from "./dom";
 
 let api: Api;
@@ -9,11 +9,16 @@ let current: AutoTask | null = null;
 let approvals: Approval[] = [];
 const listeners: (() => void)[] = [];
 
+let feed: ComputerEvent[] = [];
+let feedTask = "";
+const BACKEND_ICON: Record<string, string> = { browser: "🌐", uia: "🪟", visual: "👁" };
+const BACKEND_NAME: Record<string, string> = { browser: "Monkey's browser", uia: "a Windows app", visual: "the screen (pixels)" };
+
 const STATE_LABEL: Record<string, string> = {
-  READY: "Ready", RUNNING: "Working", WAITING: "Waiting", NEEDS_INPUT: "Needs you", PAUSED: "Paused",
+  READY: "Ready", PLANNING: "Thinking", RECOVERING: "Retrying", RUNNING: "Working", WAITING: "Waiting", NEEDS_INPUT: "Needs you", PAUSED: "Paused",
   BLOCKED: "Stuck", VERIFYING: "Checking", COMPLETED: "Done ✓", FAILED: "Stopped", CANCELLED: "Stopped",
 };
-const LIVE = ["RUNNING", "WAITING", "NEEDS_INPUT", "VERIFYING", "BLOCKED"];
+const LIVE = ["RUNNING", "WAITING", "NEEDS_INPUT", "VERIFYING", "BLOCKED", "PLANNING", "RECOVERING"];
 const hotkey = () => (state?.stop_hotkey ?? "ctrl+alt+q").split("+").map((k) => k[0].toUpperCase() + k.slice(1)).join("+");
 
 export function initComputer(a: Api) { api = a; void refresh(); }
@@ -40,13 +45,54 @@ export function automationEvent(p: any): string {
   return p.avatar ?? "idle";
 }
 
+/** Backend event "computer_event": one structured step of a general task (what really happened, by which backend). */
+export function computerEvent(p: ComputerEvent) {
+  if (p.task_id && p.task_id !== feedTask) { feed = []; feedTask = p.task_id; }
+  if (p.ev === "ACTION_EXECUTED" && p.op === "observe") return;           // too chatty to show
+  feed = [...feed.slice(-39), p];
+  changed();
+}
+
+/** One human line per event. Failures say why; "verified" means it was read back, not just sent. */
+export function describeEvent(e: ComputerEvent): string {
+  const what = e.name ? `${e.role ? e.role + " " : ""}“${e.name}”` : "";
+  const icon = BACKEND_ICON[e.backend ?? ""] ?? "•";
+  switch (e.ev) {
+    case "DRIVER_SWITCHED": return `↪ switched to ${BACKEND_NAME[e.to ?? ""] ?? e.to}${e.why ? ` (${e.why})` : ""}`;
+    case "WINDOW_SELECTED": return `🪟 now working in ${e.process || e.window}`;
+    case "BROWSER_NAVIGATED": return `🌐 opened ${e.url ?? ""}`;
+    case "ACTION_VERIFIED": return `${icon} ✓ ${e.op?.replace("_", " ")} ${what}${e.stage === "verified" ? " (checked)" : ""}`;
+    case "ACTION_EXECUTED": return `${icon} ${e.op?.replace("_", " ")} ${what}`;
+    case "ACTION_FAILED": return `${icon} ✗ ${e.op?.replace("_", " ")} ${what}: ${e.detail ?? e.error}`;
+    case "RECOVERY": return `↻ recovered (${e.recovered_by})`;
+    case "WAIT_STARTED": return `⏳ waiting for ${e.kind}`;
+    case "WAIT_FINISHED": return `⏳ ${e.ok ? "done waiting" : "gave up waiting"} (${e.kind})`;
+    case "PLAN_UPDATED": return `🧭 ${e.subgoal}`;
+    case "USER_INPUT_NEEDED": return `🙋 ${e.message}`;
+    case "TASK_COMPLETED": return "🎉 done and verified";
+    case "MODEL_CALL": return "💭 asked Claude for the next steps";
+    default: return "";
+  }
+}
+
+function activity(compact: boolean): HTMLElement | "" {
+  const shown = feed.filter((e) => e.ev !== "ACTION_ACCEPTED" && describeEvent(e));
+  if (!shown.length) return "";
+  const last = [...feed].reverse().find((e) => e.backend);
+  const where = last?.backend ? h("span", { class: `where b-${last.backend}` }, `${BACKEND_ICON[last.backend]} ${BACKEND_NAME[last.backend]}`) : "";
+  if (compact) return h("div", { class: "activity compact" }, where, h("span", { class: "meta" }, describeEvent(shown[shown.length - 1])));
+  return h("div", { class: "activity" }, h("div", { class: "row" }, h("b", {}, "Live"), where),
+    h("ol", { class: "feed" }, ...shown.slice(-6).map((e) => h("li", { class: e.ev === "ACTION_FAILED" ? "bad" : e.ev === "ACTION_VERIFIED" ? "ok" : "" }, describeEvent(e)))));
+}
+
 export function controlBanner(): HTMLElement {
   const el = h("div", { id: "controlBanner", role: "status" });
   const draw = () => {
     const live = current && LIVE.includes(current.state);
     el.hidden = !live;
     el.replaceChildren(...(live ? [
-      h("span", {}, current!.state === "NEEDS_INPUT" ? "🙋 Monkey needs you" : "🖐 Monkey is using his browser"),
+      h("span", {}, current!.state === "NEEDS_INPUT" ? "🙋 Monkey needs you"
+        : current!.window?.process ? `🖐 Monkey is using ${current!.window.process} and his browser` : "🖐 Monkey is using his browser"),
       h("button", { type: "button", class: "ghost mini danger", onclick: () => void control("stop") }, `■ Stop (${hotkey()})`),
     ] : []));
   };
@@ -79,6 +125,7 @@ export function taskPanel(compact = false): HTMLElement {
     if (!compact) parts.push(h("p", { class: "meta" }, [t.progress?.modules_done ? `${t.progress.modules_done} module(s) done` : "",
       `${t.usage?.actions ?? 0} steps`, t.usage?.model_calls ? `${t.usage.model_calls} Claude call(s) · $${(t.usage.usd ?? 0).toFixed(3)}` : "no Claude calls"]
       .filter(Boolean).join(" · ")));
+    if (t.skill === "general" && feedTask === t.id) parts.push(activity(compact) as HTMLElement);
     if (t.state === "NEEDS_INPUT" && pend) {
       const card = h("div", { class: "needs" }, compact ? "" : h("p", {}, pend.message));
       const say = async (text: string) => {
@@ -135,10 +182,14 @@ export function taskPanel(compact = false): HTMLElement {
 
 async function showHistory(taskId: string) {
   const r = await api.automation_history(taskId);
+  const tr = api.automation_trace ? await api.automation_trace(taskId) : { ok: true, events: [] };
   const dlg = h("dialog", { class: "histdlg" });
+  const steps = (tr.events ?? []).filter((e) => e.ev !== "ACTION_ACCEPTED" && describeEvent(e)).slice(-120).map((e) =>
+    h("li", { class: e.ev === "ACTION_FAILED" ? "bad" : "" }, `${(e.t ?? 0).toFixed(1)}s · ${describeEvent(e)}${e.ms ? ` · ${e.ms} ms` : ""}`));
   const rows = (r.log ?? []).slice(-80).reverse().map((a) => h("li", {},
     `${new Date(a.ts * 1000).toLocaleTimeString()} · ${a.kind} ${a.target}`.trim() + ` · ${a.outcome}` + (a.risk ? ` (${a.risk.toLowerCase()})` : "")));
   dlg.append(h("h3", {}, "What Monkey did"), h("p", { class: "meta" }, "Only the kind of action, which control and the site are kept: never what was typed, page text or screenshots."),
+    ...(steps.length ? [h("h4", {}, "Step by step"), h("ol", { class: "histlist feed" }, ...steps), h("h4", {}, "Permission log")] : []),
     h("ol", { class: "histlist" }, ...rows), h("button", { type: "button", class: "primary", onclick: () => { dlg.close(); dlg.remove(); } }, "Close"));
   document.body.append(dlg);
   dlg.showModal();
@@ -203,6 +254,30 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   const shots = h("input", { type: "checkbox" }) as HTMLInputElement;
   const askMore = h("input", { type: "checkbox" }) as HTMLInputElement;
   const helpers = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
+  const general = h("input", { type: "radio", name: "mode" }) as HTMLInputElement;
+  const course = h("input", { type: "radio", name: "mode", checked: true }) as HTMLInputElement;
+  const apps = h("input", { placeholder: "notepad.exe, excel.exe" }) as HTMLInputElement;
+  const files = h("textarea", { rows: 2, placeholder: "C:\\Users\\you\\Documents\\report.docx (one per line)" }) as HTMLTextAreaElement;
+  const physical = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const winList = h("div", { class: "row winpick" });
+  const appBox = h("div", { class: "generalonly", hidden: true },
+    h("label", { class: "field" }, h("span", {}, "Apps he may use (program names)"), apps), winList,
+    h("label", { class: "field" }, h("span", {}, "Files he may open, save or upload"), files),
+    h("label", { class: "field toggle" }, physical, h("span", {}, "He may use my real mouse and keyboard in those apps when nothing else works (he waits while you're typing or moving the mouse)")));
+  const syncMode = async () => {
+    appBox.hidden = !general.checked;
+    helpers.closest("label")!.toggleAttribute("hidden", general.checked);
+    if (general.checked && st.windows_supported && !winList.childElementCount) {
+      const w = await api.automation_windows();
+      const seen = new Set<string>();
+      for (const x of w.windows.filter((x) => !x.sensitive && x.process)) {
+        if (seen.has(x.process)) continue; seen.add(x.process);
+        winList.append(h("button", { type: "button", class: "ghost mini", title: x.title,
+          onclick: () => { const cur = apps.value.split(/[,\s]+/).filter(Boolean); if (!cur.includes(x.process)) apps.value = [...cur, x.process].join(", "); } }, `+ ${x.process}`));
+      }
+    }
+  };
+  general.addEventListener("change", () => void syncMode()); course.addEventListener("change", () => void syncMode());
   const anySite = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
   const syncSites = () => {
     domains.disabled = anySite.checked;
@@ -214,7 +289,9 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   const start = async () => {
     err.textContent = ""; err.className = "keynote";
     const r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
-      "managed_browser", shots.checked, askMore.checked, helpers.checked, anySite.checked);
+      "managed_browser", shots.checked, askMore.checked, helpers.checked && !general.checked, anySite.checked,
+      general.checked ? "general" : "course", apps.value.split(/[,\s]+/).filter(Boolean),
+      files.value.split(/\n+/).map((x) => x.trim()).filter(Boolean), physical.checked);
     if (!r.ok) { err.className = "keynote bad"; err.textContent = `⚠ ${r.error}`; return; }
     toast("Started. Watch the Monkey browser window; you can Pause or Stop anytime.", 5000);
     void refresh();
@@ -224,10 +301,11 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     h("h4", {}, "Start a task"),
     h("label", { class: "field" }, h("span", {}, "What should Monkey do?"), objective),
     h("div", { class: "modes" },
-      h("label", {}, h("input", { type: "radio", name: "mode", checked: true }), " ", h("b", {}, "In Monkey's own browser"),
+      h("label", {}, course, " ", h("b", {}, "Course modules in Monkey's browser"),
         h("small", {}, " A separate browser window with its own sign-ins. He can only click on the sites below.")),
-      h("label", { class: "off", title: "The window driver exists, but tasks run in Monkey's browser in this version." },
-        h("input", { type: "radio", name: "mode", disabled: true }), " ", h("b", {}, "Control one of my windows"), h("small", {}, " (coming next)"))),
+      h("label", { class: st.windows_supported ? "" : "off" }, general, " ", h("b", {}, "General task: his browser + apps you pick"),
+        h("small", {}, " Plans with Claude, switches between the browser and the apps, checks the result on screen."))),
+    appBox,
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
     h("label", { class: "field toggle" }, anySite, h("span", {}, h("b", {}, "Any website"),
       " Canvas, Duo, module and video sites open freely. He still never types passwords or codes, asks before anything that sends, submits, buys or deletes, and quiz answers stay yours.")),

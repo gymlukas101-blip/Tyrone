@@ -307,6 +307,32 @@ Now (`monkey/memory/export.py`):
   - A "paused, no Play button yet" lesson must not start the long wait.
   - The banana must snap to its target before pressing.
 
+
+## 2026-11-20: v0.3.62 hotfix: "Too many strict tools"
+- **Symptom:** every chat request returned 400 "Too many strict tools (24). The maximum number of strict tools supported is 20".
+- **Cause:** all 24 local tools were declared `strict: true`.
+- **Fix:**
+  - `brain/tools.py` `STRICT_TOOLS`: the 14 tools with side effects stay strict;
+  - `cap_strict()` drops `strict` beyond 20 at request time.
+  - Regression test in `tests/test_playtest_fixes.py`.
+
+## 2026-11-20: hybrid computer use (branch feature/hybrid-computer-use)
+- `monkey/automation/computer/`:
+  - `model.py`: targets, outcomes, `ErrorKind` + `RECOVERY`, capabilities;
+  - `coords.py`: explicit IMAGE/VIEWPORT/SCREEN maps;
+  - `router.py`, `trace.py`, `cache.py`;
+  - `computer.py`: gate → idempotency → intent → driver → change → read-back → checkpoint;
+  - `goal.py`: GoalRunner, planner tools, ClaudeGoalPlanner;
+  - drivers: `browser.py`, `uia.py`, `visual.py`.
+- Gate additions: `upload` (HIGH), `choose_file` (MEDIUM, or HIGH when the picker belongs to a browser), and `path_allowed` against `Task.files`.
+- New task fields: `apps`, `files`, `allow_physical`, `success`. New states: PLANNING and RECOVERING.
+- Lessons:
+  - Focus markers (`[active]`) in aria snapshots made every click look like a change, so the signature strips them.
+  - A click with no visible effect must still be remembered for MEDIUM+ actions; otherwise "Add item" runs twice.
+  - LOW-risk navigation clicks may be retried.
+  - After an approval, redo exactly the approved call right away.
+  - WinForms controls without a Name get a numeric AutomationId that changes when the control is recreated; identity falls back to role + name, if unique.
+  - A label with an AccessibleName hides its text changes from UIA.
 ## 2026-11-20: Monkey's browser is Chrome first
 - **Setting:** `automation_browser` = `chrome` (default) or `edge`.
   - `pick_channel()` uses Chrome when it is installed (Program Files, LocalAppData, or the App Paths registry), else Edge.

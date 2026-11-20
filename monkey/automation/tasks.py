@@ -20,27 +20,32 @@ from urllib.parse import urlsplit
 
 class S(str, Enum):
     READY = "READY"
+    PLANNING = "PLANNING"          # deciding the next steps (a model call or a skill)
     RUNNING = "RUNNING"
     WAITING = "WAITING"            # waiting for the page/app (media playing, a load, a download): no model calls
     NEEDS_INPUT = "NEEDS_INPUT"    # waiting for the user: an approval, their own answer/attestation, a sign-in
     PAUSED = "PAUSED"
     BLOCKED = "BLOCKED"            # an external dependency is down (site errors, browser gone) after bounded retries
     VERIFYING = "VERIFYING"
+    RECOVERING = "RECOVERING"      # an action failed: re-observing, re-finding, switching backend (bounded)
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
 
 TERMINAL = {S.COMPLETED, S.FAILED, S.CANCELLED}
-_ACTIVE = {S.RUNNING, S.WAITING, S.NEEDS_INPUT, S.BLOCKED, S.VERIFYING}
+_ACTIVE = {S.PLANNING, S.RUNNING, S.WAITING, S.NEEDS_INPUT, S.BLOCKED, S.VERIFYING, S.RECOVERING}
 TRANSITIONS: dict[S, set[S]] = {
-    S.READY: {S.RUNNING, S.CANCELLED},
-    S.RUNNING: {S.WAITING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.VERIFYING, S.FAILED, S.CANCELLED},
-    S.WAITING: {S.RUNNING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.FAILED, S.CANCELLED},
-    S.NEEDS_INPUT: {S.RUNNING, S.PAUSED, S.FAILED, S.CANCELLED},
-    S.PAUSED: {S.RUNNING, S.CANCELLED},
+    S.READY: {S.RUNNING, S.PLANNING, S.CANCELLED},
+    S.PLANNING: {S.RUNNING, S.WAITING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.VERIFYING, S.FAILED, S.CANCELLED},
+    S.RECOVERING: {S.RUNNING, S.PLANNING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.FAILED, S.CANCELLED},
+    S.RUNNING: {S.WAITING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.VERIFYING, S.FAILED, S.CANCELLED, S.PLANNING,
+                S.RECOVERING},
+    S.WAITING: {S.RUNNING, S.NEEDS_INPUT, S.PAUSED, S.BLOCKED, S.FAILED, S.CANCELLED, S.PLANNING},
+    S.NEEDS_INPUT: {S.RUNNING, S.PAUSED, S.FAILED, S.CANCELLED, S.PLANNING},
+    S.PAUSED: {S.RUNNING, S.PLANNING, S.CANCELLED},
     S.BLOCKED: {S.RUNNING, S.PAUSED, S.FAILED, S.CANCELLED},
-    S.VERIFYING: {S.COMPLETED, S.RUNNING, S.NEEDS_INPUT, S.PAUSED, S.FAILED, S.CANCELLED},
+    S.VERIFYING: {S.COMPLETED, S.RUNNING, S.NEEDS_INPUT, S.PAUSED, S.FAILED, S.CANCELLED, S.PLANNING},
     S.COMPLETED: set(), S.FAILED: set(), S.CANCELLED: set(),
 }
 
@@ -78,6 +83,10 @@ class Task:
     window: dict = field(default_factory=dict)       # {"hwnd", "title", "process"} for window modes
     send_screenshots: bool = False                   # may screenshots go to Claude (only if the user ticked it)
     confirm_medium: bool = False                     # ask before medium-risk actions too
+    files: list = field(default_factory=list)        # local files/folders this task may upload or pick
+    apps: list = field(default_factory=list)         # native apps (process names) a hybrid task may use
+    allow_physical: bool = False                     # may use the real mouse/keyboard when UIA patterns can't
+    success: list = field(default_factory=list)      # machine-checkable end state [{"text": ...}, {"url_contains"...}]
     id: str = field(default_factory=lambda: "t_" + uuid.uuid4().hex[:10])
     state: S = S.READY
     subgoal: str = ""
