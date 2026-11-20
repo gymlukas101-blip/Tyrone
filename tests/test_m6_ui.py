@@ -85,3 +85,85 @@ def test_morning_brief_is_not_pushed_out_by_other_cards(browser):
     titles = p.eval_on_selector_all(".card", "els => els.map(e => e.dataset.title)")
     p.close()
     assert len(titles) <= 4 and any(t.startswith("☀️") for t in titles), titles
+
+
+# ---------------------------------------------------------------- Today view (Focus / Homework / Schedule)
+def _today(browser, query="?demo", w=1280, h=800, reduced=False):
+    b, url = browser
+    ctx = b.new_context(viewport={"width": w, "height": h}, reduced_motion="reduce" if reduced else "no-preference")
+    p = ctx.new_page()
+    p.goto(url.replace("?demo", query))
+    p.wait_for_function("() => !!window.__monkeyEvents", timeout=15000)
+    p.wait_for_timeout(1000)
+    return ctx, p
+
+
+def test_today_with_nothing_connected_shows_zero_made_up_rows(browser):
+    ctx, p = _today(browser, "?demo&empty")
+    p.click("#todayBtn")
+    p.wait_for_selector("#todayPanel .focushero")
+    rows = p.eval_on_selector_all("#todayPanel li", "els => els.length")
+    texts = p.eval_on_selector_all("#todayPanel .ttile .meta", "els => els.map(e => e.textContent)")
+    ctx.close()
+    assert rows == 0
+    assert all(t.strip() for t in texts) and any("not connected" in t.lower() or "accounts" in t.lower() for t in texts)
+
+
+def test_today_draws_fast_from_cached_data_without_network(browser):
+    ctx, p = _today(browser)
+    requests = []
+    p.on("request", lambda r: requests.append(r.url))
+    p.click("#todayBtn")
+    p.wait_for_selector("#todayPanel .focustitle")
+    ms = p.evaluate("() => performance.getEntriesByType('mark').length >= 0 && window.__todayDrawMs")
+    ctx.close()
+    fetches = [u for u in requests if not u.endswith((".ogg", ".png", ".webp", ".glb", ".json", ".woff2"))]
+    assert fetches == [], fetches                     # drawing needs no network (sounds may still load)
+    assert ms is not None and ms < 300, ms
+
+
+def test_today_tabs_follow_the_keyboard_tab_pattern(browser):
+    ctx, p = _today(browser)
+    p.click("#todayBtn")
+    p.wait_for_selector("#todayPanel .focustitle")
+    assert p.evaluate("() => document.activeElement.getAttribute('role')") == "tab"
+    p.keyboard.press("ArrowRight")
+    p.wait_for_timeout(200)
+    sel = p.evaluate("() => document.querySelector('[role=tab][aria-selected=true]').dataset.tab")
+    focused = p.evaluate("() => document.activeElement.dataset.tab")
+    p.keyboard.press("End")
+    p.wait_for_timeout(200)
+    last = p.evaluate("() => document.querySelector('[role=tab][aria-selected=true]').dataset.tab")
+    p.keyboard.press("ArrowRight")                     # wraps around
+    p.wait_for_timeout(200)
+    wrapped = p.evaluate("() => document.querySelector('[role=tab][aria-selected=true]').dataset.tab")
+    tabindex = p.eval_on_selector_all("[role=tab]", "els => els.map(e => e.tabIndex)")
+    ctx.close()
+    assert sel == focused == "homework" and last == "schedule" and wrapped == "focus"
+    assert sorted(tabindex) == [-1, -1, 0]
+
+
+def test_focus_mark_done_has_undo_and_open_on_canvas(browser):
+    ctx, p = _today(browser)
+    p.click("#todayBtn")
+    p.wait_for_selector("#todayPanel .focustitle")
+    assert p.locator("text=Open on Canvas").count() == 1
+    p.click("text=Mark done in Monkey")
+    p.wait_for_selector("text=Undo")
+    done = p.evaluate("() => document.querySelector('.focushero').classList.contains('is-done')")
+    p.evaluate("() => [...document.querySelectorAll('.focusactions button')].find(b => b.textContent === 'Undo').click()")
+    p.wait_for_timeout(300)
+    undone = p.evaluate("() => !document.querySelector('.focushero').classList.contains('is-done')")
+    ctx.close()
+    assert done and undone
+
+
+def test_today_respects_reduced_motion(browser):
+    ctx, p = _today(browser, reduced=True)
+    p.click("#todayBtn")
+    p.wait_for_selector("#todayPanel .focustitle")
+    p.click("text=Mark done in Monkey")
+    p.wait_for_timeout(100)
+    n = p.evaluate("() => document.getElementById('today').getAnimations({subtree: true}).length")
+    ctx.close()
+    assert n == 0

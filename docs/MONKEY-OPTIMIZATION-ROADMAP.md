@@ -70,14 +70,16 @@ Measure first, so later milestones can show they helped.
     findings at 1280 or 420 px; it found no contrast problems.)
     - **Change:** the brief survives the card limit; the composer is visible at 420×700; keyboard access for collapsed cards and email rows; `aria-live` chat; radio semantics; labelled input; contrast fixes.
     - **DoD:** the axe and Playwright checks in Agent D's acceptance criteria.
-12. **Dashboard.**
+12. **Dashboard.** (done as the Focus tab of the Today view, `ui/src/today.ts` + `Api.dashboard()`; it reuses the
+    cached brief and assignment board, so there's no second data path.)
     - **Change:** a structured `dashboard()` endpoint (cached; every section reports ok/empty/not_connected/unavailable) and cards for top/next, schedule, due top 3, unread, weather, plus a docked composer.
     - **DoD:**
       - 1280, 900 and 420 px screenshots;
       - with everything disconnected, zero fake rows;
       - no network on draw;
       - first draw under 300 ms on the Dell.
-13. **Focus view.**
+13. **Focus view.** (done: the Today view's Focus / Homework / Schedule tabs, with Open on Canvas and "Mark done in
+    Monkey" plus Undo.)
     - **Change:** Brief/Homework/Schedule/Chat tabs; the focus item, why, due, Open on Canvas, and "Mark done in Monkey" with Undo. No XP, levels or other fabricated data.
     - **DoD:** tablist keyboard pattern; reduced-motion check with `getAnimations().length === 0`.
 14. **Hold-to-dictate.** EXPERIMENT; ask the owner first, because it types into other apps.

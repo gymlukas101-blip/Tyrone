@@ -182,6 +182,7 @@ class MonkeyApp:
         self._reply_done = False         # the agent finished its reply (audio may still be playing)
         self._conv_timer: threading.Timer | None = None
         self._waved = False
+        self._last_brief: dict | None = None      # today's brief as last shown (the Today view reads it)
         from .audio.echo import EchoGuard
 
         self.echo = EchoGuard()
@@ -1212,11 +1213,51 @@ class Api:
             return {"ok": False, "error": f"Couldn't build the brief ({type(exc).__name__})."}
         if b is None:
             return {"ok": True, "brief": None}
+        a._last_brief = b                          # the Today view reads this (no network when it draws)
         key = f"brief-spoken:{b['day']}"
         if opened and a.cfg.settings.brief_speak_on_open and b["kind"] != "draft" and not a.ledger.get_state(key):
             a.ledger.put_state(key, True, time.time())
             a._say(b["spoken"])                    # two short sentences at most; details stay on screen
         return {"ok": True, "brief": b}
+
+    def dashboard(self):
+        """The Today view: real data only, from what's already loaded (no network while it draws).
+
+        Every section reports ok | empty | not_connected | unavailable, and nothing is ever made up: a section with
+        no data says why instead of showing placeholder rows."""
+        a = self._app
+        out: dict = {"ok": True, "sections": {}}
+        sec = out["sections"]
+        try:
+            board = a.board.load(refresh=False)
+        except Exception:  # noqa: BLE001
+            board = None
+        if board is None:
+            sec["focus"] = sec["due"] = {"status": "unavailable", "items": [], "note": "Couldn't read your assignments."}
+        elif board["source"] == "none":
+            sec["focus"] = sec["due"] = {"status": "not_connected", "items": [],
+                                         "note": "Add your Canvas calendar link in Settings → Accounts."}
+        else:
+            todo = board["todo"]
+            keep = ("id", "title", "course", "due", "reason", "url", "tier", "missing", "done")
+            items = [{k: it.get(k) for k in keep} for it in todo[:3]]
+            sec["focus"] = {"status": "ok" if items else "empty", "items": items[:1],
+                            "note": "" if items else "Nothing due. Nice."}
+            sec["due"] = {"status": "ok" if items else "empty", "items": items[1:3] if items else [],
+                          "note": ""}
+            out["stats"] = board.get("stats", {})
+        b = getattr(a, "_last_brief", None)
+        if b is None:
+            from datetime import date as _date
+
+            b = a.morning.cached(_date.today()) if a.cfg.settings.brief_enabled else None
+        by_title = {x["title"]: x for x in (b or {}).get("sections", [])}
+        for key, title in (("schedule", "Today"), ("unread", "Unread email"), ("weather", "Weather")):
+            got = by_title.get(title)
+            sec[key] = ({"status": got["status"], "items": got["items"][:5], "note": got.get("note", "")} if got else
+                        {"status": "unavailable", "items": [], "note": "Not loaded yet."})
+        out["brief_day"] = (b or {}).get("day")
+        return out
 
     def brief_candidates(self):
         """Recurring calendar events over the next two weeks, as a schedule for the user to confirm."""

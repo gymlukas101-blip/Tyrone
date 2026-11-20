@@ -12,6 +12,7 @@ import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
+import { initToday, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
@@ -228,9 +229,11 @@ function setState(s: AvatarState) { resolver.setVoice(s); }
 
 // ------------------------------------------------------------------ log + cards
 const log = $("#log");
+const LOG_KEEP = 200;            // messages kept on screen; older ones stay in your history ("Earlier")
 function addMsg(kind: "user" | "bot" | "sys", text: string) {
   const el = h("div", { class: `msg ${kind}` }, text);
   log.append(el);
+  while (log.children.length > LOG_KEEP) log.firstElementChild!.remove();
   log.scrollTop = log.scrollHeight;
   return el;
 }
@@ -1613,6 +1616,8 @@ async function bootOverlay() {
   initComputer(api);
   $("#stage").append(controlBanner());
   $("#tasksBtn").addEventListener("click", () => void openTasks());
+  initToday(api, $("#side"), $("#cards"));
+  $("#todayBtn").addEventListener("click", () => toggleToday());
   if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();
   if (!appState.keys.anthropic || !appState.settings.first_run_complete) {

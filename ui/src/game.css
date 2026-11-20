@@ -127,12 +127,14 @@ header { border-bottom: 3px solid var(--ink); box-shadow: 0 4px 0 rgba(0,0,0,.25
   text-shadow: 0 1px 0 var(--ink), 0 0 2px var(--ink);
 }
 .tier.critical { background: linear-gradient(105deg, #ffe36e, #ffb300 45%, #ff7a00); box-shadow: 0 0 14px #ffc94099; color: #3a1d00; text-shadow: none; position: relative; overflow: hidden; }
+/* Same sweep as before (a 250%-wide sheen crossing from -2.25 to +2.25 widths), but moved with transform so it runs on
+   the compositor instead of repainting the badge every frame. */
 .tier.critical::after {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.7) 50%, transparent 60%) no-repeat;
-  background-size: 250% 100%; animation: shine 2.4s infinite;
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 250%;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.7) 50%, transparent 60%);
+  animation: shine 2.4s infinite; will-change: transform; pointer-events: none;
 }
-@keyframes shine { from { background-position: 150% 0; } to { background-position: -150% 0; } }
+@keyframes shine { from { transform: translateX(-90%); } to { transform: translateX(90%); } }
 .tier.high { background: linear-gradient(#d58cff, #8e2de2); box-shadow: 0 0 12px #c266ff88; }
 .tier.normal { background: linear-gradient(#6ec6ff, #1e88e5); box-shadow: 0 0 10px #6ec6ff70; }
 .tier.low { background: linear-gradient(#c9d1d9, #8e99a4); color: #1c242b; text-shadow: none; }

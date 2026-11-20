@@ -423,3 +423,10 @@ Now (`monkey/memory/export.py`):
 - The morning brief and unsent drafts are pinned: the 4-card limit drops the oldest other card instead.
 - Narrow windows: the panel row can't grow past the window and the cards area shrinks (it scrolls), so the composer stays on screen at 420×700 with cards open.
 - Tests: `tests/test_m6_ui.py` (axe at 1280 and 420 px with no serious or critical findings, composer position, keyboard, pinned brief).
+
+## 2026-11-20: flagship Milestone 6, Today view (dashboard + focus)
+- **Today** (header button ☀): Focus / Homework / Schedule tabs, with the composer docked underneath.
+- **Focus:** the top assignment, why it's first, when it's due, Open on Canvas, and "Mark done in Monkey" with Undo (it only ticks it in Monkey; nothing is submitted). Below that, tiles for next due, today's schedule, unread email and weather.
+- **Data:** `Api.dashboard()` reads the cached brief and the cached assignment board, so drawing it needs no network. Every section reports ok / empty / not_connected / unavailable and shows that instead of placeholder rows. No XP, levels or other invented data.
+- **Narrow windows:** header buttons become icon-only, with labels kept for screen readers, so all six fit at 420 px.
+- **Tests (`tests/test_m6_ui.py`):** zero rows when nothing is connected, no network while drawing, first draw under 300 ms (in the container), the tab keyboard pattern (arrows, Home/End, wraparound, roving tabindex), mark done and Undo, and no animations with reduced motion. axe shows no serious or critical findings at 1280 and 420 px.

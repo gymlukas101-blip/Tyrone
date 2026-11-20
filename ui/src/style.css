@@ -524,3 +524,35 @@ body.overlay #app { display: block; height: 100vh; }
 #cards { flex: 0 1 auto; min-height: 0; }
 #log { min-height: 64px; }
 @media (max-width: 820px) { #cards { max-height: 40%; } }
+
+/* ---------------- Today view (Focus / Homework / Schedule); the composer stays docked under it */
+#today { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+body.today-open #cards, body.today-open #log { display: none; }
+.todaytabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.todaytabs [role=tab] { border-radius: 999px; padding: 6px 14px; background: rgba(0,0,0,.25); color: #f6ffe9; border: 2px solid transparent; font-weight: 700; cursor: pointer; }
+.todaytabs [role=tab][aria-selected=true] { background: #ffd23f; color: #2b1a00; border-color: #b8860b; }
+.todaytabs [role=tab]:focus-visible, #todayPanel:focus-visible, .focusactions button:focus-visible { outline: 2px solid #ffe066; outline-offset: 2px; }
+.todayclose { margin-left: auto; }
+.focushero { background: rgba(0,0,0,.28); border: 2px solid #ffd23f; border-radius: 16px; padding: 14px 16px; }
+.focushero.is-done { border-color: #7ddc6f; opacity: .85; }
+.focuslabel { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
+.focustitle { font-size: 20px; font-weight: 800; margin: 4px 0; }
+.focusmeta { opacity: .9; }
+.focuswhy { margin: 8px 0; font-size: 14px; }
+.focusactions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.ttiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }
+.ttiles.one { grid-template-columns: 1fr; }
+.ttile { background: rgba(0,0,0,.2); border-radius: 14px; padding: 10px 12px; min-width: 0; }
+.ttile h4 { margin: 0 0 6px; font-size: 14px; }
+.ttile.not_connected, .ttile.unavailable { opacity: .85; }
+.ttile .items { margin: 0; padding-left: 0; list-style: none; }
+.ttile .items li { padding: 2px 0; }
+@media (prefers-reduced-motion: reduce) { #today * { transition: none !important; animation: none !important; } }
+
+/* Narrow windows: header buttons become icon-only so all of them fit (labels stay for screen readers). */
+@media (max-width: 560px) {
+  #side > header .icon.labeled small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #side > header .icon.labeled { min-width: 38px; padding-left: 6px; padding-right: 6px; }
+  #side > header { gap: 4px; }
+}
+.todaybar { display: flex; gap: 6px; align-items: center; }
