@@ -340,3 +340,17 @@ Now (`monkey/memory/export.py`):
 - **`BrowserSession(cdp_endpoint=...)`:** connects instead of launching. `close()` only disconnects.
 - **Setting** `automation_browser="my_chrome"`. The pairing token is in the DPAPI key store (`chrome_bridge`).
 - **New dependency:** `websockets` (BSD-3).
+
+## 2026-11-20: updates that "restart into the old version"
+- **Symptom:** "Restart & update" ran, but Monkey came back on 0.3.66.
+- **Cause:**
+  - Quit, Restart and Restart & update ended the process with `os._exit()` without closing the computer-task browser.
+  - Playwright's driver (`node.exe`, which lives inside the app folder) outlived Monkey.
+  - Velopack can't replace a folder that's still in use, so it relaunched the old version.
+- **Fix (`monkey/lifecycle.py`):**
+  - Every exit path closes automation sessions (bounded), then ends any remaining child processes.
+  - The updater runs that cleanup right before `apply_updates_and_restart`.
+  - Startup ends leftovers still running from the app folder (never another `Monkey.exe` or `Update.exe`).
+  - If an update attempt didn't take, Monkey says so once and asks you to press Restart & update again.
+  - Tests: `tests/test_lifecycle.py`.
+- **For a machine already stuck on an older build:** end `node.exe` in Task Manager (or reboot), then Restart & update.

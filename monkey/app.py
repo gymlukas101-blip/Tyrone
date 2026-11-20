@@ -162,6 +162,10 @@ class MonkeyApp:
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
         self._voice_candidates: list[bytes] = []
         self.updater = Updater(self.ui.emit, enabled=lambda: self.cfg.settings.auto_update)
+        from . import lifecycle
+
+        self.updater.before_apply = lambda: lifecycle.release_for_exit(self)
+        self.updater.on_attempt = lambda frm, to: lifecycle.record_update_attempt(self.cfg.data_dir, frm, to)
         from .automation.service import AutomationService
 
         self.automation = AutomationService(self)          # idle until computer tasks are turned on and started
@@ -1722,7 +1726,12 @@ class Api:
                 subprocess.Popen(["sh", "-c", 'sleep 2; exec "$@"', "sh", *args])
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"{exc}. Quit Monkey from the tray and open it again."}
-        threading.Timer(0.3, lambda: os._exit(0)).start()
+        from . import lifecycle
+
+        def bye():
+            lifecycle.release_for_exit(self._app)
+            os._exit(0)
+        threading.Timer(0.3, bye).start()
         return {"ok": True}
 
     def transfer_seen(self):
@@ -1864,6 +1873,9 @@ def _tray(app: MonkeyApp, window) -> None:
 
     def quit_app(icon, item):
         icon.stop()
+        from . import lifecycle
+
+        lifecycle.release_for_exit(app)       # close the task browser + its driver, or the next update can't install
         os._exit(0)
 
     menu = pystray.Menu(
@@ -2019,6 +2031,16 @@ def run() -> None:
             log.warning("companion window extras unavailable", exc_info=True)
         app.updater.start_background()
         app.after_install_tasks()
+
+        def startup_cleanup():
+            from . import lifecycle
+
+            ended = lifecycle.kill_leftovers()          # e.g. a node.exe orphaned by an older version's quit
+            msg = lifecycle.check_update_attempt(app.cfg.data_dir, app.updater.current_version())
+            if msg:
+                log.warning("%s (ended: %s)", msg, ended)
+                app.ui.emit("warning", {"message": msg})
+        threading.Thread(target=startup_cleanup, name="startup-cleanup", daemon=True).start()
 
     # pywebview serves ui/dist over a local HTTP server (a plain path, not file://). A fresh free port
     # each launch avoids clashing with any other copy; the UI itself is one self-contained index.html.

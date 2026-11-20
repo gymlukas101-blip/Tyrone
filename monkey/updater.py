@@ -35,6 +35,8 @@ class Updater:
         self.progress = 0             # download percent while status == "downloading"
         self._lock = threading.Lock()
         self._busy = threading.Event()
+        self.before_apply: Callable[[], None] | None = None   # close everything Monkey started (lifecycle.py)
+        self.on_attempt: Callable[[str, str], None] | None = None
 
     @staticmethod
     def _default_factory():
@@ -128,6 +130,16 @@ class Updater:
         m = self._manager()
         if m is None or self._pending is None:
             return {**self.state(), "error": "No update has been downloaded yet."}
+        if self.on_attempt is not None:
+            try:
+                self.on_attempt(self.current_version(), self.available_version)
+            except Exception:  # noqa: BLE001
+                pass
+        if self.before_apply is not None:
+            try:
+                self.before_apply()       # nothing of Monkey's may still run from the app folder
+            except Exception:  # noqa: BLE001
+                log.warning("cleanup before update failed", exc_info=True)
         m.apply_updates_and_restart(self._pending)
         return self.state()
 
