@@ -153,13 +153,36 @@ class AutomationService:
         return self.bridge_status()
 
     @staticmethod
-    def extension_folder() -> Path:
+    def bundled_extension() -> Path:
         here = Path(__file__).resolve()
         for base in (Path(getattr(sys, "_MEIPASS", "")) if getattr(sys, "_MEIPASS", None) else None,
                      here.parents[2], here.parents[1]):
             if base and (base / "extension" / "chrome" / "manifest.json").is_file():
                 return base / "extension" / "chrome"
         return here.parents[2] / "extension" / "chrome"
+
+    @classmethod
+    def extension_folder(cls) -> Path:
+        """Where Chrome loads the extension from: %LOCALAPPDATA%\\Monkey\\chrome-extension. Updates replace the app
+        folder, so Chrome must not point there; this copy stays put and is refreshed from the app on each start."""
+        import os
+        import shutil
+
+        src = cls.bundled_extension()
+        local = os.environ.get("LOCALAPPDATA")
+        if not local or not src.is_dir():
+            return src
+        dst = Path(local) / "Monkey" / "chrome-extension"
+        try:
+            for f in src.rglob("*"):
+                if f.is_file():
+                    t = dst / f.relative_to(src)
+                    if not t.is_file() or t.read_bytes() != f.read_bytes():
+                        t.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(f, t)
+            return dst
+        except OSError:
+            return src
 
     def open_extension_folder(self) -> dict:
         import os

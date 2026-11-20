@@ -383,3 +383,14 @@ def test_closed_popup_falls_back_to_the_previous_tab(tmp_path):
         assert "Canvas" in s.observe().title or s.observe().elements
     finally:
         s.close()
+
+
+def test_extension_is_served_from_a_folder_updates_dont_replace(monkeypatch, tmp_path):
+    from monkey.automation.service import AutomationService
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    p = AutomationService.extension_folder()
+    assert p == tmp_path / "Monkey" / "chrome-extension"
+    assert (p / "manifest.json").is_file() and (p / "background.js").is_file()
+    (p / "background.js").write_text("old")                            # an older copy is refreshed on next start
+    assert AutomationService.extension_folder() == p and (p / "background.js").read_text() != "old"
