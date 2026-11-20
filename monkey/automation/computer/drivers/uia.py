@@ -209,7 +209,7 @@ class UIADriver(Driver):
         els: list[ElementRef] = []
         self._els = {}
         try:
-            desc = win.descendants()
+            desc = _walk(win, limit=self.max_controls * 3, per_list=60, budget_s=4.0)
         except Exception as exc:  # noqa: BLE001
             raise DriverError(ErrorKind.SESSION_LOST, f"couldn't read the window ({type(exc).__name__})") from exc
         twins: dict[tuple, int] = {}
@@ -376,17 +376,23 @@ class UIADriver(Driver):
         return ev
 
     def _click(self, w) -> dict:
+        # A button that opens a modal dialog doesn't return from Invoke until the dialog closes (Win32 BM_CLICK is
+        # synchronous). Monkey must never wait on that: classic buttons get a *posted* BM_CLICK (background-safe,
+        # returns at once); everything else is invoked on a helper thread and given 3 s.
+        if self.cursor is not None:
+            self.cursor.press()
+        if _post_bm_click(w):
+            return {"via": "bm_click", "physical": False}
         for how in ("invoke", "toggle", "select", "expand"):
             fn = getattr(w, how, None)
             if fn is None:
                 continue
-            try:
-                if self.cursor is not None:
-                    self.cursor.press()
-                fn()
+            res = _call_with_deadline(fn, 3.0)
+            if res == "ok":
                 return {"via": how, "physical": False}
-            except Exception:  # noqa: BLE001 - pattern not supported: try the next one
-                continue
+            if res == "pending":
+                return {"via": how, "physical": False, "pending": True}   # likely a modal dialog opened
+            # "error": pattern not supported → try the next one
         self._physical_ok()
         if self.cursor is not None:
             self.cursor.press()
@@ -540,6 +546,72 @@ class UIADriver(Driver):
                           input_type="password" if pw else "", sensitive=pw)
         except Exception:  # noqa: BLE001
             return Target(role="", name="")
+
+
+_LISTS = {"list", "tree", "datagrid", "table", "menu"}
+
+
+def _walk(win, limit: int, per_list: int, budget_s: float) -> list:
+    """Breadth-first walk with hard caps: at most `limit` controls, `per_list` children of any list/tree/grid (a file
+    dialog's folder view can hold thousands), and `budget_s` seconds. A truncated walk still has the dialog's buttons."""
+    out, queue, t0 = [], [win], time.time()
+    while queue and len(out) < limit and time.time() - t0 < budget_s:
+        node = queue.pop(0)
+        try:
+            kids = node.children()
+        except Exception:  # noqa: BLE001
+            continue
+        try:
+            if (node.element_info.control_type or "").lower() in _LISTS:
+                kids = kids[:per_list]
+        except Exception:  # noqa: BLE001
+            pass
+        out.extend(kids)
+        queue.extend(kids)
+    return out[:limit]
+
+
+def _post_bm_click(w) -> bool:
+    """Classic Win32/WinForms buttons: PostMessage(BM_CLICK) clicks without waiting for what the click opens."""
+    if not IS_WIN:
+        return False
+    try:
+        ei = w.element_info
+        if (ei.control_type or "").lower() not in ("button", "checkbox", "radiobutton"):
+            return False
+        h = int(ei.handle or 0)
+        if not h or "button" not in class_of(h).lower():
+            return False
+        from ctypes import wintypes
+
+        return bool(ctypes.windll.user32.PostMessageW(wintypes.HWND(h), 0x00F5, 0, 0))   # BM_CLICK
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _call_with_deadline(fn, seconds: float) -> str:
+    """'ok' | 'error' | 'pending' (still running after `seconds`, e.g. blocked behind a modal it opened)."""
+    import threading
+
+    box: dict = {}
+
+    def run():
+        try:
+            try:
+                import comtypes
+
+                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+            except Exception:  # noqa: BLE001
+                pass
+            fn()
+            box["r"] = "ok"
+        except Exception:  # noqa: BLE001
+            box["r"] = "error"
+
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    th.join(seconds)
+    return box.get("r", "pending")
 
 
 _INTERACTIVE = {"button", "edit", "checkbox", "radiobutton", "combobox", "hyperlink", "menuitem", "tabitem",

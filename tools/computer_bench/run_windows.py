@@ -55,7 +55,8 @@ class Fixture:
     def hwnd(self) -> int:
         from monkey.automation.desktop import list_windows
 
-        return next((w.hwnd for w in list_windows() if w.title == TITLE), 0)
+        pid = self.proc.pid if self.proc is not None else None
+        return next((w.hwnd for w in list_windows() if w.title == TITLE and (pid is None or w.pid == pid)), 0)
 
     def lines(self) -> list[str]:
         try:
