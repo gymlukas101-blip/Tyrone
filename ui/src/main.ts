@@ -12,6 +12,7 @@ import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
+import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
@@ -215,10 +216,15 @@ function applyLook(s: Record<string, any>) {
 const LABELS: Record<AvatarState, string> = {
   idle: "Chillin' in the jungle", listening: "Ears up…", transcribing: "Got it…", thinking: "Thinking… 🍌", speaking: "Talking",
 };
-function setState(s: AvatarState) {
+function showState(s: AvatarState) {
   avatar.setState(s);
-  $("#stateLabel").textContent = LABELS[s] ?? s;
+  const label = document.getElementById("stateLabel");
+  if (label) label.textContent = LABELS[s] ?? s;
 }
+/** Voice state + task mood → one avatar state, with priorities and minimum dwell (both windows). */
+const resolver = new AvatarStateResolver((s) => showState(s));
+(window as any).__monkeyResolver = resolver;          // Playwright checks read resolver.shown
+function setState(s: AvatarState) { resolver.setVoice(s); }
 
 // ------------------------------------------------------------------ log + cards
 const log = $("#log");
@@ -233,8 +239,8 @@ function card(title: string, ...body: Child[]) {
   // One card per kind: asking again replaces the old one instead of stacking a duplicate (drafts are per email).
   if (!title.startsWith("✉️")) cards.querySelectorAll<HTMLElement>(".card").forEach((old) => { if (old.dataset.title === title) old.remove(); });
   const c = h("div", { class: "card" },
-    h("button", { class: "close", title: "Close", onclick: () => c.remove() }, "✕"),
-    h("h3", {}, title), ...body);
+    h("button", { class: "close", title: "Close", "aria-label": `Close ${title}`, onclick: () => c.remove() }, "✕"),
+    h("h3", { "aria-level": "2" }, h("button", { type: "button", class: "cardtitle", "aria-expanded": "true" }, title)), ...body);
   c.dataset.title = title;
   // Older cards fold to their title bar (click to open) so the conversation stays readable.
   cards.querySelectorAll<HTMLElement>(".card").forEach((old) => {
@@ -245,11 +251,35 @@ function card(title: string, ...body: Child[]) {
       cards.querySelectorAll<HTMLElement>(".card").forEach((o) => { if (o !== c && !(o.classList.contains("draft") && !o.classList.contains("sent"))) o.classList.add("folded"); });
       c.classList.remove("folded");
     }
+    syncFolded();
   });
   cards.prepend(c);
-  while (cards.children.length > 4) cards.lastElementChild!.remove();
+  // At most 4 cards. The morning brief and unsent drafts are pinned: the oldest other card goes first.
+  const pinned = (el: Element) => (el as HTMLElement).dataset.title?.startsWith("☀️")
+    || (el.classList.contains("draft") && !el.classList.contains("sent"));
+  while (cards.children.length > 4) {
+    const all = [...cards.children];
+    const drop = all.reverse().find((el) => !pinned(el) && el !== c) ?? cards.lastElementChild!;
+    drop.remove();
+  }
+  syncFolded();
   return c;
 }
+
+/** aria-expanded on card titles follows the folded state (screen readers hear "collapsed"). */
+function syncFolded() {
+  cards.querySelectorAll<HTMLElement>(".card > h3 > .cardtitle").forEach((t) =>
+    t.setAttribute("aria-expanded", String(!t.closest(".card")!.classList.contains("folded"))));
+}
+
+// Keyboard: anything that acts like a button (card titles, email rows, picture thumbnails) opens with Enter or Space.
+document.addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement;
+  if ((e.key === "Enter" || e.key === " ") && t.getAttribute?.("role") === "button" && t.tagName !== "BUTTON") {
+    e.preventDefault();
+    t.click();
+  }
+});
 
 /** Settings → Memory with "What Monkey knows about you" open. */
 async function openMemory() {
@@ -291,7 +321,7 @@ function draftCard(d: any) {
     if (r.ok) {
       c.classList.add("sent");
       const when = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      c.querySelector("h3")!.textContent = `✅ Sent to ${d.to.join(", ")}`;
+      (c.querySelector(".cardtitle") ?? c.querySelector("h3"))!.textContent = `✅ Sent to ${d.to.join(", ")}`;
       const sub = c.querySelector(".meta");
       if (sub) sub.textContent = `Sent at ${when}. It's in your ${d.account === "outlook" ? "Outlook" : "Gmail"} Sent folder.`;
       subj.readOnly = true; (body as HTMLTextAreaElement).readOnly = true;
@@ -329,18 +359,18 @@ function eventsCard(p: any) {
 function emailsCard(p: any) {
   if (!p.emails.length) return;
   // Click an email to have Monkey read it to you (testers expected rows to open).
-  card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {
-      class: "clickable", title: "Click to have Monkey read it", role: "button", tabindex: "0",
+  card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {},
+    h("div", { class: "clickable rowbtn", title: "Click to have Monkey read it", role: "button", tabindex: "0",
       onclick: () => { api.send_text(`Read me the email "${e.subject}" from ${e.sender} (id ${e.id}, ${e.account}).`, null); } },
-    h("span", { class: "badge" }, e.account === "gmail" ? "Gmail" : e.account === "outlook" ? "Outlook" : e.account),
-    h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
-      h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`))))));
+      h("span", { class: "badge" }, e.account === "gmail" ? "Gmail" : e.account === "outlook" ? "Outlook" : e.account),
+      h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
+        h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`)))))));
 }
 
 function imagesCard(p: any) {
   const okSrc = (u: string) => (/^data:image\/(png|jpeg|webp);base64,/.test(u) ? u : safeHttp(u));
   card(`${p.generated ? "✨" : "🖼️"} ${p.query}`, h("div", { class: "grid" }, ...p.images.filter((i: any) => okSrc(i.src)).map((i: any) =>
-    h("img", { src: okSrc(i.thumb || i.src), alt: i.title, title: i.title, loading: "lazy",
+    h("img", { src: okSrc(i.thumb || i.src), alt: i.title, title: i.title, loading: "lazy", role: "button", tabindex: "0",
                onclick: () => i.page && api.open_url(i.page) }))));
 }
 
@@ -452,7 +482,7 @@ function onEvent(name: string, p: any) {
     case "memory_used": memoryUsed(p.items ?? []); break;
     case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
     case "warning": addMsg("sys", "⚠ " + p.message); break;
-    case "automation": moodEmote(automationEvent(p)); break;
+    case "automation": { const m = automationEvent(p); moodEmote(m); resolver.setMood(m); break; }
     case "automation_propose": void openTasks(p); break;
     case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
     case "automation_enabled": void refreshTasks(); break;
@@ -469,9 +499,25 @@ $("#importance").addEventListener("click", (e) => {
   const b = (e.target as HTMLElement).closest("button");
   if (!b) return;
   importance = b.dataset.v as Importance;
-  document.querySelectorAll("#importance button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll<HTMLElement>("#importance button").forEach((x) => {
+    x.classList.toggle("on", x === b);
+    x.setAttribute("aria-checked", String(x === b));
+    x.tabIndex = x === b ? 0 : -1;
+  });
   toast(importance === "high" ? "Important is on for your next questions: Monkey thinks harder (a few cents at most). Switch back to Auto anytime."
     : importance === "low" ? "Quick is on for your next questions: fastest and cheapest." : "Auto: Monkey picks for each question.", 4500);
+});
+// Radio-group keys: arrows move the choice (and focus) like any radio group.
+$("#importance").addEventListener("keydown", (e) => {
+  const ke = e as KeyboardEvent;
+  const keys: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  if (!(ke.key in keys)) return;
+  ke.preventDefault();
+  const btns = [...document.querySelectorAll<HTMLButtonElement>("#importance button")];
+  const i = btns.findIndex((x) => x.classList.contains("on"));
+  const next = btns[(i + keys[ke.key] + btns.length) % btns.length];
+  next.focus();
+  next.click();
 });
 $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1530,17 +1576,17 @@ async function bootOverlay() {
     if (m === "celebrate") avatar.emote("celebrate");
     else if (m === "help") avatar.emote("wave");
     else if (m === "sad" || m === "blocked") avatar.emote("shrug");
-    avatar.setState(m === "working" || m === "thinking" ? "thinking" : "idle");
+    resolver.setMood(m);              // the same rule as the main window: voice states still show during a task (D7)
   };
   initOverlay($("#avatar"), setMood, appState.settings.overlay_mode ?? "compact");
   window.__monkeyEvents = (events) => {
     for (const [n, p] of events) {
       try {
-        if (n === "state") { if (mood === "idle" || p.state === "speaking") avatar.setState(p.state); }
+        if (n === "state") resolver.setVoice(p.state);
         else if (n === "level") avatar.setLevel(p.v);
         else if (n === "visemes") avatar.setVisemes(p);
         else if (n === "emote" && p.name !== "sleep") avatar.emote(p.name);
-        else if (n === "automation") automationEvent(p);
+        else if (n === "automation") setMood(automationEvent(p));
         else if (n === "automation_stopped" || n === "automation_enabled") void refreshTasks();
       } catch (e) { console.error(n, e); }
     }

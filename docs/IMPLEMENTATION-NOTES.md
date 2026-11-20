@@ -400,3 +400,26 @@ Now (`monkey/memory/export.py`):
 - **Importance:** only phrases aimed at Monkey ("this is important", "take your time") raise the tier; "any important emails?" no longer does.
 - **Supply chain:** hashed lockfiles and a drift check, SHA-pinned actions, notices in the installer, an audit job that reports without blocking releases.
 - **Tests:** `tests/test_m2_voice.py`, `tests/test_supply_chain.py`. Container only: audio timing on the Dell is unverified.
+
+## 2026-11-20: flagship Milestone 4 (avatar state, render cost, companion)
+- **One avatar-state rule (`ui/src/avatar/resolver.ts`)** for the main window and the companion: speaking > a task needs you > you're talking > thinking or a task working > idle, with minimum dwell times so blips don't flicker. Fixes D7 (the companion ignored "listening"/"thinking" while a task ran). Vitest tables (`ui/test/resolver.test.ts`, `npm test`) and a Playwright check in both windows (`tests/test_m4_avatar.py`).
+- **Render tiers (`avatar3d.ts`):** full rate while he talks, listens, thinks, emotes, moves between poses, shows effects or follows your cursor; 30 fps when idle and still; 15 fps asleep; nothing when hidden. `stats` (frames, tier, why) is exposed for checks. Pixel ratio is unchanged (still up to 2), pending a measurement on the Dell, so nothing looks softer.
+- **Quiet UI bus:** the mouth level is sent only when it changes, so silence costs zero `evaluate_js` calls (it was about 30 per second into both windows, even when idle).
+- **Companion:** click areas are re-reported when the display scale changes.
+
+## 2026-11-20: flagship Milestone 5 (memory quality)
+- **Recall gate (`monkey/memory/recall_gate.py`):**
+  - Automatic recall is skipped for tasks that never need your memory (commands, weather, pictures, check-offs), unless the message points at your past ("like last time", "remember", "usual").
+  - Quick facts and web lookups still search, because wording-based routing sends "when does comet club meet?" there, but only strong matches are injected.
+  - Only facts and episode summaries are injected, never raw old messages; `search_memory` still finds those when asked.
+  - Each hit must share enough of the message's distinctive words, and a hit already in the recent conversation isn't repeated.
+  - Each turn's trace records whether recall was skipped, empty or injected, and how many characters.
+- **One write path:** the built-in memory tool is view-only. Every change goes through `remember` / `update_memory` / `forget_memory`, so nothing Monkey writes is labelled "you typed it" (`user_edit`).
+- **Contradictions:** `remember` refuses a fact that contradicts a current one ("roommate is Sam" vs "roommate is Jordan", same subject with a different value, or mostly the same words with different details) and points the model at `update_memory`. The old fact moves to `superseded.md` instead of two "current" truths.
+- **Tests:** `tests/test_recall_gate.py` (19 labelled recall cases, logging, 8 seeded conflict cases, view-only memory tool).
+
+## 2026-11-20: flagship Milestone 6, P0 UI fixes
+- Card titles are real buttons (`aria-expanded`), email rows and picture thumbnails open with Enter or Space, Quick/Auto/Important is a radio group with arrow keys, the chat log is a live region you can scroll by keyboard, and the mic and text box have labels. Landmarks and a top heading were added.
+- The morning brief and unsent drafts are pinned: the 4-card limit drops the oldest other card instead.
+- Narrow windows: the panel row can't grow past the window and the cards area shrinks (it scrolls), so the composer stays on screen at 420×700 with cards open.
+- Tests: `tests/test_m6_ui.py` (axe at 1280 and 420 px with no serious or critical findings, composer position, keyboard, pinned brief).

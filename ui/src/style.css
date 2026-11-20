@@ -28,7 +28,7 @@ body {
 button { font: inherit; color: inherit; cursor: pointer; }
 #app { display: grid; grid-template-columns: minmax(300px, 42%) 1fr; height: 100vh; }
 @media (max-width: 820px) {
-  #app { grid-template-columns: 1fr; grid-template-rows: 38vh 1fr; }
+  #app { grid-template-columns: 1fr; grid-template-rows: 38vh minmax(0, 1fr); }  /* minmax: the panel never grows past the window, so the composer stays on screen */
 }
 
 /* ---------------- stage */
@@ -512,3 +512,15 @@ body.overlay #app { display: block; height: 100vh; }
 .pairbox .code { flex: 1; min-width: 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .pairbox .ok { color: var(--ok, #7fdc8a); }
 .taskform [hidden] { display: none !important; }
+
+/* Card titles are real buttons (keyboard + screen readers) that look like the old headings. */
+.card h3 .cardtitle { all: unset; cursor: pointer; flex: 1; font: inherit; color: inherit; text-shadow: inherit; }
+.card h3 .cardtitle:focus-visible { outline: 2px solid #ffe066; outline-offset: 2px; border-radius: 6px; }
+.items li > .rowbtn { display: flex; gap: 8px; align-items: flex-start; flex: 1; cursor: pointer; border-radius: 8px; }
+.items li > .rowbtn:hover { background: rgba(255,255,255,.06); }
+.items li > .rowbtn:focus-visible, #log:focus-visible, .grid img:focus-visible { outline: 2px solid #ffe066; outline-offset: 2px; }
+
+/* The cards area may shrink (it scrolls) so the chat and the composer always fit the window. */
+#cards { flex: 0 1 auto; min-height: 0; }
+#log { min-height: 64px; }
+@media (max-width: 820px) { #cards { max-height: 40%; } }

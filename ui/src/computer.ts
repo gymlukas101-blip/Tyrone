@@ -290,6 +290,13 @@ export function initOverlay(avatarHost: HTMLElement, setMood: (mood: string) => 
     void api.overlay("hit", { rects, dpr: window.devicePixelRatio || 1 });
   };
   new ResizeObserver(reportHits).observe(root);
+  // Moving the companion to a display with a different scale (or changing Windows scaling) changes the CSS→physical
+  // pixel ratio without resizing the page: re-report so the click-through region still matches what you see.
+  const watchDpr = () => {
+    const mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    mq.addEventListener("change", () => { reportHits(); watchDpr(); }, { once: true });
+  };
+  watchDpr();
   // Remember where it was dragged to.
   let last = "";
   setInterval(() => {

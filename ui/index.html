@@ -31,7 +31,7 @@
   </head>
   <body>
     <div id="app">
-      <section id="stage">
+      <section id="stage" role="complementary" aria-label="Monkey">
         <div id="avatar"></div>
         <div id="status">
           <span id="stateLabel">Starting up…</span>
@@ -41,9 +41,9 @@
         <div id="hint"></div>
       </section>
 
-      <section id="side">
+      <section id="side" role="main">
         <header>
-          <div class="brand">MONKEY</div>
+          <div class="brand" role="heading" aria-level="1">MONKEY</div>
           <div class="spacer"></div>
           <span id="spend" title="What Monkey's AI (Claude) has cost this month, billed to your Claude key. Most questions cost under 1¢."></span>
           <button id="labBtn" class="icon labeled" title="Avatar Lab: compare Monkey designs" hidden>🧪<small>Lab</small></button>
@@ -54,16 +54,16 @@
           <button id="settingsBtn" class="icon labeled" title="Settings">⚙<small>Settings</small></button>
         </header>
         <div id="cards"></div>
-        <div id="log"></div>
+        <div id="log" role="log" aria-live="polite" aria-label="Conversation with Monkey" tabindex="0"></div>
         <form id="composer" autocomplete="off">
-          <div id="importance" role="radiogroup" title="How important is this?">
-            <button type="button" data-v="low" title="Quick: fastest answers, costs the least (well under 1¢)">⚡ Quick</button>
-            <button type="button" data-v="normal" class="on" title="Auto: Monkey picks quick or careful for each question (usually under 1¢)">Auto</button>
-            <button type="button" data-v="high" title="Important: Monkey thinks harder for tricky stuff (costs a bit more, a few cents at most)">★ Important</button>
+          <div id="importance" role="radiogroup" aria-label="How important is this?" title="How important is this?">
+            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-v="low" title="Quick: fastest answers, costs the least (well under 1¢)">⚡ Quick</button>
+            <button type="button" role="radio" aria-checked="true" tabindex="0" data-v="normal" class="on" title="Auto: Monkey picks quick or careful for each question (usually under 1¢)">Auto</button>
+            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-v="high" title="Important: Monkey thinks harder for tricky stuff (costs a bit more, a few cents at most)">★ Important</button>
           </div>
           <div class="row">
-            <button type="button" id="mic" title="Push to talk">🎙</button>
-            <input id="input" placeholder="Say “Hey Monkey” or type here…" />
+            <button type="button" id="mic" title="Push to talk" aria-label="Push to talk">🎙</button>
+            <input id="input" aria-label="Message Monkey" placeholder="Say “Hey Monkey” or type here…" />
             <button id="send" type="submit">Send</button>
           </div>
         </form>

@@ -285,6 +285,12 @@ class ToolRunner:
             file = "sensitive.md"
         if file == "sensitive.md" and not F.EXPLICIT_REMEMBER.search(self.user_text or ""):
             return "That's sensitive; only saved when the user explicitly asks you to remember it."
+        clash = F.conflicts(self._mem_root(), file, fact)
+        if clash:
+            c = clash[0]
+            return (f"Not saved: it may contradict [{c.file} {c.id}] \"{c.text}\". If the new fact replaces it, call "
+                    f"update_memory with fact_id={c.id}. If both are true, say so to the user and save it in "
+                    f"different words that make the difference clear.")
         f, created = F.add_fact(self._mem_root(), file, fact, src="user_said")
         self._reindex()
         self.s.emit("memory", {"command": "remember", "path": f.file})

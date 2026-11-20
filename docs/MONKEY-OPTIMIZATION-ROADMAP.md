@@ -36,7 +36,7 @@ Measure first, so later milestones can show they helped.
    - **DoD:** CI fails on lockfile drift (`tools/check_lock.py`); notices ship in the installer.
    - **Left for the owner:** a LICENSE for Monkey's own code (your choice of terms), and whether to turn on Dependabot (it opens pull requests and sends notifications, so it needs your OK).
 
-## Milestone 4: avatar and companion
+## Milestone 4: avatar and companion (built on `feature/flagship-m4-avatar`)
 
 6. **Avatar state resolver.** One table-driven resolver for both windows: priority needs_input > error > speaking > listening > working/thinking > idle > sleeping, with minimum dwell times.
    - **DoD:**
@@ -47,10 +47,14 @@ Measure first, so later milestones can show they helped.
    - **Change:** FPS tiers (60 active, 30 idle, about 10 asleep, 0 when hidden); pixel ratio at most 1.5; no level events for hidden windows; send level only when it changes.
    - **DoD:** `renderer.info` frames per minute per tier; zero `evaluate_js` calls while idle and hidden (fake window); GPU % measured on the Dell.
 8. **Companion Win32 polish.**
-   - **Change:** `MA_NOACTIVATE`, DPI re-report, placement on the union of displays.
+   - **Done:** click areas are re-reported when the display scale changes; the position check already accepts any monitor.
+   - **Held back:** answering `WM_MOUSEACTIVATE` needs a window procedure, and a Python one would run on every message
+     (it can stall the companion when Python is busy). Only worth it if clicking the companion is seen to take focus on
+     the Dell; then do it in a tiny native helper, not Python.
+   - **Original plan:** `MA_NOACTIVATE`, DPI re-report, placement on the union of displays.
    - **DoD:** Windows CI test: clicking the companion keeps Notepad in front; 125/150% scaling verified on the Dell.
 
-## Milestone 5: intelligence and memory quality
+## Milestone 5: intelligence and memory quality (built on `feature/flagship-m4-avatar`)
 
 9. **Recall gate.**
    - **Change:** skip for command/chat/weather tasks; check coverage of the recent window; inject only facts and episodes with a bm25 floor.
@@ -60,7 +64,10 @@ Measure first, so later milestones can show they helped.
 
 ## Milestone 6: UI (Dashboard and Focus, real data only)
 
-11. **P0 UI fixes.**
+11. **P0 UI fixes.** (done on `feature/flagship-m4-avatar`: real buttons for card titles and email rows with keyboard
+    access, a radio group for Quick/Auto/Important with arrow keys, a live chat log, labelled controls, landmarks, the
+    brief pinned past the 4-card limit, and the composer always on screen at 420×700. axe: no serious or critical
+    findings at 1280 or 420 px; it found no contrast problems.)
     - **Change:** the brief survives the card limit; the composer is visible at 420×700; keyboard access for collapsed cards and email rows; `aria-live` chat; radio semantics; labelled input; contrast fixes.
     - **DoD:** the axe and Playwright checks in Agent D's acceptance criteria.
 12. **Dashboard.**

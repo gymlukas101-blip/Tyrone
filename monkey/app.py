@@ -49,7 +49,9 @@ class UIBus:
         self.windows: list = []          # extra windows that get the same events (the companion overlay)
         self._q: queue.Queue[tuple[str, dict]] = queue.Queue()
         self._level: float | None = None
+        self._sent_level = 0.0            # last mouth level the windows got: silence is sent once, not 30×/s
         self._visemes: dict | None = None
+        self.calls = 0                    # evaluate_js calls (tests and the lag audit)
         threading.Thread(target=self._loop, name="ui-bus", daemon=True).start()
 
     def emit(self, name: str, payload: dict | None = None) -> None:
@@ -70,8 +72,11 @@ class UIBus:
             while not self._q.empty() and len(batch) < 200:
                 batch.append(self._q.get_nowait())
             if self._level is not None:
-                batch.append(("level", {"v": round(self._level, 3)}))
+                v = round(self._level, 3)
                 self._level = None
+                if abs(v - self._sent_level) >= 0.01 or (v == 0.0 and self._sent_level != 0.0):
+                    batch.append(("level", {"v": v}))
+                    self._sent_level = v
             if self._visemes is not None:
                 batch.append(("visemes", self._visemes))
                 self._visemes = None
@@ -79,6 +84,7 @@ class UIBus:
                 js = f"window.__monkeyEvents && window.__monkeyEvents({json.dumps(batch, default=str)})"
                 for w in [self.window, *self.windows]:
                     try:
+                        self.calls += 1
                         w.evaluate_js(js)
                     except Exception as exc:  # noqa: BLE001 - window may be closing or hidden
                         log.debug("evaluate_js failed: %s", exc)
