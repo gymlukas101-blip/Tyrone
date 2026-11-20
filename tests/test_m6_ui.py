@@ -33,7 +33,7 @@ def _open(browser, w, h):
     b, url = browser
     p = b.new_page(viewport={"width": w, "height": h})
     p.goto(url)
-    p.wait_for_function("() => !!window.__monkeyEvents", timeout=15000)
+    p.wait_for_function("() => !!window.__monkeyEvents && !!window.__monkeyReady", timeout=20000)
     p.wait_for_timeout(1200)
     p.evaluate("ev => window.__monkeyEvents([ev])", EMAILS)
     p.wait_for_timeout(200)
@@ -93,7 +93,7 @@ def _today(browser, query="?demo", w=1280, h=800, reduced=False):
     ctx = b.new_context(viewport={"width": w, "height": h}, reduced_motion="reduce" if reduced else "no-preference")
     p = ctx.new_page()
     p.goto(url.replace("?demo", query))
-    p.wait_for_function("() => !!window.__monkeyEvents", timeout=15000)
+    p.wait_for_function("() => !!window.__monkeyEvents && !!window.__monkeyReady", timeout=20000)
     p.wait_for_timeout(1000)
     return ctx, p
 
@@ -169,3 +169,12 @@ def test_reduced_motion_stops_every_running_animation(browser):
         .map(a => (a.effect && a.effect.target && (a.effect.target.id || a.effect.target.className)) + ':' + (a.animationName || ''))""")
     ctx.close()
     assert running == [], running
+
+
+def test_closed_today_view_takes_no_space(browser):
+    """The sound-off playtest caught the tab bar showing over the chat while Today was closed."""
+    ctx, p = _today(browser)
+    p.wait_for_selector("#today", state="attached", timeout=15000)
+    shown = p.evaluate("() => { const t = document.getElementById('today'); return t.hidden && getComputedStyle(t).display; }")
+    ctx.close()
+    assert shown == "none"

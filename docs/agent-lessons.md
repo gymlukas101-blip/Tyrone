@@ -24,6 +24,7 @@ How it's kept up to date:
 
 ### Testing
 - **Serve `ui/dist` over HTTP in Playwright, never `file://`.** *Why:* `file://` blocks fetching `monkey.glb`, so the 3D avatar silently falls back to SVG and tests pass against the wrong renderer.
+- **Browser tests wait for the app to finish starting (`window.__monkeyReady`), not just for the event hook,** and poll for an expected state instead of sleeping a fixed time. *Why:* boot's late `setState("idle")` overwrote test events on slower CI machines.
 - **Software-rendered Chromium draws a few fps.** Assert which render tier was chosen and its target, not measured frame rates. *Why:* fps assertions were meaningless and flaky here.
 - **Browser tests:** pin element handles, since locators re-resolve after the DOM changes. Assert invariants, not one sampled reason. Don't race UI timers (undo windows, redraws). *Why:* three flaky tests this way.
 - **Read failure names with `pytest -rf`, or run the failing files alone, before saying what broke.** *Why:* a `tail` of the output hid which tests failed.

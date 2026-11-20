@@ -1611,7 +1611,7 @@ async function bootOverlay() {
   applyLook(appState.settings);
   applyChrome(appState);
   attachSounds(appState.settings);
-  setState("idle");
+  if (resolver.voice === "idle") showState(resolver.shown);   // label only: never undo a state that already arrived
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
   ($("#spend") as HTMLElement).onclick = () => toast(`That's what Monkey's AI cost this month: $${appState.month_usd.toFixed(2)} of your $${appState.budget_usd.toFixed(0)} limit. ` +
@@ -1635,6 +1635,7 @@ async function bootOverlay() {
     void showMorningBrief(true);
     void api.get_state().then((st) => { appState = st; applyChrome(st); updateWelcome(); });
   });
+  (window as any).__monkeyReady = true;          // boot finished (tests wait for this)
 })();
 
 let welcomeEl: HTMLElement | null = null;
