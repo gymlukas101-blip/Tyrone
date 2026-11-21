@@ -60,6 +60,7 @@ LID_UP0, LID_LO0 = 31.0, -40.0  # neutral lid edges: elevation above/below the g
 BAKE_BOX = (-0.15, 0.47, 0.30)  # planar bake square in x/z: x0, z0, size
 
 M_SEG, K_RINGS = 56, 15
+MOOD_GAIN = {"smile": 1.0, "frown": 1.0}   # scales the mouth-corner moods (F1 sets them higher for the broad muzzle)
 
 
 def smooth(t: float) -> float:
@@ -393,11 +394,13 @@ def mouth_ops(meta):
         if side and (p.x - CX) * side <= 0:
             return p
         w = corner(th) ** 0.7 * (1.0 if t < 0 else 1 - smooth(t / 0.55)) * a
+        w *= MOOD_GAIN["smile"]
         return Vector((CX + (p.x - CX) * (1 + 0.07 * w), p.y + 0.007 * w, p.z + 0.013 * w))
 
     def frown(i, p, a):
         th, t = meta[i]
         w = corner(th) ** 0.7 * (1.0 if t < 0 else 1 - smooth(t / 0.5)) * a
+        w *= MOOD_GAIN["frown"]
         return Vector((p.x, p.y + 0.002 * w, p.z - 0.010 * w))
 
     def cheeks(i, p, a, puff):

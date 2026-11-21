@@ -46,6 +46,9 @@ LOOPS = [(0.0, 0.0), (3.0, 0.0002), (7.0, 0.0004), (13.0, 0.0006), (21.0, 0.0008
 LID_FALLOFF = [1.0, 0.93, 0.78, 0.55, 0.3, 0.12, 0.03, 0.0, 0.0, 0.0]
 MARGIN_GAP = 0.0007             # lid margin floats this much over the eyeball (contact without z-fighting)
 CREAM = (0.914, 0.718, 0.455)   # Tripo eye-area skin (sRGB, measured on its texture)
+SCLERA_DIM = 0.85               # E6: Tripo's sclera is shaded cream, not paper white (it read too bright in three.js)
+CATCH_DIR = (math.radians(42), math.radians(24))   # catchlight: (psi, theta) on the eye - up and to the key light
+LID_FOLLOW = {-1: 0.42, 0: 0.42, 1: 0.36, 2: 0.24, 3: 0.12, 4: 0.04}   # share of the eye bone per loop (lid follows gaze)
 
 
 def smooth(t):
@@ -148,7 +151,9 @@ def eye_dir(psi, theta):
 
 def margin_theta(m, c, R, k):
     """Angle from the gaze of the opening contour point k, projected onto the sphere (radius R)."""
-    r = min(m["radii"][k] - 0.0008, R * 0.97)                 # 0.8 mm inside the visible edge: a lid rim shows
+    up = smooth(math.sin(2 * math.pi * k / N_PSI) / 0.5)
+    inset = 0.0009 + 0.0011 * up                               # E6: 0.9 mm (lower) .. 2.0 mm (upper) inside the edge
+    r = min(m["radii"][k] - inset, R * 0.97)
     return math.asin(max(0.0, r) / R)
 
 
@@ -195,7 +200,7 @@ def build_eye(side, m, c, R, arm, shell_bvh_data, mats):
             th = min(math.radians(170), margin_theta(m, c, R, k) + math.radians(dth))
             rad = R + MARGIN_GAP + dr + (0.0003 if math.sin(psi) > 0 else 0.0)   # upper lid sits over the lower
             sv.append(c + eye_dir(psi, th) * rad)
-            suv.append((k / N_PSI, li / (len(LOOPS) - 1)))
+            suv.append((k / N_PSI, 0.06 + 0.94 * li / (len(LOOPS) - 1)))
             smeta.append((psi, li))
             ring.append(len(sv) - 1)
         rings.append(ring)
@@ -206,9 +211,15 @@ def build_eye(side, m, c, R, arm, shell_bvh_data, mats):
     for a, b in zip(rings, rings[1:]):
         for k in range(N_PSI):
             sf.append((a[k], b[k], b[(k + 1) % N_PSI], a[(k + 1) % N_PSI]))
+    seam_faces = {len(rings[0]) * 0 + i * N_PSI + (N_PSI - 1) for i in range(len(rings) - 1)}
     for k in range(N_PSI):
         sf.append((rings[-1][k], pole, rings[-1][(k + 1) % N_PSI]))
     sock = new_obj(f"V2_EyeSock_{side}", sv, sf, suv, [mats["sock"]])
+    lay = sock.data.uv_layers[0].data                          # the loop's last column wraps: u 0 -> 1 on its far side
+    for fi in seam_faces:
+        for li_ in sock.data.polygons[fi].loop_indices:
+            if lay[li_].uv[0] < 0.5 / N_PSI:
+                lay[li_].uv[0] = 1.0
     for o, centre_out in ((ball, True), (sock, True)):          # normals away from the eye centre
         for p in o.data.polygons:
             if (p.normal.dot(p.center - c) < 0) == centre_out:
@@ -307,35 +318,60 @@ def eyeball_texture(side, c, R, outdir, size=512):
     t = np.clip((ang - ang_r * 0.92) / (ang_r * 0.16), 0, 1)[..., None]      # 0 inside, 1 outside the iris
     limbal = np.exp(-((ang - ang_r) / (ang_r * 0.07)) ** 2)[..., None]        # Tripo's darker iris rim
     back = 1 - 0.22 * np.clip((ang - math.radians(70)) / math.radians(90), 0, 1)[..., None]
-    inside = np.where(hit[..., None], proj, sclera)
-    out = inside * (1 - t) + sclera * back * t
+    # remove Tripo's painted highlight from the iris (bright texels inside the disc), refill from the iris around it
+    inside = np.where(hit[..., None], proj, sclera).astype(np.float32)
+    disc = ang < ang_r * 0.95
+    hl = disc & (inside.mean(2) > 0.4)
+    for _ in range(3):                                          # take the highlight's soft edge too
+        hl = hl | (disc & (np.roll(hl, 1, 0) | np.roll(hl, -1, 0) | np.roll(hl, 1, 1) | np.roll(hl, -1, 1)))
+    known = ~hl
+    for _ in range(60):
+        if known.all():
+            break
+        acc = np.zeros_like(inside)
+        cnt = np.zeros(known.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            k2 = np.roll(known, (dy, dx), (0, 1))
+            acc += np.roll(inside, (dy, dx), (0, 1)) * k2[..., None]
+            cnt += k2
+        grow = (~known) & (cnt > 0)
+        inside[grow] = acc[grow] / cnt[grow][:, None]
+        known |= grow
+    sclera = sclera * SCLERA_DIM
+    pole = np.arccos(np.clip(-dirs[..., 1], -1, 1))               # angle from the eye's own gaze pole
+    socket = (1 - 0.26 * np.clip((pole - math.radians(22)) / math.radians(40), 0, 1))[..., None]
+    out = inside * (1 - t) + sclera * back * socket * t
     out = out * (1 - 0.45 * limbal) + np.array([0.10, 0.20, 0.08], np.float32) * 0.45 * limbal
-    info = {"sclera_srgb": [round(float(v), 3) for v in sclera], "iris_angular_radius_deg": round(math.degrees(ang_r), 1),
+    info = {"painted_highlight_texels_removed": int(hl.sum()), "sclera_srgb": [round(float(v), 3) for v in sclera], "iris_angular_radius_deg": round(math.degrees(ang_r), 1),
             "iris_axis": [round(float(v), 3) for v in axis]}
     return image(f"V2_Eyeball_{side}_basecolor", out.astype(np.float32), outdir), info
 
 
 def sock_texture(outdir):
-    """Gradient across the loops: dark lash line at the margin, Tripo's cream lid skin, shadowed lining."""
-    h, w = 128, 8
+    """Lid skin. v: tuck rim 0 -> margin 0.06 -> loops; u: around the eye (0..0.5 = upper lid).
+    The dark lash line is only on the folded rim (so stretched lids stay clean skin, no smudge); a soft crease
+    darkens the upper lid around loop 3-4; past the brow/muzzle tuck the lining goes dark (socket depth)."""
+    h, w = 256, 64
     v = (np.arange(h) + 0.5) / h
-    col = np.zeros((h, w, 3), np.float32)
+    u = (np.arange(w) + 0.5) / w
     cream = np.array(CREAM, np.float32)
-    lash = np.array([0.46, 0.30, 0.19], np.float32)
-    deep = np.array([0.36, 0.22, 0.15], np.float32)
+    lash = np.array([0.36, 0.22, 0.13], np.float32)
+    deep = np.array([0.30, 0.18, 0.12], np.float32)
     n = len(LOOPS) - 1
+    col = np.zeros((h, w, 3), np.float32)
     for j in range(h):
-        loop = v[j] * n
-        if loop < 0.3:
+        if v[j] < 0.06:
             c = lash
-        elif loop < 1.2:
-            f = (loop - 0.3) / 0.9
-            c = lash * (1 - f) + cream * 0.82 * f
-        elif loop < 5:
-            c = cream * (0.82 + 0.18 * smooth((loop - 1.2) / 1.5))
         else:
-            c = cream * (1 - smooth((loop - 5) / 2.5)) + deep * smooth((loop - 5) / 2.5)
-        col[j, :] = c
+            loop = (v[j] - 0.06) / 0.94 * n
+            f = smooth(loop / 0.35)
+            c = lash * (1 - f) + cream * 0.9 * f
+            c = c * (0.9 + 0.1 * smooth((loop - 0.4) / 1.2))            # a little shade where the lid meets the eye
+            c = c * (1 - smooth((loop - 5) / 2.5)) + deep * smooth((loop - 5) / 2.5)
+        for i in range(w):
+            up = max(0.0, math.sin(2 * math.pi * u[i]))
+            crease = 0.0 if v[j] < 0.06 else math.exp(-((((v[j] - 0.06) / 0.94 * n) - 3.6) / 0.55) ** 2)
+            col[j, i] = c * (1 - 0.2 * crease * up)
     return image("V2_EyeSock_basecolor", col, outdir)
 
 
@@ -412,11 +448,11 @@ def lid_keys(sock, smeta, side, c, m, R):
         return fn
 
     keys = {
-        "squint": key(0.26, 0.3),
-        "wideEyes": key(-0.2, -0.08),
-        "happyEyes": key(0.18, 0.55, 0.0, -0.08),
-        "angryEyes": key(0.28, 0.1, 0.22, 0.0),
-        "sadEyes": key(0.2, 0.0, -0.2, 0.0),
+        "squint": key(0.2, 0.46, 0.0, -0.05),                 # the app's happy eye: lower lid rises in a smile curve
+        "wideEyes": key(-0.34, -0.14),
+        "happyEyes": key(0.14, 0.66, 0.0, -0.1),
+        "angryEyes": key(0.36, 0.14, 0.34, 0.0),               # heavy lid, inner corner pulled down
+        "sadEyes": key(0.26, 0.0, -0.4, 0.0),                  # inner corner of the upper lid lifted
     }
     keys[f"blink_{side}"] = key(0.82, 0.24)
     other = "R" if side == "L" else "L"
@@ -435,17 +471,66 @@ def lid_keys(sock, smeta, side, c, m, R):
             "closing_deg_max": round(math.degrees(max(closing.values())), 1)}
 
 
-def main(src: Path, outdir: Path, name: str) -> dict:
-    outdir.mkdir(parents=True, exist_ok=True)
-    import_glb(src)
-    arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+def catchlight(side, c, R, arm):
+    """A small glossy cap on the cornea, fixed to the HEAD (not the eye): the iris turns under it like a real
+    reflection of the key light. It sits under the lid radius, so blinks and squints cover it."""
+    psi0, th0 = CATCH_DIR
+    if side == "R":
+        psi0 = math.pi - psi0 if False else psi0                # same light for both eyes (key light up, his left)
+    centre = eye_dir(psi0, th0)
+    t1 = centre.orthogonal().normalized()
+    t2 = centre.cross(t1).normalized()
+    verts, faces = [c + centre * (R + 0.00028)], []
+    rings, seg, rad = 3, 14, 0.0046
+    for r in range(1, rings + 1):
+        a = rad * r / rings / R
+        for s_ in range(seg):
+            ph = 2 * math.pi * s_ / seg
+            d = (centre * math.cos(a) + (t1 * math.cos(ph) + t2 * math.sin(ph) * 0.8) * math.sin(a)).normalized()
+            verts.append(c + d * (R + 0.00028))
+    for s_ in range(seg):
+        faces.append((0, 1 + s_, 1 + (s_ + 1) % seg))
+    for r in range(rings - 1):
+        for s_ in range(seg):
+            a0 = 1 + r * seg + s_
+            faces.append((a0, a0 + seg, 1 + (r + 1) * seg + (s_ + 1) % seg, 1 + r * seg + (s_ + 1) % seg))
+    mat = bpy.data.materials.get("V2_EyeHighlight") or bpy.data.materials.new("V2_EyeHighlight")
+    mat.use_nodes = True
+    b = mat.node_tree.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = (0.95, 0.96, 1.0, 1)
+    b.inputs["Roughness"].default_value = 0.05
+    b.inputs["Emission Color"].default_value = (1, 1, 1, 1)
+    b.inputs["Emission Strength"].default_value = 0.6
+    mat.diffuse_color = (1, 1, 1, 1)
+    o = new_obj(f"V2_EyeCatchlight_{side}", verts, faces, [(0.5, 0.5)] * len(verts), [mat])
+    for p in o.data.polygons:
+        if p.normal.dot(p.center - c) < 0:
+            p.flip()
+    skin(o, arm, HEAD_BONE)
+    return o
+
+
+def lid_follow(sock, smeta, side):
+    """Lids follow the gaze: the loops near the margin take part of the eye bone's rotation (about the same centre,
+    so they stay on their sphere). Works in the app with no code: its look-at rotates the eye bones."""
+    g_eye = sock.vertex_groups.new(name=f"eye.{side}")
+    g_head = sock.vertex_groups[HEAD_BONE]
+    for i, (psi, li) in enumerate(smeta):
+        w = LID_FOLLOW.get(li, 0.0) * (1.0 if math.sin(psi) > 0 else 0.7)
+        if w:
+            g_eye.add([i], w, "REPLACE")
+            g_head.add([i], 1 - w, "REPLACE")
+
+
+def build_eyes(arm, outdir: Path, rep: dict) -> dict:
+    """E6 eyes on an imported Tripo scene (armature given). Returns {side: (centre, radius)}."""
     meshes = [o for o in bpy.data.objects if o.type == "MESH"]
     verts, polys, owner, _ = world_mesh(meshes)
     scene_bvh = BVHTree.FromPolygons(verts, polys)
     skin_objs = [o for o in meshes if o.name not in SHELL.values()]
     sv, sp, _so, _ = world_mesh(skin_objs)
     skin_bvh = BVHTree.FromPolygons(sv, sp)
-    rep: dict = {"source": src.name, "eyes": {}}
+    rep.setdefault("eyes", {})
     fitted = {}
     for side in ("L", "R"):
         shv, shp, _o, _u = world_mesh([bpy.data.objects[SHELL[side]]])
@@ -461,16 +546,23 @@ def main(src: Path, outdir: Path, name: str) -> dict:
     for side, (c, R, m) in fitted.items():
         img, info = eyeball_texture(side, c, R, outdir)
         rep["eyes"][side]["painted_eye"] = info
-        mats = {"ball_" + side: material(f"V2_Eye_{side}", img, 0.12), "sock": sock_mat}
+        mats = {"ball_" + side: material(f"V2_Eye_{side}", img, 0.3), "sock": sock_mat}   # 0.3: soft env reflection
         ball, sock, smeta = build_eye(side, m, c, R, arm, None, mats)
         skin(ball, arm, f"eye.{side}")
         skin(sock, arm, HEAD_BONE)
+        lid_follow(sock, smeta, side)
+        catchlight(side, c, R, arm)
         rep["eyes"][side]["lids"] = lid_keys(sock, smeta, side, c, m, R)
     for s in SHELL.values():                                    # replaced: kept in the .blend, hidden
         o = bpy.data.objects[s]
         o.hide_render = True
         o.hide_set(True)
         o.hide_viewport = True
+    return {s: (v[0], v[1]) for s, v in fitted.items()}
+
+
+def finish(outdir: Path, name: str, rep: dict) -> dict:
+    """Zero every key, save the .blend, export the GLB (visible objects), record what the GLB carries."""
     for o in bpy.data.objects:
         if o.type == "MESH" and o.data.shape_keys:
             for kb in o.data.shape_keys.key_blocks[1:]:
@@ -484,6 +576,8 @@ def main(src: Path, outdir: Path, name: str) -> dict:
     js = json.loads(raw[20:20 + struct.unpack("<I", raw[12:16])[0]])
     rep["glb_default_weights_nonzero"] = sorted(m.get("name", "?") for m in js["meshes"] if any(m.get("weights", [])))
     rep["glb_eye_bones"] = [n["name"] for n in js["nodes"] if n.get("name", "").startswith("eye.")]
+    rep["glb_materials"] = len(js.get("materials", []))
+    rep["glb_bytes"] = len(raw)
     rep["morphs"] = sorted({kb.name for o in bpy.data.objects if o.type == "MESH" and o.visible_get()
                             and o.data.shape_keys for kb in o.data.shape_keys.key_blocks[1:]})
     rep.update({"blend": str(blend), "glb": str(glb)})
@@ -491,7 +585,16 @@ def main(src: Path, outdir: Path, name: str) -> dict:
     return rep
 
 
+def main(src: Path, outdir: Path, name: str) -> dict:
+    outdir.mkdir(parents=True, exist_ok=True)
+    import_glb(src)
+    arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+    rep: dict = {"source": src.name, "eyes": {}}
+    build_eyes(arm, outdir, rep)
+    return finish(outdir, name, rep)
+
+
 if __name__ == "__main__":
     a = sys.argv[sys.argv.index("--") + 1:]
-    nm = a[a.index("--name") + 1] if "--name" in a else "tripo_eyes_E1"
+    nm = a[a.index("--name") + 1] if "--name" in a else "tripo_eyes_E6"
     print(json.dumps(main(Path(a[0]), Path(a[1]), nm), indent=1))

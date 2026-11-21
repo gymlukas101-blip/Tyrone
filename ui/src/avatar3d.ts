@@ -112,6 +112,7 @@ export class Avatar3D implements AvatarLike {
   private exprNow: Record<string, number> = {};
   private nextBlink = 0;
   private blinkUntil = 0;
+  private wink = { L: { start: 0, end: 0 }, R: { start: 0, end: 0 } };   // a wink layers over the ordinary blink
   private clock = new THREE.Clock();
   private model: THREE.Object3D | null = null;
   private life: Life | null = null;
@@ -455,6 +456,19 @@ export class Avatar3D implements AvatarLike {
     this.visTarget = w;
   }
 
+  /** Close one eye for `ms` (a wink), easing in over ~70 ms and out over ~90 ms; ordinary blinks carry on. */
+  winkEye(side: "L" | "R" = "L", ms = 420) {
+    if (this.sleeping) return;
+    const now = performance.now();
+    this.wink[side] = { start: now, end: now + ms };
+  }
+
+  private winkAmount(side: "L" | "R", t: number): number {
+    const w = this.wink[side];
+    if (t >= w.end || t < w.start) return 0;
+    return Math.max(0, Math.min(1, (t - w.start) / 70, (w.end - t) / 90));
+  }
+
   emote(name: Emote) {
     if (this.sleeping && name !== "surprised") return;
     this.fx(name);
@@ -753,7 +767,8 @@ export class Avatar3D implements AvatarLike {
     const blink = Math.max(t < this.blinkUntil ? 1 : 0, Math.min(1, this.sleepAmt * 1.4), this.brain?.drowsy ? 0.35 : 0);
     if (FACE_MODE === "baseline") this.legacyFace(dt, yawn, blink, t);
     else {
-      const override: Record<string, number> = { blink_L: blink, blink_R: blink };
+      const override: Record<string, number> = { blink_L: Math.max(blink, this.winkAmount("L", t)),
+        blink_R: Math.max(blink, this.winkAmount("R", t)) };
       if (yawn > 0) { override.jawOpen = yawn; override.mouthO = yawn * 0.6; override.squint = yawn * 0.8; }
       if (this.sleepAmt > 0.05) override.cheekPuff = this.sleepAmt * (0.25 + 0.3 * Math.max(0, Math.sin(t / 1000 * 0.9)));
       const acting = this.sleeping || this.sleepAmt > 0.3 ? {} : this.director.update(dt);

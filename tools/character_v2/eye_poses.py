@@ -5,7 +5,8 @@
 Poses: neutral, wide, half blink, full blink, squint, happy, angry, sad, surprised (wide + no lids), wink L,
 gaze left / right / up / down (eye.L / eye.R bones rotated in world space, the same way the app's look-at does:
 yaw up to 20 deg, pitch up to 12 deg), blink while looking left. Background is magenta: any magenta inside an
-eye disc is a hole through the head. Writes OUT_DIR/<pose>_<view>.png and OUT_DIR/poses.json.
+eye disc is a hole through the head. --poses FILE.json replaces the pose list ({name: [{morph: v}, yaw, pitch]});
+--bg r,g,b and --size N change the background and resolution. Writes OUT_DIR/<pose>_<view>.png and OUT_DIR/poses.json.
 """
 from __future__ import annotations
 
@@ -51,7 +52,8 @@ def set_pose(arm, morphs, yaw, pitch):
     bpy.context.view_layer.update()
 
 
-def main(model: Path, out: Path, views: list[str]) -> dict:
+def main(model: Path, out: Path, views: list[str], poses: dict | None = None, bg=(1.0, 0.0, 1.0), size=420) -> dict:
+    poses = poses or POSES
     out.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.open_mainfile(filepath=str(model))
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
@@ -60,16 +62,16 @@ def main(model: Path, out: Path, views: list[str]) -> dict:
             o.data.shape_keys.animation_data.action = None
     sc = bpy.context.scene
     sc.render.engine = "BLENDER_WORKBENCH"
-    sc.render.resolution_x = sc.render.resolution_y = 420
+    sc.render.resolution_x = sc.render.resolution_y = size
     sh = sc.display.shading
     sh.light, sh.color_type, sh.show_cavity = "STUDIO", "TEXTURE", True
-    sh.background_type, sh.background_color = "VIEWPORT", (1.0, 0.0, 1.0)
+    sh.background_type, sh.background_color = "VIEWPORT", bg
     cam = bpy.data.objects.new("posecam", bpy.data.cameras.new("posecam"))
     sc.collection.objects.link(cam)
     cam.data.type = "ORTHO"
     sc.camera = cam
     res = {}
-    for pose, (morphs, yaw, pitch) in POSES.items():
+    for pose, (morphs, yaw, pitch) in poses.items():
         set_pose(arm, morphs, yaw, pitch)
         res[pose] = {}
         for v in views:
@@ -101,5 +103,7 @@ def main(model: Path, out: Path, views: list[str]) -> dict:
 if __name__ == "__main__":
     a = sys.argv[sys.argv.index("--") + 1:]
     vv = a[a.index("--views") + 1].split(",") if "--views" in a else ["front", "three_quarter_L", "closeup_L"]
-    r = main(Path(a[0]), Path(a[1]), vv)
+    pp = json.loads(Path(a[a.index("--poses") + 1]).read_text()) if "--poses" in a else None
+    bgc = tuple(float(x) for x in a[a.index("--bg") + 1].split(",")) if "--bg" in a else (1.0, 0.0, 1.0)
+    r = main(Path(a[0]), Path(a[1]), vv, pp, bgc, int(a[a.index("--size") + 1]) if "--size" in a else 420)
     print(json.dumps({p: sum(x["magenta_px_in_eye_discs"] for x in v.values()) for p, v in r.items()}))

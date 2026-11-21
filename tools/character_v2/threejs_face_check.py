@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 STEPS = [  # (label, events, extra js, wait ms)
-    ("neutral", [["state", {"state": "idle"}]], "", 1500),
+    ("neutral", [["state", {"state": "idle"}]], "a.nextBlink = 1e15;", 1500),
     ("speak_aa", [["state", {"state": "speaking"}], ["level", {"v": 0.6}], ["visemes", {"viseme_aa": 1}]], "", 900),
     ("speak_PP", [["visemes", {"viseme_PP": 1}], ["level", {"v": 0.0}]], "", 900),
     ("speak_O", [["visemes", {"viseme_O": 1}], ["level", {"v": 0.3}]], "", 900),
@@ -34,12 +34,16 @@ STEPS = [  # (label, events, extra js, wait ms)
     ("speak_FF", [["visemes", {"viseme_FF": 1}], ["level", {"v": 0.1}]], "", 900),
     ("barge_in_reset", [["visemes", {}], ["level", {"v": 0}], ["state", {"state": "idle"}]], "", 1200),
     ("blink", [], "a.blinkUntil = 1e15;", 600),
-    ("happy", [["emote", {"name": "happy"}]], "a.blinkUntil = 0; a.nextBlink = 1e15;", 1200),
-    ("angry", [["emote", {"name": "angry"}]], "", 1200),
-    ("sad", [["emote", {"name": "sad"}]], "", 1200),
-    ("surprised", [["emote", {"name": "surprised"}]], "", 1200),
+    ("wink_L", [["wink", {"side": "L", "ms": 5000}]], "a.blinkUntil = 0; a.nextBlink = 1e15;", 900),
+    ("happy", [["emote", {"name": "happy"}]], "a.wink.L.end = 0;", 1200),
+    ("angry", [["emote", {"name": "angry"}]], "a.expr = {};", 1200),
+    ("sad", [["emote", {"name": "sad"}]], "a.expr = {};", 1200),
+    ("surprised", [["emote", {"name": "surprised"}]], "a.expr = {};", 1200),
+    ("smile_while_talking", [["emote", {"name": "happy"}], ["state", {"state": "speaking"}], ["level", {"v": 0.5}],
+                             ["visemes", {"viseme_aa": 1}]], "a.expr = {};", 1200),
+    ("sad_while_talking", [["emote", {"name": "sad"}], ["visemes", {"viseme_O": 1}]], "a.expr = {};", 1200),
     # gaze: the app's look-at (Life) leads with the eye bones; target is the pointer in -1..1
-    ("gaze_side_a", [["state", {"state": "idle"}]], "a.expr = {}; a.life.target.set(1, 0);", 1500),
+    ("gaze_side_a", [["visemes", {}], ["state", {"state": "idle"}]], "a.expr = {}; a.life.target.set(1, 0);", 1500),
     ("gaze_side_b", [], "a.life.target.set(-1, 0);", 1500),
     ("gaze_up", [], "a.life.target.set(0, 1);", 1500),
     ("gaze_down", [], "a.life.target.set(0, -1);", 1500),

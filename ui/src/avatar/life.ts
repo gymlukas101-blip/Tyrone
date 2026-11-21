@@ -16,6 +16,11 @@ const RIGHT = new THREE.Vector3(1, 0, 0);
 const FWD = new THREE.Vector3(0, 0, 1);
 // GLTFLoader sanitizes node names ("eye.L" -> "eyeL", "tail.02" -> "tail02"); look bones up the same way.
 const key = (n: string) => n.replace(/[\[\]\.:\/\s]/g, "");
+/** Semantic bone -> Mixamo bone (after `key`), used when the model has no bone of the semantic name. */
+export const MIXAMO: Record<string, string> = {
+  root: "mixamorigHips", chest: "mixamorigSpine2", neck: "mixamorigNeck", head: "mixamorigHead",
+  handL: "mixamorigLeftHand", handR: "mixamorigRightHand",
+};
 
 // three.js' mixer skips re-writing a bone when the clip value didn't change since last frame (held poses),
 // so offsets must never accumulate: we snapshot each touched bone before offsetting and restore it after render.
@@ -63,6 +68,10 @@ export class Life {
 
   constructor(model: THREE.Object3D) {
     model.traverse((o) => { if ((o as THREE.Bone).isBone) this.bones.set(key(o.name), o); });
+    // Mixamo skeletons (the Tripo-based V2 model): map the semantic names this class and the VFX sockets use.
+    for (const [name, mixamo] of Object.entries(MIXAMO)) {
+      if (!this.bones.has(name) && this.bones.has(mixamo)) this.bones.set(name, this.bones.get(mixamo)!);
+    }
     for (const n of ["tuft.1", "tuft.2", "tuft.3", "ear.L", "ear.R", "mic_boom", "tail.02", "tail.04", "tail.06"]) {
       if (this.bones.has(key(n))) this.springs.set(key(n), n.startsWith("tail") ? new Spring(18, 3) : new Spring(70, 6));
     }

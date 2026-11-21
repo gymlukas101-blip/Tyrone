@@ -138,3 +138,13 @@ def test_tripo_eye_builder_uses_v1_eye_names_and_app_bone_names():
     assert 'f"eye.{side}"' in src
     life = (ROOT / "ui" / "src" / "avatar" / "life.ts").read_text()
     assert '"eyeL", "eyeR"' in life
+
+
+def test_app_supports_mixamo_head_follow_and_independent_winks():
+    """V2 (Tripo) skeletons are Mixamo: the look-at maps its semantic bones; winks close one eye over the blink."""
+    life = (ROOT / "ui" / "src" / "avatar" / "life.ts").read_text()
+    for name, mixamo in (("head", "mixamorigHead"), ("neck", "mixamorigNeck"), ("chest", "mixamorigSpine2")):
+        assert f'{name}: "{mixamo}"' in life
+    avatar = (ROOT / "ui" / "src" / "avatar3d.ts").read_text()
+    assert "winkEye(" in avatar and 'this.winkAmount("L", t)' in avatar and 'this.winkAmount("R", t)' in avatar
+    assert 'case "wink"' in (ROOT / "ui" / "src" / "main.ts").read_text()

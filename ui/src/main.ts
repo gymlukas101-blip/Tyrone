@@ -550,6 +550,7 @@ function onEvent(name: string, p: any) {
     case "weather": weatherCard(p); break;
     case "assignments": assignmentsCard(p); break;
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
+    case "wink": (avatar as any).winkEye?.(p?.side === "R" ? "R" : "L", p?.ms ?? 420); break;
     case "emote":
       if (p.name === "sleep") (avatar as any).sleepNow?.();
       else avatar.emote(p.name);

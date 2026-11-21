@@ -90,5 +90,52 @@
    "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
   },
   "durable_copy": "sent to the owner as session attachments (blend, glb, sheets)"
+ },
+ "eyes_E6_face_F3": {
+  "date": "2026-11-21",
+  "builders": {
+   "E6": "bpy python tools/character_v2/tripo_eyes.py -- character_v2_workspace/refs/tripo_source/MonkeyTripo.glb character_v2_workspace/tripo_eyes --name tripo_eyes_E6",
+   "F3": "bpy python tools/character_v2/tripo_face_v2.py -- character_v2_workspace/refs/tripo_source/MonkeyTripo.glb character_v2_workspace/tripo_face --name tripo_face_F3"
+  },
+  "outputs": {
+   "tripo_eyes_E6.blend": {
+    "sha256": "d522bfe2b03898e3cc85cbb1a5c90266767f3a27f567525dec7094f790593d8c",
+    "bytes": 5561800
+   },
+   "tripo_eyes_E6.glb": {
+    "sha256": "6d7fe45c9a721f790fb77eb58f33cc8cf245b44fc6e07d9edce526175860e713",
+    "bytes": 5827612
+   },
+   "tripo_face_F3.blend": {
+    "sha256": "295d1c8d43715db21ebd6b7a6808cf782f6db680644d3c2fd1e22d7dbfa9db02",
+    "bytes": 6110105,
+    "textures_packed": true
+   },
+   "tripo_face_F3.glb": {
+    "sha256": "504c43734218d714e80d851ba1b8d1ab3fadd706e3fa7b3ad626d83e6726a4ff",
+    "bytes": 6987700,
+    "morphs": 38,
+    "eye_bones": [
+     "eye.L",
+     "eye.R"
+    ],
+    "materials": 40,
+    "default_weights_nonzero": []
+   },
+   "V2_Muzzle_grid_basecolor.png": {
+    "sha256": "435dd5f503a3cf89914d6474ca8ab7068ca52e9a44bf1258ad1cdebd358e529f"
+   },
+   "performance.mp4": {
+    "sha256": "da97820ed20687cab782d0a954c3a063f03a2e961be1d5b67f4352682e7bfcfb",
+    "seconds": 143
+   }
+  },
+  "references_unchanged": {
+   "MonkeyTripo.glb": "8f990a331882e3106c321fb3bc7580f190931854383fe1863543df940b49d107",
+   "tripo_face_hybrid_C.blend": "e671a21a2cda7fddffe10b399af7fc153bac67eb79fef3fe71b1e994b9127660",
+   "tripo_eyes_E5.blend": "9e10364262e2c3ab1b8f37a04e3642b95ee4a8b06e4c9ae1ef9dddee390fb596",
+   "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
+  },
+  "durable_copy": "sent to the owner as session attachments (E6 + F3 blend/glb, video, sheets)"
  }
 }

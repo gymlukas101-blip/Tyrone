@@ -54,6 +54,9 @@ How it's kept up to date:
 - **Three.js look-at offsets are applied only during render** (`life.ts` restores bones afterwards), so a test that reads bone quaternions between frames sees the rest pose. Measure inside `renderer.render`. *Why:* the first E5 app check reported "no gaze" while the eyes were moving.
 - **Don't "fix" an eyeball that pokes through the skin by pushing it back:** a recessed eye reads hollow. Cover it with the lids and socket instead. *Why:* eye candidate E1.
 
+- **Playwright video recording needs its own ffmpeg (not installed here); don't run `playwright install`.** Record a CDP screencast (`Page.startScreencast`) and encode the frames with the system `ffmpeg` at their own timestamps. *Why:* the F3 performance recording.
+- **With software WebGL, a still taken right after an event can show the frame before it.** Trust the morph weights read back from the live meshes, or wait about 400 ms. *Why:* the first wink and blink stills looked open while the weights were 1.
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
