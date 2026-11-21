@@ -513,3 +513,16 @@ Audit, sources, the bible and results are in `docs/audio/` (`SFX_AUDIT.md`, `SOU
 - blind listening results (review page);
 - trigger-to-sound latency and laptop-speaker check on the Windows PC;
 - the near-silent `ear_perk` take (owner's call in the Sound Lab).
+
+## Monkey Character V2, Stages 0–1 (branch `feature/monkey-character-v2`, 2026-11-21; not merged)
+
+- **Stage 0:** froze the production model (`docs/character_v2/baseline_contract.json`: 57 bones, 9 meshes, 50 shape keys, 15 visemes, 37 clips). Built a headless Blender pipeline (`bpy` 5.3 plus software EGL) in place of a Blender MCP bridge, which this container can't host (`pipeline_capabilities.md`).
+- **Stage 1:** two topology-preserving blockout candidates, `tools/character_v2/blockout.py` presets A and B:
+  - muzzle, nose and brow ridge;
+  - Popeye forearms;
+  - hands ×1.28 / ×1.55 about the wrist;
+  - shoulders, chest and legs.
+
+  Every shape key is carried along, bounded to ×0.8–1.35. The only rig change: the 18 hand, finger and thumb bones scale with the hands.
+- **Validation:** `validate.py` and `contract.py` (pure Python, tested in CI) both pass. Same bones, meshes, topology, groups, keys and clips; the GLB round trip gives the production vertex count; the production GLB hash is unchanged.
+- The `.blend` files, renders and references stay in the git-ignored `character_v2_workspace/`. Recommendation and open issues: `docs/character_v2/STAGE1_REPORT.md`. The production `monkey.glb` is untouched.

@@ -18,3 +18,6 @@ monkey/_version.py
 wakeword/vad/
 monkey/automation/cursor/ref/
 *.egg-info/
+
+# Monkey Character V2: native .blend files, renders and references stay local (docs/character_v2 holds the index)
+character_v2_workspace/

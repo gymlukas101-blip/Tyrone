@@ -43,6 +43,11 @@ How it's kept up to date:
 - **GraphQL is blocked here, so `gh release list` and `gh pr list` fail with 403.** Use REST: `gh api repos/OWNER/REPO/releases?per_page=2`. *Why:* a release check reported a failure for a run that was all green.
 - **A test that imports a library needs it in the lock that CI's job installs (`requirements/linux-test-py312.lock`, via `requirements/test-extras.in` + `tools/lock.sh`).** Run the job's own install line in a fresh venv before pushing a new test. *Why:* the sound-off playtest passed locally and failed in CI on a missing Pillow.
 
+### Blender and the 3D model
+- **Imported GLB clips also drive the shape keys.** For a neutral render, zero the keys *and* detach `shape_keys.animation_data.action` (the GLB's stored default weights are an angry face too). *Why:* the first "neutral" V2 renders showed the angry idle face (`tools/character_v2/render_views.py`).
+- **Reshaping FurCards splits vertices on GLB export** (they're flat-shaded cards that share vertices only where exactly coplanar). Pin the authored corner normals (`use_smooth` + `normals_split_custom_set`), and compare round-trip vertex counts with an untouched-baseline control. *Why:* candidates gained 400–1,100 vertices; even the untouched model gains 106.
+- **Radial or field-based reshapes amplify what's already there:** bound shape key deltas, and use offset bulges for mass. *Why:* the forearm's wrist bulb became a disc, and `smile` grew ×2.5 (`tools/character_v2/blockout.py`).
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
