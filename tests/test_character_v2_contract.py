@@ -127,3 +127,14 @@ def test_functional_mode_requires_named_face_morphs_and_neutral_defaults():
     assert any("default morph weights" in f for f in fail)
     fail, _ = contract.check_functional({"morphs": face, "clips": ["idle"]}, clips, require=("face", "clips"))
     assert any("clips missing (2 of 3)" in f for f in fail)
+
+
+def test_tripo_eye_builder_uses_v1_eye_names_and_app_bone_names():
+    """The eye keys the builder writes are V1's names (the app's face code calls them), and its gaze bones are the
+    names the app's look-at resolves ("eye.L" -> "eyeL")."""
+    src = (ROOT / "tools" / "character_v2" / "tripo_eyes.py").read_text()
+    for name in ("blink_L", "blink_R", "squint", "wideEyes", "happyEyes", "angryEyes", "sadEyes"):
+        assert f'"{name}"' in src and name in contract.FACE_MORPHS
+    assert 'f"eye.{side}"' in src
+    life = (ROOT / "ui" / "src" / "avatar" / "life.ts").read_text()
+    assert '"eyeL", "eyeR"' in life

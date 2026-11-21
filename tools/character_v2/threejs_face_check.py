@@ -38,6 +38,14 @@ STEPS = [  # (label, events, extra js, wait ms)
     ("angry", [["emote", {"name": "angry"}]], "", 1200),
     ("sad", [["emote", {"name": "sad"}]], "", 1200),
     ("surprised", [["emote", {"name": "surprised"}]], "", 1200),
+    # gaze: the app's look-at (Life) leads with the eye bones; target is the pointer in -1..1
+    ("gaze_side_a", [["state", {"state": "idle"}]], "a.expr = {}; a.life.target.set(1, 0);", 1500),
+    ("gaze_side_b", [], "a.life.target.set(-1, 0);", 1500),
+    ("gaze_up", [], "a.life.target.set(0, 1);", 1500),
+    ("gaze_down", [], "a.life.target.set(0, -1);", 1500),
+    ("talk_while_looking", [["state", {"state": "speaking"}], ["level", {"v": 0.5}], ["visemes", {"viseme_aa": 1}]],
+     "a.life.target.set(0.8, 0.3);", 1200),
+    # (no wink step: the app writes blink_L and blink_R together every frame, so it has no wink trigger yet)
 ]
 WATCH = ["viseme_aa", "viseme_PP", "viseme_O", "viseme_E", "viseme_FF", "jawOpen", "blink_L", "blink_R", "smile",
          "squint", "browsAngry", "angryEyes", "browsSad", "sadEyes", "frown", "grimace", "mouthO", "wideEyes", "browsUp"]
@@ -92,18 +100,29 @@ def main(dist: Path, model: Path, out: Path) -> dict:
             }""")
             p.wait_for_timeout(300)
             rep["face_center_threejs"] = p.evaluate("() => window.__v2face")
+            # The app offsets look-at bones only while it renders (then restores them), so measure inside render():
+            # each eye bone's rotation away from its rest orientation, in degrees.
+            p.evaluate("""() => { const a = window.__monkeyAvatarObj; const r = a.renderer; const orig = r.render.bind(r);
+                const rest = new Map();
+                a.model.traverse(o => { if (o.isBone && /^eye[LR]$/.test(o.name)) rest.set(o, o.quaternion.clone()); });
+                r.render = (sc, cam) => { const out = {};
+                    for (const [b, q0] of rest) out[b.name] = Math.round(q0.angleTo(b.quaternion) * 573) / 10;
+                    window.__eyeDeg = out; return orig(sc, cam); }; }""")
             for label, events, js, wait in STEPS:
                 if js:
                     p.evaluate(f"() => {{ const a = window.__monkeyAvatarObj; {js} }}")
                 if events:
                     p.evaluate("ev => window.__monkeyEvents(ev)", events)
                 p.wait_for_timeout(wait)
+                eyes = p.evaluate("() => window.__eyeDeg || {}")
                 vals = p.evaluate("""names => { const a = window.__monkeyAvatarObj; const r = {};
                     for (const n of names) { const refs = a.morphMap.get(n) || [];
                       r[n] = refs.length ? Math.max(...refs.map(x => x.influences[x.index])) : null; }
                     return r; }""", WATCH)
                 rep["steps"][label] = {k: (round(v, 3) if isinstance(v, (int, float)) else v) for k, v in vals.items()
                                        if v is None or v > 0.02}
+                if eyes:
+                    rep["steps"][label]["eye_bone_rotation_deg"] = eyes
                 p.screenshot(path=str(out / f"face_{label}.png"))
             b.close()
     finally:

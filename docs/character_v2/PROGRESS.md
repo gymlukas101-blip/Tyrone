@@ -9,19 +9,33 @@ Kept current after each bounded step. If a run is interrupted, resume from **nex
 
 | Field | Value |
 |---|---|
-| base_commit | `6409ff9` on `feature/monkey-character-v2` (branched from main `254828b`). `main` has moved on to `f375abc`; the production GLB there is unchanged (same hash) |
+| base_commit | `c661901` on `feature/monkey-character-v2` (branched from main `254828b`; main is at `f375abc`, production GLB unchanged there) |
 | feature_branch | `feature/monkey-character-v2` (worktree `../tyrone-v2`); never merged to `main` |
-| source_model_sha256 | production `ui/public/models/monkey.glb` `e9f02358…1012` (unchanged); Tripo source `MonkeyTripo.glb` `8f990a33…d107` (local only, not committed) |
-| current_stage | Tripo Stage 1 (audit + look-match spec) done; **Stage 2 (face) proof of concept done, strategy C chosen** |
-| last_completed_step | Hybrid face proof of concept `tripo_face_hybrid_C`: Tripo body, fur, headset and brow, plus a new muzzle (lip loops, cavity, teeth, tongue) and eyeballs with lids. 38 face morphs with V1 names, driven by the real app in Three.js |
-| last_verified_artifact | `character_v2_workspace/tripo_poc/tripo_face_hybrid_C.blend` (sha256 `e671a21a…7660`, textures packed) and `.glb` (sha256 `5b245d4e…beed`); full list in `tripo_poc_manifest.json` |
-| validation_command_and_result | `tripo_face_poc.py … --mode hybrid` → 38 morphs, default weights all zero. `threejs_face_check.py ui/dist …glb out` → kind 3d, 38 morphs, the app drives aa 0.97 / PP 0.97 / O / E / FF, blink 1.0, emotes; barge-in decays to ≈0; console: 2 × 404 (an app asset, not the model). `contract.check_functional` face stage → 0 failures (notes: 5 body morphs, 37 clips not yet). `pytest tests/test_character_v2_contract.py` → 9 passed |
-| known_failures | Fixed during the run: parenting new parts under Tripo's armature moved them (needed the parent-inverse matrix); Tripo's open-mouth hole made the new lips dive inward (now bridged); GLB default morph weights were 1.0 (now zeroed and checked). **Open:** no clips on the Tripo skeleton yet; eyes don't track; procedural smile and sad shapes are subtle; the muzzle colour is a planar projection (soft on the steep sides); a faint light line along the closed lips in Three.js |
-| next_single_action | Eye gaze plus a sculpt pass on the face shapes (smile corners, sad, lip-line colour) in the hybrid builder. Then start Stage 3: fit V1's skeleton semantics onto the Tripo body and retarget one clip (`idle`) as the first animation proof |
-| files_changed | `tools/character_v2/{tripo_face_poc,threejs_face_check}.py` (new); `render_views.py` (top / bottom / face_side views); `contract.py` (functional mode) + test; `docs/character_v2/{TRIPO_AUDIT.md, ADR_001_tripo_strategy.md, tripo_poc_manifest.json, PROGRESS.md}`; `docs/agent-lessons.md`; `docs/IMPLEMENTATION-NOTES.md` |
-| external_tool_versions | bpy 5.3.0 (Python 3.13.18), Mesa 25.2.8 software EGL, Pillow 12.3.0, Playwright Chromium + SwiftShader (UI built from main `f375abc`). No Blender GUI or MCP; not tested on Windows |
+| source_model_sha256 | production `monkey.glb` `e9f02358…1012` (unchanged); Tripo `MonkeyTripo.glb` `8f990a33…d107` (local only); hybrid C `.blend` `e671a21a…7660` (kept as an immutable reference) |
+| current_stage | **Eyes (Stage 2a): candidate E5 ready for owner review.** Body work is on hold until the eyes pass review |
+| last_completed_step | Eye defect audit of hybrid C (`EYES_E5.md` §1). E1→E5 reconstruction: Tripo's own painted eye on fitted eyeballs with `eye.L/R` bones, sealed one-piece lid and socket meshes, 7 lid keys. Verified in 7 matched views, 16 poses and the real app |
+| last_verified_artifact | `character_v2_workspace/tripo_eyes/tripo_eyes_E5.blend` (sha256 `9e103642…b596`) and `.glb` (`f12cdf1b…6dcc`); see `tripo_poc_manifest.json` → `eyes_E5` |
+| validation_command_and_result | `eye_audit.py … E5` → eyeballs 0 boundary / 0 non-manifold edges, sockets 0 non-manifold (64 hidden rim edges), 0 leak pixels. `eye_poses.py` → 16 poses × 4 views, 0 leak pixels. `threejs_face_check.py` → 3D, 7 eye morphs, app blink, emotes and look-at drive it (eye bones 6.7–14.4°). `pytest tests/test_character_v2_contract.py` → passes |
+| known_failures | Fixed this run: E1 recessed the eyeball (hollow again); patchy sclera when gazing; blink sliver; open seams. **Open:** painted highlight rotates with gaze; squint/happy lash smudge; no lid-follows-gaze corrective; the app has no wink trigger; sclera whiter under the app's tone mapping; head bone name not mapped (eyes move, head doesn't) |
+| next_single_action | **Owner review of the E5 eyes** (`EYES_source_vs_E5_7views.png`, pose sheets, Three.js sheet). If approved: an interactive Blender pass on lids and highlight (`EYES_E5.md` §6), then the mouth and face retopology on the same principles. If not: list the specific differences from Tripo to fix |
+| files_changed | `tools/character_v2/{eye_audit,tripo_eyes,eye_poses}.py` (new); `threejs_face_check.py` (gaze steps, eye-bone measurement); `docs/character_v2/{EYES_E5.md, tripo_poc_manifest.json, PROGRESS.md}`; `docs/agent-lessons.md`; `tests/test_character_v2_contract.py` |
+| external_tool_versions | bpy 5.3.0 (Python 3.13.18), Mesa 25.2.8 software EGL, Playwright Chromium + SwiftShader, UI built from main `f375abc`. No Blender GUI or MCP; no local computer shared with the session |
 
-## Verified / failed / untested (this run)
+## Eyes run (2026-11-21): verified / failed / untested
+- **VERIFIED (cloud container):**
+  - The hybrid C eye defects, measured.
+  - E5 matches the Tripo source in 7 matched views.
+  - Sealed geometry: no background or skull-interior leaks.
+  - Blinks, a wink, squint, wide, happy, angry and sad, plus 4 gaze directions, in Blender.
+  - App blink, emotes and look-at drive E5 in Three.js.
+- **FAILED and fixed:** recessed eyeball (E1); blink sliver (E2–E3).
+- **UNTESTED:**
+  - Windows / WebView2 / GPU.
+  - Wink in the app (no trigger).
+  - Combined face + eyes (E5 has Tripo's original open mouth; the hybrid C muzzle isn't combined).
+  - Head-follow on Tripo's bone names.
+
+## Verified / failed / untested (Tripo face PoC run, before the eyes)
 - **VERIFIED (cloud container):**
   - The Tripo GLB imports, renders and re-exports.
   - Matched-camera comparison of V1, B and Tripo (9 views).
@@ -44,7 +58,8 @@ The cloud workspace is ephemeral. Each accepted `.blend` and GLB, plus the evide
 - [x] Stage 0: preflight. Branch and production hash checked; the Tripo export is present.
 - [x] Stage 1: Tripo audit, matched views and look-match spec (`TRIPO_AUDIT.md`).
 - [x] Strategy proof of concept: A0 direct vs C hybrid on the face. Decision: `ADR_001_tripo_strategy.md`.
-- [ ] Stage 2: face to production. Gaze, sculpted shapes, lip-line texture, combination tests (speech + smile, speech + squint, wink while talking).
+- [x] Stage 2a: eyes. E5 candidate built and verified, awaiting owner review (`EYES_E5.md`).
+- [ ] Stage 2b: face to production. Gaze, sculpted shapes, lip-line texture, combination tests (speech + smile, speech + squint, wink while talking).
 - [ ] Stage 3: hands (articulated fists), shoulders, V1 skeleton semantics on Tripo proportions, clip retargeting.
 - [ ] Stage 4: fur, materials (atlas the 39 + 5 materials), proper bakes.
 - [ ] Stage 5: all 37 clips plus squash/stretch, acting and secondary motion.

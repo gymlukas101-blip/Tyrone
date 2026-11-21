@@ -51,6 +51,9 @@ How it's kept up to date:
 - **Parenting new geometry to an imported glTF armature moves it** (the armature sits under a rotated import node). Build in world space, then set `matrix_parent_inverse = arm.matrix_world.inverted()`. *Why:* the first Tripo face proof of concept rendered the new muzzle off to the side.
 - **Zero every shape key's value before a glTF export, and check the GLB's `mesh.weights`.** New keys export at their current value, and three.js starts each morph from it. *Why:* the Tripo proof of concept loaded with all 38 face morphs stuck at 1.0 until the app touched them (`tools/character_v2/tripo_face_poc.py` now records `glb_default_weights_nonzero`).
 
+- **Three.js look-at offsets are applied only during render** (`life.ts` restores bones afterwards), so a test that reads bone quaternions between frames sees the rest pose. Measure inside `renderer.render`. *Why:* the first E5 app check reported "no gaze" while the eyes were moving.
+- **Don't "fix" an eyeball that pokes through the skin by pushing it back:** a recessed eye reads hollow. Cover it with the lids and socket instead. *Why:* eye candidate E1.
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
