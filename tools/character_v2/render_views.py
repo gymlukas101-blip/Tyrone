@@ -4,7 +4,8 @@
         [--morphs name=v,...] [--action NAME --frame N] [--views front,face_34] [--keep-defaults]
 
 Orthographic cameras at fixed positions and scales (never fitted to the model, so before/after line up exactly):
-front, three_quarter (his left, from the front), side (his left), back, face_front and face_34. Two shadings each:
+front, three_quarter (his left, from the front), side (his left), back, face_front and face_34 by default;
+top, bottom and face_side on request (--views). Two shadings each:
 clay (single colour, studio light: reads the form) and textured (Workbench texture colour: reads the face paint).
 FurCards (alpha cards) are hidden unless --fur; Workbench can't draw alpha-tested tufts faithfully.
 Every morph is set to 0 first (a neutral face; the GLB's stored defaults show an angry idle face) unless
@@ -33,7 +34,11 @@ VIEWS = [
     ("back", (0, 6, 0.5), (0, 0, 0.5), 1.55),
     ("face_front", (0, -6, 0.74), (0, 0, 0.74), 0.52),
     ("face_34", (4.2, -4.2, 0.86), (0, 0, 0.74), 0.52),
+    ("top", (0, -0.001, 6), (0, 0, 0.5), 1.55),
+    ("bottom", (0, -0.001, -5), (0, 0, 0.5), 1.55),
+    ("face_side", (6, 0, 0.74), (0, 0, 0.74), 0.52),
 ]
+DEFAULT_VIEWS = ["front", "three_quarter", "side", "back", "face_front", "face_34"]   # the Stage 1 set
 
 
 def load(path: Path):
@@ -96,7 +101,7 @@ def main(model: Path, out: Path, size: int = 640, fur: bool = False, morphs: dic
     sc.camera = cam
     done = []
     for name, loc, tgt, scale in VIEWS:
-        if views and name not in views:
+        if name not in (views or DEFAULT_VIEWS):
             continue
         cam.location = loc
         look_at(cam, tgt)

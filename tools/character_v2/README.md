@@ -31,5 +31,7 @@ The baseline `.blend` is `import_glb(monkey.glb)` saved as is (`tools/blender/co
 | `contract.py` | The compatibility rules (pure Python; tested in CI) |
 | `validate.py` | Applies the rules to a candidate, plus a GLB export/re-import round trip |
 | `sheet.py` | Comparison sheets (Pillow) |
+| `tripo_face_poc.py` | Tripo direction: hybrid face (new muzzle with lip loops, eyes with lids, brow keys) or the direct control (`--mode direct`) |
+| `threejs_face_check.py` | Loads a candidate GLB in the real UI (demo build, `?model=`) and drives speech, blink and emotes with the app's own code; screenshots + morph read-back |
 
-Status, decisions and open issues: `docs/character_v2/PROGRESS.md` and `STAGE1_REPORT.md`.
+Status, decisions and open issues: `docs/character_v2/PROGRESS.md`, `ADR_001_tripo_strategy.md` and `TRIPO_AUDIT.md` (the Stage 1 blockout: `STAGE1_REPORT.md`).

@@ -1,0 +1,21 @@
+{
+ "date": "2026-11-21",
+ "branch": "feature/monkey-character-v2",
+ "environment": {"blender_bpy": "5.3.0", "python": "3.13.18", "render": "Workbench via Mesa software EGL", "threejs_check": "headless Chromium + SwiftShader, built UI from main f375abc"},
+ "inputs": {
+  "MonkeyTripo.glb": {"sha256": "8f990a331882e3106c321fb3bc7580f190931854383fe1863543df940b49d107", "bytes": 5603184, "committed": false},
+  "01_TRIPO_MODEL_SCREENSHOT.png": {"sha256": "0b1f4685f151ce0694bee1da652360ded661f41f5a3bd0fc7c8a44872e64c6ce", "committed": false},
+  "00_ORIGINAL_TARGET_ILLUSTRATION.png": {"sha256": "78b6a8d3eb2a6fe86a1d665f05149c97aa27f7e6e77b8560bc0f5b054e572a19", "committed": false},
+  "MASTER_PROMPT.md": {"sha256": "ceb0ff54aeb6e7736347e2ac6a4814263b13d6b7d57bf87d15ef6ee1891dd227", "committed": false},
+  "production ui/public/models/monkey.glb": {"sha256": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012", "unchanged": true}
+ },
+ "outputs": {
+  "tripo_face_hybrid_C.blend": {"sha256": "e671a21a2cda7fddffe10b399af7fc153bac67eb79fef3fe71b1e994b9127660", "bytes": 6137070, "textures_packed": true},
+  "tripo_face_hybrid_C.glb": {"sha256": "5b245d4e5adffd7d0fa19e50d676bcc55606f5823c72391f049d71527ba5beed", "bytes": 6897632, "morphs": 38, "default_weights_nonzero": []},
+  "tripo_face_direct_A0.blend": {"sha256": "bee84e1206e4a4230c325d5d9b5de9839a623a421a86157b8c36d93600cb2d0c", "role": "control"},
+  "V2_Muzzle_basecolor.png": {"sha256": "19911f678a3a8cc406e8717b3ee079238b0659a709b2611c7a7ed70af8dd5fdd"},
+  "V2_Eye_basecolor.png": {"sha256": "75fd09d2c0357a272e468bb5edda4c44ee6d6aea4fa1b05858bc4e7e51454b4d"}
+ },
+ "rebuild": "bpy python tools/character_v2/tripo_face_poc.py -- character_v2_workspace/refs/tripo_source/MonkeyTripo.glb character_v2_workspace/tripo_poc --mode hybrid",
+ "durable_copy": "sent to the owner as session file attachments (blend, glb, sheets); a private Git LFS asset repo needs the owner's approval"
+}

@@ -92,3 +92,35 @@ def compare(base: dict, cand: dict, check_topology: bool = True) -> tuple[list[s
 def is_protected_output(path: str) -> bool:
     """True for the production model path (a candidate export must never land there)."""
     return path.replace("\\", "/").rstrip("/").endswith(PROTECTED_MODEL)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Functional compatibility mode (Tripo-locked rebuild, Stage 2+): the mesh, topology and vertex counts may change;
+# what must survive is the behaviour the app calls by name. Strict compare() above stays the rule for candidates
+# that keep V1's topology.
+FACE_MORPHS = VISEMES + ("jawOpen", "smile", "bigGrin", "frown", "smirk_L", "smirk_R", "mouthO", "grimace",
+                         "tongueOut", "cheekPuff", "cheeksUp", "blink_L", "blink_R", "squint", "wideEyes", "happyEyes",
+                         "angryEyes", "sadEyes", "browsUp", "browsAngry", "browsSad", "browUp_L", "browUp_R")
+BODY_MORPHS = ("chestPuff", "pecBounce_L", "pecBounce_R", "bicepFlex_L", "bicepFlex_R")
+
+
+def check_functional(cand: dict, baseline_clips: list[str], require: tuple[str, ...] = ("face",)
+                     ) -> tuple[list[str], list[str]]:
+    """cand: {"morphs": [names], "default_weights_nonzero": [mesh names], "clips": [names]}.
+
+    require picks the groups that must be complete at this stage: "face" (38 face morphs), "body" (5 body
+    morphs), "clips" (every V1 clip name). Missing groups that aren't required yet are listed in notes.
+    Non-zero default morph weights always fail: three.js starts every morph from them (a stuck face)."""
+    fail: list[str] = []
+    note: list[str] = []
+    have = set(cand.get("morphs", []))
+    for group, names in (("face", FACE_MORPHS), ("body", BODY_MORPHS)):
+        missing = [n for n in names if n not in have]
+        if missing:
+            (fail if group in require else note).append(f"{group} morphs missing ({len(missing)}): {missing}")
+    if cand.get("default_weights_nonzero"):
+        fail.append(f"non-zero default morph weights on {cand['default_weights_nonzero']}")
+    missing_clips = [c for c in baseline_clips if c not in set(cand.get("clips", []))]
+    if missing_clips:
+        (fail if "clips" in require else note).append(f"clips missing ({len(missing_clips)} of {len(baseline_clips)})")
+    return fail, note

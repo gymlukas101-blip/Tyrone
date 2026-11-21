@@ -1,54 +1,54 @@
 # Monkey V2: progress checkpoint
 
-Kept current after each step. If a run is interrupted, resume from **next_single_action**.
+Kept current after each bounded step. If a run is interrupted, resume from **next_single_action**.
+
+**Direction (2026-11-21):** Tripo-locked rebuild.
+- **Visual authority:** the owner's Tripo export.
+- **Behaviour authority:** V1 production Monkey: morph names, clips, face mixer.
+- **Plan:** `ADR_001_tripo_strategy.md`. The Stage 0–1 blockout (candidates A and B) is kept as research only.
 
 | Field | Value |
 |---|---|
-| base_commit | `254828b` (main: "Course helper: Storyline/Rise modules like the owner's Module 2") |
-| feature_branch | `feature/monkey-character-v2` (worktree `../tyrone-v2`; never merged to `main`) |
-| source_model_sha256 | `e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012` (`ui/public/models/monkey.glb`, 7,523,092 bytes; unchanged) |
-| current_stage | Stage 1 complete (bounded blockout). Stage 2 not started |
-| last_completed_step | Candidates A and B v005 built, rendered, validated (both pass); B recommended (`STAGE1_REPORT.md`) |
-| last_verified_artifact | `character_v2_workspace/blend/monkey_v2_cand_B_005.blend` (sha256 `32ff5175…3a15`) and its export `validation/monkey_v2_cand_B_005.glb` (sha256 `d393ed27…ce28`) |
-| validation_command_and_result | `bpy python tools/character_v2/validate.py -- …/monkey_v2_master_000.blend …/monkey_v2_cand_B_005.blend character_v2_workspace/validation` → `ok: true`, 0 failures (A: the same). `pytest tests/test_character_v2_contract.py` → 8 passed |
-| known_failures | None open. Fixed along the way: Workbench needed software EGL; imported clips drove the face in "neutral" renders; muzzle over the eyes (B v002); chest ripples (v003); forearm bell, then disc (v004); keys ×2.5 and the exporter splitting FurCards vertices (v005). Open design issues: see `STAGE1_REPORT.md` |
-| next_single_action | Load `monkey_v2_cand_B_005.glb` in the UI `?demo` mode on a local branch (not replacing the production GLB), check lip-sync, idle and gestures in Three.js, then start Stage 2 with the eyes |
-| files_changed | `.gitignore` (local workspace ignored); `tools/character_v2/{inventory,bpy_selftest,render_views,sheet,blockout,contract,validate}.py`, `tools/character_v2/README.md`; `tests/test_character_v2_contract.py`; `docs/character_v2/{baseline_contract.json,PROGRESS.md,pipeline_capabilities.md,VISUAL_SPEC.md,STAGE1_REPORT.md}`; `docs/agent-lessons.md` (3 rules); `docs/IMPLEMENTATION-NOTES.md` |
-| external_tool_versions | `bpy` 5.3.0 (Python 3.13.18), Mesa 25.2.8 software EGL, Pillow 12.3.0. No Blender GUI or MCP (see `pipeline_capabilities.md`) |
+| base_commit | `6409ff9` on `feature/monkey-character-v2` (branched from main `254828b`). `main` has moved on to `f375abc`; the production GLB there is unchanged (same hash) |
+| feature_branch | `feature/monkey-character-v2` (worktree `../tyrone-v2`); never merged to `main` |
+| source_model_sha256 | production `ui/public/models/monkey.glb` `e9f02358…1012` (unchanged); Tripo source `MonkeyTripo.glb` `8f990a33…d107` (local only, not committed) |
+| current_stage | Tripo Stage 1 (audit + look-match spec) done; **Stage 2 (face) proof of concept done, strategy C chosen** |
+| last_completed_step | Hybrid face proof of concept `tripo_face_hybrid_C`: Tripo body, fur, headset and brow, plus a new muzzle (lip loops, cavity, teeth, tongue) and eyeballs with lids. 38 face morphs with V1 names, driven by the real app in Three.js |
+| last_verified_artifact | `character_v2_workspace/tripo_poc/tripo_face_hybrid_C.blend` (sha256 `e671a21a…7660`, textures packed) and `.glb` (sha256 `5b245d4e…beed`); full list in `tripo_poc_manifest.json` |
+| validation_command_and_result | `tripo_face_poc.py … --mode hybrid` → 38 morphs, default weights all zero. `threejs_face_check.py ui/dist …glb out` → kind 3d, 38 morphs, the app drives aa 0.97 / PP 0.97 / O / E / FF, blink 1.0, emotes; barge-in decays to ≈0; console: 2 × 404 (an app asset, not the model). `contract.check_functional` face stage → 0 failures (notes: 5 body morphs, 37 clips not yet). `pytest tests/test_character_v2_contract.py` → 9 passed |
+| known_failures | Fixed during the run: parenting new parts under Tripo's armature moved them (needed the parent-inverse matrix); Tripo's open-mouth hole made the new lips dive inward (now bridged); GLB default morph weights were 1.0 (now zeroed and checked). **Open:** no clips on the Tripo skeleton yet; eyes don't track; procedural smile and sad shapes are subtle; the muzzle colour is a planar projection (soft on the steep sides); a faint light line along the closed lips in Three.js |
+| next_single_action | Eye gaze plus a sculpt pass on the face shapes (smile corners, sad, lip-line colour) in the hybrid builder. Then start Stage 3: fit V1's skeleton semantics onto the Tripo body and retarget one clip (`idle`) as the first animation proof |
+| files_changed | `tools/character_v2/{tripo_face_poc,threejs_face_check}.py` (new); `render_views.py` (top / bottom / face_side views); `contract.py` (functional mode) + test; `docs/character_v2/{TRIPO_AUDIT.md, ADR_001_tripo_strategy.md, tripo_poc_manifest.json, PROGRESS.md}`; `docs/agent-lessons.md`; `docs/IMPLEMENTATION-NOTES.md` |
+| external_tool_versions | bpy 5.3.0 (Python 3.13.18), Mesa 25.2.8 software EGL, Pillow 12.3.0, Playwright Chromium + SwiftShader (UI built from main `f375abc`). No Blender GUI or MCP; not tested on Windows |
 
-## Stage checklist
+## Verified / failed / untested (this run)
+- **VERIFIED (cloud container):**
+  - The Tripo GLB imports, renders and re-exports.
+  - Matched-camera comparison of V1, B and Tripo (9 views).
+  - The hybrid face performs 15 visemes and 23 other face morphs in Blender renders.
+  - The same GLB loads in the real UI (Three.js, `?demo&model=`) and the app's own speech, emote and blink code drives it.
+  - The production GLB is untouched.
+- **FAILED (as expected; this is the control):** direct deformation of Tripo's mesh (A0) can't seal the lips or blink.
+- **UNTESTED:**
+  - Windows / WebView2 / GPU frame time.
+  - Body clips on Tripo (none yet).
+  - Hands.
+  - Eye tracking.
+  - Fur deformation in motion.
+  - Real TTS audio driving the visemes (fed synthetic viseme frames instead).
 
-### Stage 0: baseline ✅
-- [x] Audit of the GLB, the animation contract and the Blender tools → `baseline_contract.json`:
-  - 57 bones, 9 meshes, 44,110 vertices, 61,508 triangles;
-  - 50 shape keys, including the 15 visemes;
-  - 37 clips.
-- [x] Dedicated worktree and branch. The local workspace `character_v2_workspace/` is git-ignored (`.blend` files, renders, references).
-- [x] Source GLB hash frozen. Native baseline `monkey_v2_master_000.blend` (sha256 `fdc6bd64…eff8e`, checked unchanged after every candidate build).
-- [x] Fixed-camera baseline renders: clay and texture, 6 views.
-- [x] Disposable-scene test of the headless bpy pipeline (`bpy_selftest.py`: `ok`). This is the documented alternative to an MCP bridge.
-- [x] `pipeline_capabilities.md`.
+## Durable storage
+The cloud workspace is ephemeral. Each accepted `.blend` and GLB, plus the evidence sheets, is sent to the owner as a session file attachment; their hashes are in `tripo_poc_manifest.json`. A private Git LFS asset repository would be better, but creating one changes the owner's GitHub account, so it needs their approval first. Rebuilding is deterministic from the Tripo source with the command in the manifest.
 
-### Stage 1: bounded blockout ✅
-- [x] Before/after modeling spec → `VISUAL_SPEC.md`.
-- [x] Candidates A (measured) and B (bold), native `.blend` per version (001–005).
-- [x] Renders: front, ¾, side, back, face; expression combination; `flex` and `talk_gest_open_palms` poses; fur cards.
-- [x] `validate.py` + `contract.py` + tests. Both candidates pass.
-- [x] Recommendation and open issues → `STAGE1_REPORT.md`.
-- Not done, as instructed: no fur detail, no generative 3D, no production GLB replacement, no merge to `main`.
+## Stage checklist (Tripo-locked)
+- [x] Stage 0: preflight. Branch and production hash checked; the Tripo export is present.
+- [x] Stage 1: Tripo audit, matched views and look-match spec (`TRIPO_AUDIT.md`).
+- [x] Strategy proof of concept: A0 direct vs C hybrid on the face. Decision: `ADR_001_tripo_strategy.md`.
+- [ ] Stage 2: face to production. Gaze, sculpted shapes, lip-line texture, combination tests (speech + smile, speech + squint, wink while talking).
+- [ ] Stage 3: hands (articulated fists), shoulders, V1 skeleton semantics on Tripo proportions, clip retargeting.
+- [ ] Stage 4: fur, materials (atlas the 39 + 5 materials), proper bakes.
+- [ ] Stage 5: all 37 clips plus squash/stretch, acting and secondary motion.
+- [ ] Stage 6: acceptance in the app on the Dell (frame time, every state and clip).
 
-### Stage 2: face and mass (not started)
-- [ ] Smaller, deeper eyes, with the eye/eyelid keys rebuilt.
-- [ ] Muzzle region retopology / smoothing, plus nostrils.
-- [ ] Trapezius and shoulder mass; the head sits lower.
-- [ ] Three.js check of the candidate in `?demo` (lip-sync, idle, gestures).
-
-## Local workspace layout (not committed)
-```
-character_v2_workspace/
-  refs/        01_TARGET.png, 02_CURRENT.png (from the owner's production kit)
-  blend/       monkey_v2_master_000.blend, monkey_v2_cand_{A,B}_00{1..5}.blend
-  renders/     baseline_000/, cand_*/, expr_*/, pose_*/, fur_*/, V2_stage1_*.png sheets
-  validation/  candidate GLBs, the baseline control GLB, *_validation.json
-  logs/        inventory, self-test, blockout reports (*.json), render and validate logs
-```
+## Earlier work (kept for reference)
+Stage 0–1 blockout on V1's topology (candidates A and B, `STAGE1_REPORT.md`, `VISUAL_SPEC.md`, strict `validate.py`) is superseded by the Tripo direction. Its tools stay in use: `render_views.py`, `sheet.py`, `inventory.py` and `contract.py`.

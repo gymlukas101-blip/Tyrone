@@ -113,3 +113,17 @@ def test_baseline_contract_matches_the_production_model():
     if con.get("sha256") and glb.exists():
         # The contract is frozen for the V2 program; a deliberate model change must regenerate it (inventory.py).
         assert hashlib.sha256(glb.read_bytes()).hexdigest() == con["sha256"]
+
+
+def test_functional_mode_requires_named_face_morphs_and_neutral_defaults():
+    face = list(contract.FACE_MORPHS)
+    assert len(face) == 38 and len(set(face)) == 38
+    clips = ["idle", "talk", "flex"]
+    fail, note = contract.check_functional({"morphs": face, "clips": []}, clips)
+    assert fail == [] and any("body morphs" in n for n in note) and any("clips missing (3 of 3)" in n for n in note)
+    fail, _ = contract.check_functional({"morphs": face[1:], "clips": []}, clips)
+    assert any("face morphs missing" in f for f in fail)
+    fail, _ = contract.check_functional({"morphs": face, "default_weights_nonzero": ["V2_Muzzle"]}, clips)
+    assert any("default morph weights" in f for f in fail)
+    fail, _ = contract.check_functional({"morphs": face, "clips": ["idle"]}, clips, require=("face", "clips"))
+    assert any("clips missing (2 of 3)" in f for f in fail)

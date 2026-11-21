@@ -48,6 +48,9 @@ How it's kept up to date:
 - **Reshaping FurCards splits vertices on GLB export** (they're flat-shaded cards that share vertices only where exactly coplanar). Pin the authored corner normals (`use_smooth` + `normals_split_custom_set`), and compare round-trip vertex counts with an untouched-baseline control. *Why:* candidates gained 400–1,100 vertices; even the untouched model gains 106.
 - **Radial or field-based reshapes amplify what's already there:** bound shape key deltas, and use offset bulges for mass. *Why:* the forearm's wrist bulb became a disc, and `smile` grew ×2.5 (`tools/character_v2/blockout.py`).
 
+- **Parenting new geometry to an imported glTF armature moves it** (the armature sits under a rotated import node). Build in world space, then set `matrix_parent_inverse = arm.matrix_world.inverted()`. *Why:* the first Tripo face proof of concept rendered the new muzzle off to the side.
+- **Zero every shape key's value before a glTF export, and check the GLB's `mesh.weights`.** New keys export at their current value, and three.js starts each morph from it. *Why:* the Tripo proof of concept loaded with all 38 face morphs stuck at 1.0 until the app touched them (`tools/character_v2/tripo_face_poc.py` now records `glb_default_weights_nonzero`).
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.

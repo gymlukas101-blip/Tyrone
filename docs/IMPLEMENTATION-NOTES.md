@@ -526,3 +526,15 @@ Audit, sources, the bible and results are in `docs/audio/` (`SFX_AUDIT.md`, `SOU
   Every shape key is carried along, bounded to ×0.8–1.35. The only rig change: the 18 hand, finger and thumb bones scale with the hands.
 - **Validation:** `validate.py` and `contract.py` (pure Python, tested in CI) both pass. Same bones, meshes, topology, groups, keys and clips; the GLB round trip gives the production vertex count; the production GLB hash is unchanged.
 - The `.blend` files, renders and references stay in the git-ignored `character_v2_workspace/`. Recommendation and open issues: `docs/character_v2/STAGE1_REPORT.md`. The production `monkey.glb` is untouched.
+
+## Monkey Character V2: Tripo-locked direction, first run (branch `feature/monkey-character-v2`, 2026-11-21; not merged)
+
+- **New direction:** the owner's Tripo export is the visual authority; V1 stays the behaviour authority.
+- **Audit:** 39 triangle-soup parts, a Mixamo auto-rig, base colour only, no morphs or clips. The mouth is sculpted open and the eyes are painted shells (`docs/character_v2/TRIPO_AUDIT.md`).
+- **Proof of concept** (`tools/character_v2/tripo_face_poc.py`):
+  - **Hybrid face (strategy C):** a new muzzle with lip loops fitted to Tripo's surface and coloured from its texture, plus a cavity, teeth, tongue, and eyeballs with lids. Tripo's brow gets keys. 38 face morphs with V1 names.
+  - **Control (A0):** direct deformation of Tripo's mesh can't seal the lips.
+- **Decision:** C (`ADR_001_tripo_strategy.md`).
+- **App check:** `tools/character_v2/threejs_face_check.py` loads a candidate GLB in the real UI (`?demo&model=`) and drives it with the app's own events. The hybrid speaks, blinks and emotes there.
+- **Functional compatibility mode:** `contract.check_functional`, for rebuilt topology.
+- Source asset and outputs stay local (hashes in `tripo_poc_manifest.json`). The production `monkey.glb` is unchanged.
