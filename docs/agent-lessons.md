@@ -43,6 +43,10 @@ How it's kept up to date:
 - **GraphQL is blocked here, so `gh release list` and `gh pr list` fail with 403.** Use REST: `gh api repos/OWNER/REPO/releases?per_page=2`. *Why:* a release check reported a failure for a run that was all green.
 - **A test that imports a library needs it in the lock that CI's job installs (`requirements/linux-test-py312.lock`, via `requirements/test-extras.in` + `tools/lock.sh`).** Run the job's own install line in a fresh venv before pushing a new test. *Why:* the sound-off playtest passed locally and failed in CI on a missing Pillow.
 
+- **Before adding a Windows package with compiled code, check its wheel for bundled VC++ runtime DLLs** (`msvcp140.dll`, `vcruntime140*.dll`). Windows keeps the first copy a process loads; an older one crashes onnxruntime. *Why:* winrt-runtime's `msvcp140.dll` broke the PyInstaller build (CI run 93, twice) and could have crashed the installed app. Fixed by `tools/drop_winrt_msvcp.py`.
+- **Never run `npm ci` in a folder whose `node_modules` is a symlink to another checkout:** it empties the target. Use a real `node_modules` per worktree, or `npm run build` only. *Why:* a review worktree emptied the main checkout's `ui/node_modules`.
+- **Compare a suspected flaky test against `origin/main`, not the local checkout:** the main working tree can lag far behind. *Why:* `/home/user/tyrone` was on `f375abc` while `origin/main` was `3a8f6dc`.
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
