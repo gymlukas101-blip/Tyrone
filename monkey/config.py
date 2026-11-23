@@ -102,6 +102,16 @@ class Settings:
     todo_phone_notify: bool = False   # the phone via ntfy: off until set up (topic + token live in secrets.dat)
     todo_phone_show_text: bool = True # False: the phone only says "You have a reminder" (ntfy's server relays the text)
     ntfy_server: str = "https://ntfy.sh"   # or a self-hosted ntfy server
+    # Phone screen time (integrations/screentime.py). Opt-in: nothing is read until it's turned on in Settings → Phone.
+    screentime_enabled: bool = False
+    screentime_platform: str = "iphone"  # "iphone" (the owner's phone) | "android"
+    screentime_transport: str = ""     # "folder" | "ntfy" | "manual" ("" = the platform's recommended path)
+    screentime_folder: str = ""        # inbox folder ("" = iCloud Drive\Monkey or Sync\Monkey under the user folder)
+    screentime_ntfy_server: str = ""   # relay for sealed messages ("" = the reminders' ntfy_server, else ntfy.sh)
+    screentime_goal_min: int = 0       # daily phone goal in minutes (0 = none)
+    screentime_keep_days: int = 30     # usage data older than this is deleted
+    screentime_in_brief: bool = True   # yesterday's total in the morning brief
+    screentime_nudges: bool = True     # the gentle "phone time is high and X is still open" suggestion
     anthropic_workspace_id: str = ""  # only for Console keys not tied to a workspace (found automatically)
     home_location: str = "Madison, WI"
     latitude: float = 43.0766          # UW-Madison campus

@@ -3,6 +3,7 @@
 export type Importance = "low" | "normal" | "high";
 import type { Todo, TodoSettings, TodoStep } from "./todo";
 import type { PhoneStatus, ReminderChannels } from "./reminders";
+import { demoScreenTimeApi, type ScreenTimeApi } from "./screentime";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
 /** One connected inbox (Settings → Accounts). The address is only ever shown on this PC's screen. */
@@ -44,7 +45,7 @@ export interface BriefStatus { verified: boolean; schedule: Record<string, strin
 const demoBriefState: BriefStatus = { verified: false, schedule: {}, next_run: null, today: null, weekend: false, lead_min: 90, speak: false,
   canvas: { status: "none", days: null, message: "No Canvas token (using the calendar feed)." }, calendar: true, task: false };
 
-export interface Api {
+export interface Api extends ScreenTimeApi {
   get_state(): Promise<AppState>;
   save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string; warning?: string; note?: string }>;
   test_anthropic(): Promise<{ ok: boolean; error?: string; note?: string }>;
@@ -441,6 +442,7 @@ function mockApi(): Api {
     async toggle_assignment() { return { ok: true, synced: true }; },
     ...demoTodoApi(emit, later),
     ...demoReminderApi(state),
+    ...demoScreenTimeApi(() => state.settings as Record<string, any>, emit, new URLSearchParams(location.search).has("empty")),
     async get_health() { return { ok: true, health: demoHealth() }; },
     async garmin_login() { return { ok: false, error: "Demo mode" }; },
     async garmin_mfa() { return { ok: false, error: "Demo mode" }; },

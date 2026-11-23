@@ -596,3 +596,24 @@ The owner asked to "add the ability to connect multiple gmail accounts and my ou
 **Tests:** `tests/test_email_accounts.py` (token store, migration and failed-save safety, sign-in add/refresh/remove, merged reads with labels, drafts naming and using the right account, screen rules and near-misses, strong signals, the injection email reaching neither the model nor the list, model output checks, budget, Outlook never started, a hung read abandoned, accept/dismiss persistence across a restart, the brief note, no addresses in logs). `tests/test_email_accounts_ui.py` (Playwright, added to the CI browser job).
 
 **Not done / open:** not tried on the Dell or with a real Google or Outlook account (cloud container). Outlook flagged-mail and Tasks reads are written against the documented Outlook object model but only exercised with fakes. Calendar events that two Google accounts share can show twice.
+## 2026-11-23: phone screen time in the to-do list (branch `feature/todo-screen-time`)
+
+The owner asked to "add connecting to my phone's screen time to the task queue". Research, per-platform paths, what's impossible and the owner's setup steps: `docs/research/PHONE_SCREEN_TIME.md`. Opt-in, off by default (Settings → Phone). The owner's phone is an iPhone, so iPhone is the default and primary path; Android is secondary.
+
+**Ingest** (`monkey/integrations/screentime.py`): the phone sends a daily summary; Monkey never reaches into the phone or opens a port.
+- Folder inbox: new `*.json`/`*.csv` files in a synced folder (iPhone: Shortcuts *Get App & Website Data* → iCloud Drive → iCloud for Windows; Android: Syncthing). Each file is read once (name + size + mtime).
+- Encrypted ntfy relay (Android/Tasker): polled over outbound HTTPS every 20 min. Only `mst1.` sealed messages are accepted: AES-256-CBC + HMAC-SHA256 (encrypt-then-MAC) under a pairing key in DPAPI (`keys` name `screentime_pair`, not in the transfer export). The Tasker JavaScriptlet (`TASKER_JS`, crypto-js 4.2.0) was run under Node and opened by the Python side; a crypto-js vector is pinned in the tests.
+- Manual: today's total plus the top app and its time (read off Settings → Screen Time) in the To-do panel, or import a JSON/CSV file. This is the iPhone's zero-setup path and the fallback when Shortcuts has no Screen Time action.
+- Strict validation: size/count caps, minutes 0–1440, bounded dates, clean durations only, app names reduced to 40-character plain labels. A later automatic reading only replaces a bigger-or-equal one (replays can't roll a day back); manual always wins.
+
+**Storage:** `monkey.db` tables `screentime_days`, `screentime_goals`, `screentime_seen`, `screentime_meta`; 30 days kept by default; *Forget data* deletes the usage data (goal to-dos stay).
+
+**To-do list:** phone card above the list (`ui/src/screentime.ts` + `screentime.css`, mounted from `main.ts`'s `todoCard`, so `todo.ts` is untouched): today vs goal, 7 days, top apps, pickups, manual entry, goal to-dos. Goal to-dos (`Phone under 2h today`, `30m or less on Instagram today`, `Social apps under 3h today`, optional daily repeat) are normal to-dos in list `phone`; app-group goals add up a named set of apps, matched case-insensitively and by alias (`app_key`: YT, IG, Tik Tok, package names, youtube.com), and the card offers the owner's "Social: TikTok, Instagram, YouTube ≤ 3h" as a one-click daily goal (never created on its own); they get an "Over" note during the day and check themselves off (or stay flagged) once the day is over. A gentle suggestion shows when phone time passes the goal and an important to-do is open; once a day it also emits `screentime_nudge` and calls `ScreenTime.on_nudge` (the hook for the notifications work; no OS/phone notification here).
+
+**Brain / brief:** `get_screen_time(day)` read-only, in `UNTRUSTED_TOOLS` (app names are outside text); `health` router rule + 2 bench cases; persona line; calibration stub. Morning brief *Phone* section with yesterday vs goal.
+
+**Settings → Phone** (`#set-phone`, nav button "Phone"): toggle, iPhone/Android, path, goal, folder, relay, Pair phone with a QR code (the reminders' `qrSvg`, `qrcode-generator`), copyable Tasker script, status, Check now, Import, Forget data, brief and suggestion toggles.
+
+**Tests:** `tests/test_screentime.py` (parsing incl. malicious payloads, sealing/tamper/known vector, relay with a fake HTTP, folder inbox, retention, goal evaluation, suggestion hook, tool, brief, routing), `tests/test_screentime_ui.py` (Playwright `?demo&svg`, added to the CI browser job).
+
+**Open:** not tried on a phone or the Dell. The iOS action's output format and Tasker App Info's variable names are unverified (the parser is lenient; the doc says what to check). The `feature/todo-notifications` branch didn't exist yet, so there was no ntfy code to share.

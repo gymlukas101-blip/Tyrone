@@ -20,6 +20,11 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - Per inbox, "Find to-dos in this inbox" (off by default): a read-only check every 15 minutes puts **suggestions** in a "Suggested from email" section of the to-do panel (Accept / Dismiss / Open). Nothing is added on its own. Outlook is only read while it's already open.
 - Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, email accounts). Not tried on the Dell or with real accounts.
 
+## Phone screen time (branch `feature/todo-screen-time`, waiting for review)
+- Off by default (Settings → Phone). The owner has an iPhone: a Shortcuts automation (iOS 26 *Get App & Website Data*) saves a summary to iCloud Drive, or they type today's total and top app; Android (Tasker → encrypted ntfy relay) is a secondary path; the To-do panel shows today vs a goal, goal to-dos check themselves off, `get_screen_time` answers "how much was I on my phone". Research and setup: `docs/research/PHONE_SCREEN_TIME.md`.
+- Owner: iPhone on iOS 27.2.1, automatic Shortcut route, goal ~3 h/day across TikTok + Instagram + YouTube: the phone card offers "Social: TikTok, Instagram, YouTube ≤ 3h" as a one-click daily goal to-do (app-group goals match names by alias, e.g. YT, IG, youtube.com).
+- Still open: what the Shortcuts *Get App & Website Data* action returns (the parser is lenient). Not tried on the phone or the Dell.
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

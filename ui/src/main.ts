@@ -11,6 +11,7 @@ import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
 import { reminderSettings } from "./reminders";
 import { setSuggestions } from "./todosuggest";
 import { emailAccountsList } from "./accounts";
+import { mountPhoneCard, phoneSettings, screenTimeEvent } from "./screentime";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
@@ -496,6 +497,10 @@ async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
     ask: (text) => { addMsg("sys", "🐒 Asked Monkey for help with a to-do"); void api.send_text(text, importance); },
     settings: () => void openSettings("reminders"),
   }, tab ?? (data.filter === "overdue" || data.filter === "done" ? data.filter : "open"));
+  mountPhoneCard(c, api, {
+    openSettings: () => void openSettings("phone"),
+    ask: (text) => { addMsg("sys", "🐒 Asked Monkey for help with a to-do"); void api.send_text(text, importance); },
+  });
   return c;
 }
 
@@ -596,6 +601,7 @@ function onEvent(name: string, p: any) {
       if (todoOpen()) void refreshTodos(p.action === "added" ? p.item?.id : undefined);
       break;
     case "todo_open": void todoCard(); break;           // a Windows notification was clicked
+    case "screentime": case "screentime_nudge": screenTimeEvent(name, p); break;
     case "todo_reminder":
       if (p.item) {
         reminderToast(api, p.item, () => avatar.emote("celebrate"));
@@ -1199,7 +1205,7 @@ async function openSettings(section?: string) {
 }
 
 /** Settings layout: the everyday things first, developer things folded away under Advanced, and a menu to jump around. */
-const SETTINGS_SECTIONS: [string, string][] = [["start", "Start"], ["accounts", "Accounts"], ["sound", "Voice & sound"],
+const SETTINGS_SECTIONS: [string, string][] = [["start", "Start"], ["accounts", "Accounts"], ["phone", "Phone"], ["sound", "Voice & sound"],
   ["brief", "Morning brief"], ["reminders", "Reminders"], ["memory", "Memory"], ["feel", "Look & mic"], ["advanced", "Advanced"]];
 function organizeSettings(dlg: HTMLDialogElement) {
   const body = dlg.querySelector<HTMLElement>(".body")!;
@@ -1249,7 +1255,8 @@ function organizeSettings(dlg: HTMLDialogElement) {
     return h("label", { class: "field toggle" }, cb, h("span", {}, "Show technical details (AI model per answer, memory file names, Avatar Lab)"));
   })()));
   // Order
-  const order = [health, you, accounts, sound, brief, reminders, memory, look].filter(Boolean) as HTMLElement[];
+  const phone = phoneSettings(api);
+  const order = [health, you, accounts, phone, sound, brief, reminders, memory, look].filter(Boolean) as HTMLElement[];
   const tail = [...body.children].filter((x) => !order.includes(x as HTMLElement) && x !== adv);
   body.replaceChildren(...order, adv, ...tail.filter((x) => x.tagName !== "SECTION"));
   const nav = h("nav", { class: "settingsnav" }, ...SETTINGS_SECTIONS.map(([id, label]) =>
