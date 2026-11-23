@@ -18,6 +18,8 @@ voice-state glows, button springs, level overrides). Tests: `ui/test/motion.test
   it waits.
 - **Hidden window:** CSS loops are paused (WAAPI `pause()`, resumed on show) and new motion is skipped (end state at
   once); motion.ts's own one-shots are finished.
+- **Toy-block icons own their motion** (`blocky/skin.ts`: hover hop, press squash, check-off pop, following
+  `html[data-juice]` and reduce motion). motion.css skips buttons that wear one, so nothing animates twice.
 - **The avatar is a separate system.** Nothing here animates `#avatar`. UI glows react to the voice state
   (`html[data-voice]`) next to him, not on him.
 - **The comedy lives in Monkey; the chrome stays restrained** (docs/ANIMATION-UI-DIRECTION.md §7).
@@ -59,7 +61,7 @@ so the levels are unit-tested without a browser.
 
 ## Inventory
 
-**84 items** (52 backend events/states, 32 user interactions and UI states). "Before" is what `main` showed;
+**93 items** (54 backend events/states, 39 user interactions and UI states). "Before" is what `main` showed;
 "min" is the Juice-minimal / reduce-motion fallback.
 
 ### Backend events (Python `_emit` → `window.__monkeyEvents` → `onEvent` in `main.ts`)
@@ -155,6 +157,20 @@ so the levels are unit-tested without a browser.
 | 82 | Image lightbox (Avatar Lab) | appears | backdrop fades, picture pops | 150 ms; 110 + 320 ms | fade |
 | 83 | Empty states ("Nothing to do…", "Nothing left") | text | text pops in | 110 + 320 ms | fade |
 | 84 | Drag | only the companion window's title area (native window move) | no UI motion (native) | — | — |
+
+### Added on `main` while this was built (reminders, email suggestions, phone screen time, blocky icons)
+
+| # | Event / interaction | Before | Now | Duration / easing | Min |
+|---|---|---|---|---|---|
+| 85 | `screentime` (phone card in the to-do panel) | card content redrawn | content rises in; the goal meter **fills** from the left; the 7-day bars **grow** from the baseline, 20 ms apart | 110 + 320 ms; 400 ms fill/grow | fade, no fill/grow |
+| 86 | `screentime_nudge` | toast | toast motion (#79) | 320 ms | fade |
+| 87 | "Suggested from email" section appears | section | rises in once (FLIP-managed with the list; later redraws don't replay it) | 110 + 320 ms | fade |
+| 88 | Suggestion **Accept** | row gone, to-do added, toast | suggestion shrinks away, the new to-do pops into the list, toast | 160 ms; 320 ms | instant / fade |
+| 89 | Suggestion **Dismiss** | row gone | shrinks away, the rest glide up | 160 ms; 300 ms | instant |
+| 90 | Settings → Reminders (Windows & phone) loaded | text replaced | Windows and phone blocks rise in; the QR code pops | 110 + 320 ms | fade |
+| 91 | Settings → Accounts: email account list | list | rows cascade | 30 ms stagger | fade |
+| 92 | Toy-block icons (header, mic, to-do checkboxes and actions) | icon hover hop, press squash, check-off pop (`blocky/skin.ts`) | **left to the icons**: buttons with a `.bi` icon get no extra spring or wiggle from motion.css | — | the icons follow `data-juice` and reduce motion themselves |
+| 93 | Windows / phone reminder notifications | outside the app window | no UI motion (the in-app reminder toast is #31) | — | — |
 
 ## Not animated, on purpose
 

@@ -381,8 +381,8 @@ export function restack(host: Element = document.body) {
   // One column for every toast (reminders sit higher in CSS): newest at the bottom, each older one above it.
   const toasts = [...host.querySelectorAll<HTMLElement>(":scope > .toast:not([data-leaving])")];
   const box = new Map(toasts.map((t) => [t, { h: t.offsetHeight, base: parseFloat(getComputedStyle(t).bottom) || 0 }] as const));
-  const floor = Math.min(...[...box.values()].map((x) => x.base));      // read everything first, then write
-  let at = floor;
+  if (!toasts.length) return;
+  let at = box.get(toasts[toasts.length - 1])!.base;                  // the newest keeps its own spot (reminders sit higher)
   for (let i = toasts.length - 1; i >= 0; i--) {
     const { h, base } = box.get(toasts[i])!;
     toasts[i].style.setProperty("--m-stack", `${base - at}px`);

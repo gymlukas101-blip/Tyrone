@@ -681,14 +681,15 @@ The owner asked for the task helper "to be able to do anything, not just canvas 
 **Not done / open:** not tried on the Dell, with a live Claude planner, or with real inboxes. Outlook's header property is only exercised with fakes. See §8 of the design doc for the owner's decisions.
 ## 2026-11-23: UI motion (branch `feature/ui-motion`)
 
-**What:** motion for every UI event and interaction (84 in the inventory, `docs/ui/MOTION.md`), from one small system:
+**What:** motion for every UI event and interaction (93 in the inventory, `docs/ui/MOTION.md`), from one small system:
 `ui/src/motion.ts` (levels, plans, FLIP lists, toasts, count-up, confetti-lite, attention) and `ui/src/motion.css`
 (tokens, insert-time entrances, voice-state glows, button springs, level overrides). Hooks in existing files are a few
 lines each (`main.ts`, `dom.ts`, `todo.ts`, `assignments.ts`, `today.ts`, `feedback.ts`, `computer.ts`).
 
 **Rules kept:** opacity + individual `translate`/`scale`/`rotate` only; text opaque within 110 ms; errors, approvals and
 reminders appear at once and then wobble; nothing new loops at idle; Juice *Minimal* or OS reduce-motion = 90 ms fades
-only; Juice *Calm* = half travel, no overshoot. The avatar is untouched.
+only; Juice *Calm* = half travel, no overshoot. The avatar is untouched (its floating effect text now uses Titan One,
+the app's display face). Buttons wearing a toy-block icon keep the icon's own hover/press/check-off motion only.
 
 **Found and fixed while measuring:**
 - `animation-fill-mode: both` on every chat bubble kept a finished animation "in effect" on each one, and streaming a
@@ -699,22 +700,24 @@ only; Juice *Calm* = half travel, no overshoot. The avatar is untouched.
 - FLIP and toast restacking read layout once per frame (requestAnimationFrame), not once per event, so a burst of 10
   to-dos or toasts doesn't thrash layout.
 
-**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, cloud container with software rendering, load ≈1,
-3 alternating runs each, medians; `main` → this branch):
+**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, cloud container with software rendering, load ≈1–3,
+3 alternating runs each, medians; `main` at a2a6cea → this branch rebased on it):
 
 | | main | branch |
 |---|---|---|
-| Idle main-thread CPU | 80.1 ms/s | 80.3 ms/s |
-| Idle CPU after the bursts | 96.8 ms/s | 90.9 ms/s |
+| Idle main-thread CPU | 72.1 ms/s | 70.0 ms/s |
+| Idle CPU after the bursts | 79.9 ms/s | 83.9 ms/s |
 | Animations running at idle | 6 (vines, leaves) | 6 (the same) |
 | Running animations while the window is hidden | 6 | 0 |
-| Streaming a 400-delta reply: CPU / frame p95 / long tasks | 1171 ms / 16.8 ms / 0 | 1056 ms / 16.7 ms / 0 |
-| Adding 10 to-dos: CPU / frame p95 / max / long tasks | 385 ms / 16.7 / 33.3 ms / 0 | 384 ms / 16.8 / 33.4 ms / 0 |
-| 30 mixed events: CPU / frame p95 / long tasks | 264 ms / 16.8 ms / 0 | 295 ms / 16.7 ms / 0 |
-| Idle CPU with the 3D avatar (`?demo`, 2 runs) | 1010 ms/s | 1046 ms/s (within run-to-run noise; the software-rendered avatar dominates) |
+| Streaming a 400-delta reply: CPU / frame p95 / long tasks | 933 ms / 16.7 ms / 0 | 916 ms / 16.7 ms / 0 |
+| Adding 10 to-dos: CPU / frame p95 / max / long tasks | 351 ms / 16.8 / 33.4 ms / 0 | 431 ms / 16.8 / 33.4 ms / 0 |
+| 30 mixed events: CPU / frame p95 / long tasks | 217 ms / 16.7 ms / 0 | 287 ms / 16.7 ms / 0 |
+| Idle CPU with the 3D avatar (`?demo`, 2 runs) | 1020 ms/s | 1038 ms/s (within run-to-run noise; the software-rendered avatar dominates) |
 
-Under heavy machine load (other jobs, load ≈17) every number roughly doubles for both builds and long tasks appear in
-both; compare builds only from alternating runs on a quiet machine. Not measured on the Dell.
+The bursts cost a few ms of main-thread time per event while their animations play (about 7 ms per added to-do,
+2 ms per mixed event; a second 3-run A/B measured +45 ms and +1 ms for the same two bursts), with no long tasks and
+unchanged frame times. Under heavy machine load (other jobs, load ≈17) every number roughly doubles for both builds
+and long tasks appear in both; compare builds only from alternating runs on a quiet machine. Not measured on the Dell.
 
 **Tests:** `ui/test/motion.test.ts` (19: levels, GPU-only properties, readability limits, Juice-minimal/reduced paths,
 calm, count-up frames, `leave`). The browser suites run with motion on (`?demo&svg`); entrances never block clicks
