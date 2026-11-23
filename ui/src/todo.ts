@@ -283,6 +283,8 @@ function draw(freshId?: string) {
   const prev = drawnState;
   const quiet = !!prev && (prev.tab !== tab || prev.editing !== cur.editing);
   const play = flip(body, "li.todo-row", (el) => el.dataset.id);
+  // "Suggested from email": the section and its rows enter once and shrink away when accepted or dismissed
+  const playSug = flip(body, ".todo-suggest, li.sug", (el) => (el.classList.contains("sug") ? `sug:${el.dataset.id}` : "sug-section"));
   body.replaceChildren(
     h("div", { class: "asg-head" }, h("div", {},
       h("div", { class: "asg-headline" }, headline),
@@ -310,6 +312,7 @@ function draw(freshId?: string) {
   cur.drawn = true;           // rows slide in once; later redraws (a check, an edit) don't replay it for every row
   decorate(root);             // toy-block icons + background (visual layer only; see todo-blocky.ts)
   play({ exits: !quiet, kind: quiet ? "rise" : undefined });
+  playSug({ exits: !quiet, kind: "rise" });
   if (prev) {
     // a count that changed bumps its tab; the tab you switched to (or the sort) pops; finishing the last one celebrates
     const btns = body.querySelectorAll<HTMLButtonElement>(".todo-bar .tabs:not(.sort) button");

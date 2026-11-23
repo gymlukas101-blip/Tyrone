@@ -50,7 +50,7 @@
 /* ---------- cards / panels: readable in --m-read, then the springy settle */
 .card, .update-toast { animation: m-op var(--m-read) linear backwards, m-pop calc(var(--m-move) + 60ms) var(--m-ease-move) backwards; }
 .card.draft:not(.sent) { animation: m-attn 560ms var(--m-ease-out) 60ms; }     /* waiting on your OK: shown at once */
-#cards .card:not(.folded) > :not(h3):not(.close) { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
+#cards .card:not(.folded) > :not(h3):not(.close):not(.bk-bg) { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
 .card .items > li, .grid > img, .vlist > button, .ttiles > .ttile, .lab-tile, .card.health :is(.hero, .tile, .chartwrap, .stagebar-wrap) {
   animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards;
 }
@@ -88,6 +88,21 @@ details[open] > :not(summary) { animation: m-op var(--m-read) linear backwards, 
 .focushero.is-done { animation: m-punch 360ms var(--m-ease-out); }
 .focusactions .donemsg { display: inline-block; animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards; }
 
+/* ---------- phone screen time card (to-do panel), reminder + account settings: content rises in when it loads;
+   the meter fills from the left and the week's bars grow from the baseline (scale, so no layout per frame) */
+.st-card > *, .remind > div > :is(.win, .phone), .acct-list > li {
+  animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards;
+}
+.acct-list > li:nth-child(2) { animation-delay: var(--m-stagger); }
+.acct-list > li:nth-child(n+3) { animation-delay: calc(var(--m-stagger) * 2); }
+.st-fill { transform-origin: left center; animation: m-fill var(--m-slow) var(--m-ease-move) 80ms backwards; }
+.st-bar { transform-origin: center bottom; animation: m-bar var(--m-slow) var(--m-ease-move) backwards; }
+.st-bar:nth-child(2) { animation-delay: 20ms; } .st-bar:nth-child(3) { animation-delay: 40ms; } .st-bar:nth-child(4) { animation-delay: 60ms; }
+.st-bar:nth-child(5) { animation-delay: 80ms; } .st-bar:nth-child(6) { animation-delay: 100ms; } .st-bar:nth-child(n+7) { animation-delay: 120ms; }
+.remind .qr { animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards; }
+@keyframes m-fill { from { scale: calc(1 - var(--m-amp)) 1; } }
+@keyframes m-bar { from { scale: 1 calc(1 - var(--m-amp)); } }
+
 /* ---------- stage status: chips appear with a pop; the control banner drops in */
 #convChip:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards, convPulse 2.4s ease-in-out var(--m-move) infinite; }
 #controlBanner:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-drop var(--m-move) var(--m-ease-move) backwards; }
@@ -114,14 +129,16 @@ details[open] > :not(summary) { animation: m-op var(--m-read) linear backwards, 
 /* Thinking: the label breathes (only while thinking; nothing loops at idle). */
 :root[data-voice="thinking"] #stateLabel { animation: m-breathe 700ms ease-in-out infinite alternate; }
 
-/* ---------- buttons: quick squash on press, springy overshoot on release; the main mic button wiggles on hover */
-:is(#send, .primary, .icon, #mic, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close) {
+/* ---------- buttons: quick squash on press, springy overshoot on release; the main mic button wiggles on hover.
+   Buttons wearing a toy-block icon (html.blocky .bi: header, mic, to-do actions) are left alone: the icon's own
+   hover / press / check-off clips are their motion (blocky/skin.ts), so nothing animates twice. */
+:is(#send, .primary, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close):not(:has(> .bi)) {
   transition: transform 260ms var(--m-ease-pop), box-shadow 90ms ease-out, filter 150ms;
 }
-:is(#send, .primary, .icon, #mic, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close):active {
+:is(#send, .primary, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close):not(:has(> .bi)):active {
   transition-duration: 70ms, 70ms, 150ms; transition-timing-function: ease-out;
 }
-#mic:hover { animation: m-wiggle 420ms var(--m-ease-out); }
+#mic:not(:has(> .bi)):hover { animation: m-wiggle 420ms var(--m-ease-out); }
 .cb svg { transition: scale 220ms var(--m-ease-pop); }
 .cb:active svg { scale: .82; transition-duration: 60ms; }
 .settings label.toggle input:checked, .todo-foot input:checked { animation: m-punch 260ms var(--m-ease-out); }
@@ -133,12 +150,12 @@ details[open] > :not(summary) { animation: m-op var(--m-read) linear backwards, 
 
 /* ---------- levels */
 /* min (Juice minimal / OS reduce motion): fades only, short, no loops. */
-:root[data-motion="min"] :is(#mic:hover, :root[data-voice="thinking"] #stateLabel, .m-busy) { animation: none; }
+:root[data-motion="min"] :is(#mic:not(:has(> .bi)):hover, :root[data-voice="thinking"] #stateLabel, .m-busy) { animation: none; }
 :root[data-motion="min"] :is(.msg.m-alert, .card.draft:not(.sent), .toast.todo-remind, .card.sent, .focushero.is-done,
                              .settings label.toggle input:checked, .todo-foot input:checked) { animation: none; }
 :root[data-motion="min"] #convChip:not([hidden]) { animation: m-op var(--m-read) linear backwards; }
 :root[data-motion="min"] .toast { transition: none; }
-:root[data-motion="min"] :is(#send, .primary, .icon, #mic, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close) {
+:root[data-motion="min"] :is(#send, .primary, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close):not(:has(> .bi)) {
   transition: box-shadow 90ms ease-out, filter 150ms;
 }
 @media (prefers-reduced-motion: reduce) {

@@ -30,7 +30,7 @@ function outlined(g: CanvasRenderingContext2D, path: () => void, fill: string, l
 }
 
 function glyph(g: CanvasRenderingContext2D, s: number, ch: string, fill: string, shade: string) {
-  g.font = `${s * 0.78}px "Lilita One", "Arial Black", sans-serif`;
+  g.font = `${s * 0.78}px "Titan One", "Lilita One", "Arial Black", sans-serif`;
   g.textAlign = "center"; g.textBaseline = "middle";
   const x = s / 2, y = s * 0.54;
   g.lineWidth = s * 0.1; g.strokeStyle = OUTLINE; g.strokeText(ch, x + s * 0.035, y + s * 0.045);
@@ -124,7 +124,7 @@ export class Vfx {
 
   constructor(private scene: THREE.Scene) {
     // Redraw glyph textures once the display font is ready (falls back to Arial Black before that).
-    document.fonts?.load('64px "Lilita One"').then(() => {
+    document.fonts?.load('64px "Titan One"').then(() => {
       for (const [k, t] of this.tex) {
         const img = (t as THREE.CanvasTexture).image as HTMLCanvasElement;
         const g = img.getContext("2d")!;
