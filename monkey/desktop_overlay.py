@@ -50,6 +50,9 @@ def install(window, title: str) -> None:
                 GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, WS_EX_APPWINDOW = -20, 0x80, 0x08000000, 0x40000
                 ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
                 user32.SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW)
+                if user32.IsWindowVisible(hwnd):                # the taskbar only re-reads the style on hide/show
+                    user32.ShowWindow(hwnd, 0)                  # SW_HIDE
+                    user32.ShowWindow(hwnd, 4)                  # SW_SHOWNOACTIVATE
                 try:
                     user32.SetWindowDisplayAffinity(hwnd, 0x11)          # WDA_EXCLUDEFROMCAPTURE (Win10 2004+)
                 except Exception:  # noqa: BLE001
@@ -61,6 +64,11 @@ def install(window, title: str) -> None:
         log.warning("companion window not found for its extras")
 
     threading.Thread(target=find, name="overlay-extras", daemon=True).start()
+
+
+def installed() -> bool:
+    """The companion's no-taskbar / no-focus style is on (its window was found)."""
+    return bool(_state.get("hwnd"))
 
 
 def set_hit_rects(rects: list[dict], dpr: float) -> None:

@@ -438,6 +438,10 @@ class MonkeyApp:
         return fired
 
     # Clicks on a Windows notification (they arrive on a WinRT thread): the in-app reminder's own actions.
+    def on_task_running(self, running: bool) -> None:
+        """A computer task started or ended: the companion window shows only while one is under way."""
+        _overlay_visibility(self)
+
     def _todo_open_from_toast(self, item_id: str) -> None:
         w = getattr(self, "_main_window", None)
         if w is not None:
@@ -2258,9 +2262,16 @@ def _overlay_visibility(app: MonkeyApp) -> None:
     win = getattr(app, "_overlay_window", None)
     if win is None:
         return
-    want = app.cfg.settings.computer_access and app.cfg.settings.overlay_enabled
+    # Only while a computer task is under way (not at startup): the owner wants the extra monkey out of the way.
+    want = bool(app.cfg.settings.computer_access and app.cfg.settings.overlay_enabled
+                and getattr(getattr(app, "automation", None), "task_running", False))
     try:
         win.show() if want else win.hide()
+        if want:
+            from . import desktop_overlay
+
+            if not desktop_overlay.installed():             # hidden since startup: its window may be new
+                desktop_overlay.install(win, "Monkey companion")
     except Exception:  # noqa: BLE001
         log.debug("overlay show/hide failed", exc_info=True)
 
@@ -2300,7 +2311,8 @@ def _tray(app: MonkeyApp, window) -> None:
         pystray.MenuItem("Push to talk", lambda i, it: app.push_to_talk()),
         pystray.MenuItem("Show companion", lambda i, it: (app.cfg.update(overlay_enabled=True),
                                                           _overlay_visibility(app)),
-                         visible=lambda it: bool(app.cfg.settings.computer_access)),
+                         visible=lambda it: bool(app.cfg.settings.computer_access
+                                                 and getattr(app.automation, "task_running", False))),
         pystray.MenuItem("Stop all computer tasks", lambda i, it: app.automation.emergency_stop(),
                          visible=lambda it: bool(app.cfg.settings.computer_access)),
         pystray.MenuItem("Mute microphone", toggle_mute,
@@ -2402,7 +2414,7 @@ def run() -> None:
     )
     app.ui.window = window
     app._main_window = window
-    # The companion: a small frameless always-on-top window with the same avatar, shown while computer tasks are on.
+    # The companion: a small frameless always-on-top window with the same avatar, shown only while a computer task runs.
     g = dict(app.cfg.settings.overlay_geom or {})
     from .desktop_overlay import position_on_screen
 
@@ -2413,7 +2425,7 @@ def run() -> None:
     overlay = webview.create_window(
         "Monkey companion", url=str(index), js_api=OverlayApi(app), width=size[0], height=size[1],
         x=g.get("x"), y=g.get("y"), frameless=True, on_top=True, transparent=True, easy_drag=False, focus=False,
-        hidden=not (app.cfg.settings.computer_access and app.cfg.settings.overlay_enabled), resizable=False,
+        hidden=True, resizable=False,                              # shown only while a computer task runs
         min_size=(80, 80), shadow=False,
         background_color="#000000",
     )

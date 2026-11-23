@@ -21,6 +21,7 @@ class AutomationService:
         self._mgr = None
         self.demo = None
         self._said: dict[str, str] = {}
+        self._live: dict[str, str] = {}      # task id -> state, for tasks that haven't finished
 
     # ---- lazily built (Playwright is only imported when a task starts) -----------------------------------------
     @property
@@ -124,8 +125,29 @@ class AutomationService:
         return BrowserSession(default_profile_dir(self.app.cfg.data_dir, channel or ""), self.gate, headless=False,
                               cursor=cursor, channel=channel)
 
+    @property
+    def task_running(self) -> bool:
+        """A computer task is under way (planning, running, waiting, paused, or waiting for the owner)."""
+        return bool(self._live)
+
+    def _track(self, task: dict) -> None:
+        tid, state = str(task.get("id") or ""), str(task.get("state") or "")
+        if not tid:
+            return
+        was = self.task_running
+        if state in ("COMPLETED", "FAILED", "CANCELLED", "READY"):
+            self._live.pop(tid, None)
+        else:
+            self._live[tid] = state
+        if was != self.task_running:
+            hook = getattr(self.app, "on_task_running", None)
+            if hook is not None:
+                hook(self.task_running)
+
     def _emit(self, name: str, p: dict) -> None:
         self.app.ui.emit(name, p)
+        if name == "automation" and isinstance(p.get("task"), dict):
+            self._track(p["task"])
         t = p.get("task") or {}
         key = f"{t.get('state')}:{(t.get('pending') or {}).get('kind', '')}"
         if self._said.get(t.get("id", "")) == key:
@@ -407,6 +429,11 @@ class AutomationService:
         if self._mgr is not None:
             self._mgr.emergency_stop()
         self.app.ui.emit("automation_stopped", {})
+        if self._live:
+            self._live.clear()
+            hook = getattr(self.app, "on_task_running", None)
+            if hook is not None:
+                hook(False)
 
     def shutdown(self) -> None:
         if self._mgr is not None:

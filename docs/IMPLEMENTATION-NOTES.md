@@ -563,3 +563,9 @@ The owner asked: "Make reminders appear as windows notifications and on my phone
 **Tests:** `tests/test_reminder_notify.py` (fake toast backend: once per due, buttons, snooze, retract, focus skip, failures, non-Windows no-op, a Windows-only real-library check; fake ntfy HTTP: request shape, priority, privacy, timeout, retry once, no secrets in logs, background queue; settings persistence with the real `keys` store), `tests/test_reminder_settings_ui.py` (Playwright, `?demo&svg`).
 
 **Not verifiable in the cloud container:** a real toast, its buttons and clicks from Action Center, and a real ntfy delivery. Try on the Dell: Settings → Reminders → Send a test Windows notification, then Set up my phone → Send test notification.
+
+## 2026-11-23: companion window only while a task runs
+- The owner didn't want the extra monkey (the companion window) at startup. It now starts hidden and shows only while a computer task is under way (planning, running, waiting, paused or waiting for the owner), then hides when the last task ends or on Stop all.
+- `AutomationService` tracks live tasks from its `automation` events (`task_running`) and calls `MonkeyApp.on_task_running` → `_overlay_visibility`. The Settings/tray switch (`overlay_enabled`) and computer access still win. The tray's "Show companion" appears only during a task.
+- On first show, `desktop_overlay.install` runs again if the hidden window wasn't found at startup, and re-shows the window so the taskbar drops its button (Windows only re-reads `WS_EX_TOOLWINDOW` on hide/show).
+- Tests: `tests/test_companion_visibility.py`.

@@ -356,7 +356,7 @@ export function initOverlay(avatarHost: HTMLElement, setMood: (mood: string) => 
     btn("＋ Task", "Start a task (opens Monkey)", () => void api.overlay("expand")),
     btn("⤢", "Bigger / smaller", () => setMode(mode === "expanded" ? "compact" : "expanded")),
     btn("–", "Shrink to just Monkey", () => setMode("minimized")),
-    btn("✕", "Hide the companion (Tray icon → Show companion brings it back)", () => void api.overlay("hide")));
+    btn("✕", "Hide the companion for now (it comes back with the next task; Tray icon → Show companion while one runs)", () => void api.overlay("hide")));
   const card = h("div", { class: "ov-panel" }, status, panel, ctl);
   const root = h("div", { id: "ov" }, head, card);
   app.replaceChildren(root);
