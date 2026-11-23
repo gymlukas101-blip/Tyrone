@@ -249,3 +249,70 @@ def test_every_header_button_fits_in_a_narrow_window(browser):
         .filter(b => b.offsetParent !== null && b.getBoundingClientRect().right > innerWidth + 0.5).map(b => b.id)""")
     p.close()
     assert off == []
+
+
+SMALL_DISPLAY_TEXT = """() => [...document.querySelectorAll('body *')].filter(el => {
+    if (!el.offsetParent || ![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return false;
+    const cs = getComputedStyle(el);
+    return cs.fontFamily.replace(/["']/g, '').startsWith('Titan One') && parseFloat(cs.fontSize) < 12;
+  }).map(el => `${el.tagName.toLowerCase()}.${el.className} ${getComputedStyle(el).fontSize}: ${el.textContent.trim().slice(0, 30)}`)"""
+
+
+def test_display_face_is_never_used_below_12px(browser):
+    """App-wide fonts (ui/src/theme-blocky.css): the chunky display face only from 12 px up; smaller labels and
+    badges use the text face at a heavy weight. Checked on the header, chat, to-do panel, Today and Settings."""
+    p = _open(browser)
+    p.evaluate("""() => window.__monkeyEvents([["user", {text: "what's due?"}], ["delta", {text: "Two things today."}], ["done", {}]])""")
+    bad = p.evaluate(SMALL_DISPLAY_TEXT)
+    _panel(p)
+    bad += p.evaluate(SMALL_DISPLAY_TEXT)
+    p.click("#todayBtn")
+    p.wait_for_timeout(800)
+    bad += p.evaluate(SMALL_DISPLAY_TEXT)
+    p.click("#settingsBtn")
+    p.wait_for_selector("dialog#settings[open]")
+    bad += p.evaluate(SMALL_DISPLAY_TEXT)
+    assert p.evaluate("() => getComputedStyle(document.body).fontFamily").replace('"', "").startswith("Nunito")
+    p.close()
+    assert bad == [], sorted(set(bad))
+
+
+def test_blocky_skin_bakes_icons_and_stays_still_at_rest(browser):
+    """The toy-block skin (ui/src/blocky/skin.ts, todo-blocky.ts, nav-blocky.ts): icons baked once by a short-lived renderer, played as CSS frames.
+    `&blocky` forces the bake on this software-rendered browser (it is skipped on software GL otherwise). Asserts the
+    decorations, that nothing animates in the panel at rest, that the check-off "pop" plays and the row still
+    completes, that reduced motion plays no frames, and that a second launch uses the cached bake."""
+    b, url = browser
+    p = b.new_page(viewport={"width": 1280, "height": 900})
+    _PAGES.append(p)
+    p.set_default_timeout(30000)
+    p.goto(url + "&blocky")
+    p.wait_for_function("() => !!window.__monkeyEvents && !!window.__monkeyReady", timeout=20000)
+    card = _panel(p)
+    p.wait_for_selector(".card.todo.blocky", timeout=120000)      # software GL bakes slowly; a GPU takes a fraction of that
+    stats = p.evaluate("() => window.__monkeyBlocky()")
+    assert stats["failed"] == "" and stats["bytes"] > 0, stats
+    assert card.locator(".cb .cb-ico").count() == card.locator(".cb").count() > 0
+    assert card.locator("button[aria-label^='Delete'] .bi").count() == card.locator("button[aria-label^='Delete']").count()
+    assert card.locator(".todo-add .primary .bi").count() == 1
+    assert card.locator(".bk-bg").count() == 1
+    assert p.locator("#side > header .icon.labeled .bi").count() >= 6 and p.locator("#mic .bi").count() == 1   # header + mic
+    assert p.locator("#todoBtn small").inner_text() == "To-do"                                                 # label kept
+    assert card.locator("button[aria-label^='Edit Pick up package']").count() == 1    # accessible names unchanged
+    running = ("() => document.getAnimations().filter(a => a.playState === 'running' && "
+               "a.effect?.target?.closest?.('.card.todo')).length")
+    p.wait_for_function(f"() => ({running})() === 0")              # after the background's one-shot fade-in: nothing runs
+    cb = _row(p, "Pick up package").element_handle().query_selector(".cb")
+    cb.click()
+    assert p.evaluate("cb => cb.querySelector('.cb-ico').getAnimations().length", cb) == 1     # the "done!" pop
+    p.wait_for_function("() => [...document.querySelectorAll('.card.todo .tabs button')].some(b => b.textContent === 'Done (2)')")
+    p.emulate_media(reduced_motion="reduce")
+    box = card.locator("li.todo-row .cb").first.element_handle()
+    box.hover()
+    assert p.evaluate("cb => cb.querySelector('.cb-ico').getAnimations().length", box) == 0
+    p.reload()                                                     # same profile: the cached sheet, no WebGL
+    p.wait_for_function("() => !!window.__monkeyEvents && !!window.__monkeyReady", timeout=20000)
+    _panel(p)
+    p.wait_for_selector(".card.todo.blocky", timeout=10000)
+    assert p.evaluate("() => window.__monkeyBlocky().cached") is True
+    p.close()

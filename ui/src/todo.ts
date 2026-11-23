@@ -2,6 +2,7 @@
 // with Undo, sub-steps, sort, Open / Overdue / Done tabs. Monkey adds to it by voice and can help with an item.
 import type { Api } from "./bridge";
 import { burst, undoToast } from "./assignments";
+import { decorate } from "./todo-blocky";
 import { h, toast } from "./dom";
 import { dueDate, dueLabel, isOverdue, splitQuick } from "./todoparse";
 
@@ -294,6 +295,7 @@ function draw(freshId?: string) {
   const ed = root.querySelector<HTMLInputElement>(".todo-edit .todo-text");
   if (ed && document.activeElement?.closest(".todo-edit") == null) ed.focus();
   cur.drawn = true;           // rows slide in once; later redraws (a check, an edit) don't replay it for every row
+  decorate(root);             // toy-block icons + background (visual layer only; see todo-blocky.ts)
 }
 
 async function setting(key: "todo_reminders" | "todo_speak_reminders", on: boolean) {

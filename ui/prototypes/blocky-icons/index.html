@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blocky Icon Lab</title>
+    <!-- Prototype gallery (not in the production build). Run `npm run dev` in ui/ and open /prototypes/blocky-icons/. -->
+  </head>
+  <body>
+    <main class="page">
+      <h1>Toy-block icons &amp; backgrounds</h1>
+      <p class="lede">Every icon in Monkey's UI as a chunky, bevelled, toon-shaded 3D block toy with an ink outline and a plastic rim
+        light. All procedural three.js (no model files). Hover = hop, press = squash, click = "done!" pop. Original style:
+        no logos, characters, fonts or assets from any game.</p>
+      <div class="controls">
+        <label><input type="radio" name="mode" value="live" checked /> Live 3D (one shared WebGL canvas)</label>
+        <label><input type="radio" name="mode" value="baked" /> Baked sprites (no WebGL after baking)</label>
+        <label><input type="checkbox" id="idle" checked /> Idle animation</label>
+        <span id="stats" class="stats"></span>
+      </div>
+
+      <section>
+        <h2>Four ways to build them</h2>
+        <p class="note">Same four icons each way. Hover / press / click each one. Numbers are measured in this page (see the table below).</p>
+        <div class="compare" id="compare"></div>
+      </section>
+
+      <section>
+        <h2>Measured</h2>
+        <table class="mt" id="measure"></table>
+      </section>
+
+      <section>
+        <h2>Every icon (<span id="count"></span>)</h2>
+        <div id="inventory"></div>
+      </section>
+
+      <section>
+        <h2>Backgrounds</h2>
+        <p class="note">Each sits behind real panel text at the strength it would ship with. Pointer movement adds parallax.</p>
+        <div id="backgrounds" class="bgs"></div>
+      </section>
+    </main>
+    <script type="module" src="./gallery.ts"></script>
+  </body>
+</html>

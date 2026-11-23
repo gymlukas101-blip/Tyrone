@@ -10,6 +10,10 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - 📝 To-do panel and brain tools (`add_todo`, `list_todos`, `update_todo`, `delete_todo`): the owner's own to-do list in `monkey.db`, with quick add ("call the dentist tomorrow 5pm"), sub-steps, Undo, Monkey's "help me with this" (steps, then existing tools only), in-app reminders and a To-do section in the morning brief. Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23).
 - Not tried on the Dell. Open question for the owner: should reminders also show as Windows notifications? (Not built: outward-facing.)
 
+## Blocky look (branch `feature/todo-blocky-ui`, waiting for review)
+- New fonts app-wide (Titan One + Nunito, bundled, OFL) and toy-block 3D icons in the header, mic and to-do panel, baked once on the PC into sprites (no WebGL at rest), a faint block background in the to-do panel, a "done!" pop. Juice and reduced motion respected; skipped on software GL. Prototype gallery of all 63 icons + backgrounds: `ui/prototypes/blocky-icons/`. Details: `docs/ui/BLOCKY_ICONS.md`, `docs/ui/TODO-FONTS.md`.
+- Not tried on the Dell (bake time on its GPU, crispness at its scaling).
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

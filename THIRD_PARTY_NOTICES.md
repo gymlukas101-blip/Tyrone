@@ -34,6 +34,8 @@ replace those models.
 | marked | MIT |
 | DOMPurify | MPL-2.0 OR Apache-2.0 |
 | Lilita One font (@fontsource/lilita-one) | SIL Open Font License 1.1 |
+| Titan One font (Rodrigo Fuenzalida; unmodified file from @fontsource/titan-one 5.3.0, `ui/src/fonts/`) | SIL Open Font License 1.1, Reserved Font Name "Titan One"; text in `ui/src/fonts/OFL-TitanOne.txt` |
+| Nunito variable font (The Nunito Project Authors; from @fontsource-variable/nunito 5.3.0, `ui/src/fonts/`) | SIL Open Font License 1.1; text in `ui/src/fonts/OFL-Nunito.txt` |
 
 ## Downloaded on your PC when you turn them on (not in the installer)
 

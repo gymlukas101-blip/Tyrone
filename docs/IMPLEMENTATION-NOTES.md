@@ -539,3 +539,28 @@ The owner asked for "a to do list UI that can remember everything I need to do a
 **Tests:** `tests/test_todos.py` (store, parsing, gates, fake-client agent loop, reminders, API, brief, routing), `tests/test_todo_ui.py` (Playwright in `?demo&svg`, added to the CI browser job), `ui/test/todoparse.test.ts`.
 
 **Open:** not tried on the Dell. Windows notifications for reminders are a question for the owner.
+
+## 2026-11-23: to-do panel fonts and toy-block icons (branch `feature/todo-blocky-ui`)
+
+**Fonts:** Titan One (display) + Nunito (text) app-wide (`ui/src/theme-blocky.css`), bundled from `ui/src/fonts/` (OFL,
+latin subset, inlined by the build). Display face only at 12 px and up (smaller labels and badges: Nunito 900), body
+Nunito 600. Five pairings compared on the real panel with measured x-height, width, tabular figures and
+rendered small-size contrast (`ui/prototypes/fonts/`, `docs/ui/TODO-FONTS.md`). The panel's muted text is brighter
+(4.2:1 → 5.2:1 on the panel's lightest green).
+
+**Icons:** procedural three.js toy-block models for all 63 UI icons (`ui/src/blocky/`), gallery with four approaches and
+three background prototypes (`ui/prototypes/blocky-icons/`), Blender comparison script (`tools/blender/blocky_icons.py`).
+Chosen: bake once with a short-lived renderer into sprite sheets at the screen's DPR, cache in localStorage, play as CSS
+frames. Applied to the header buttons and mic (`ui/src/nav-blocky.ts`) and the to-do panel by `ui/src/todo-blocky.ts` (one `decorate(root)` call in `todo.ts`'s `draw()`), with a
+static baked block background. Juice (`<html data-juice>`, set in `applyLook`) and reduced motion respected; software GL
+skips the bake unless `?blocky`.
+
+**Measured** (container, software GL): no rise in idle main-thread time beyond noise, 0 running animations in the panel at
+rest, interaction frames unchanged (p95 16.8 ms); first bake 4.3–6 s on software GL, cached opens 0.36 s;
+`index.html` ≈ +142 KB. Numbers and the comparison: `docs/ui/BLOCKY_ICONS.md`.
+
+**Tests:** `tests/test_todo_ui.py::test_blocky_skin_bakes_icons_and_stays_still_at_rest` (decorations, nothing running at
+rest, the pop, reduced motion, cached second launch, header icons) and `test_display_face_is_never_used_below_12px`; the
+rest of `test_todo_ui.py` unchanged and passing.
+
+**Open:** the Dell (bake time on its GPU, look at 125–150%), the owner's opinion of the shapes, header icons next.

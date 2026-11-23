@@ -1,0 +1,98 @@
+/* =====================================================================================
+   THEME: BLOCKY (docs/ui/TODO-FONTS.md, docs/ui/BLOCKY_ICONS.md)
+   One file for the app-wide type pairing and the toy-block 3D icons, so it merges cleanly with layout and motion
+   work elsewhere. Sections: 1 fonts, 2 small-text readability, 3 icon sprites (header, composer), 4 to-do panel.
+   ===================================================================================== */
+
+/* ---------- 1. fonts: Titan One (display: headings, buttons, tabs, counters) + Nunito (everything you read).
+   Bundled and inlined by the build, never a CDN. SIL OFL 1.1; licence texts next to the files in ui/src/fonts/ and
+   listed in THIRD_PARTY_NOTICES.md. Latin subset only; other scripts fall back to Segoe UI. */
+@font-face {
+  font-family: "Titan One"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url(./fonts/titan-one-latin-400-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Nunito"; font-style: normal; font-weight: 200 1000; font-display: swap;
+  src: url(./fonts/nunito-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+:root {
+  --display: "Titan One", "Lilita One", "Segoe UI Black", system-ui, sans-serif;
+  --text-font: "Nunito", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+body { font-family: var(--text-font); font-weight: 600; }   /* Nunito 400–500 is thin on dark green at 12 px */
+:is(input, textarea, select, button) { font-family: inherit; }
+.msg { font-weight: 550; }
+.settings header strong { font-weight: 400; }       /* the display face has one weight: no faux bold */
+.msg.user { font-weight: 700; }
+
+/* ---------- 2. readability at small sizes: the display face is for 12 px and up. Smaller labels and badges use the
+   text face at a heavy weight (sturdier strokes at 9–11 px than a chunky display face); counts use tabular figures.
+   tests/test_todo_ui.py::test_display_face_is_never_used_below_12px checks this across the app. */
+.icon.labeled small { font-family: var(--text-font); font-weight: 900; font-size: 10px; letter-spacing: .01em; }
+.tier, .asg .flag { font-family: var(--text-font); font-weight: 900; letter-spacing: .06em; }
+.tabs button, #importance button, #spend, .ring-txt, .tile-v, .hero-v { font-variant-numeric: tabular-nums; }
+#spend { font-size: 13px; }
+.lab-dir, .icon.labeled small { -webkit-font-smoothing: antialiased; }
+
+/* ---------- 3. toy-block icons (blocky/skin.ts). Only once the sprite sheets exist (html.blocky); until then, or
+   without WebGL / on software GL, every control keeps its glyph. Each .bi shows one cell of the sheet; --s = size. */
+html.blocky .bi {
+  --s: 18px;
+  display: inline-block; flex: none; width: var(--s); height: var(--s); vertical-align: middle; pointer-events: none;
+  background-image: var(--bi-url); background-repeat: no-repeat;
+  background-size: calc(var(--bi-cols) * var(--s)) calc(var(--bi-rows) * var(--s));
+  background-position: 0 calc(var(--bi-row) * var(--s) * -1);
+}
+html.blocky .bi.bi-hero {
+  --s: 72px; display: block; margin: 0 auto 2px;
+  background-image: var(--hero-url); background-size: calc(var(--hero-cols) * var(--s)) calc(var(--hero-rows) * var(--s));
+}
+html.blocky .icon.labeled .bi-nav { --s: 26px; margin: -3px 0 -2px; }
+html.blocky #mic .bi-mic { --s: 30px; }
+
+/* ---------- 4. to-do panel */
+.card.todo {
+  --muted: #d6f5cb;          /* panel only: 5.2:1 on the panel's lightest green (was 4.2:1), 9.7:1 on rows */
+}
+.card.todo .asg-title .t { font-size: 15.5px; font-weight: 800; letter-spacing: .003em; }
+.card.todo .asg-why { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.card.todo .asg .course { font-weight: 700; }
+.card.todo .steps-count { font-family: var(--display); font-weight: 400; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.card.todo .asg-headline { font-size: 18px; letter-spacing: .03em; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+  text-shadow: 0 2px 0 var(--ink); }
+.card.todo .todo-steps { font-weight: 700; }
+.card.todo .meta { font-weight: 700; }
+
+.card.todo.blocky .cb svg { display: none; }
+.card.todo.blocky .cb .cb-ico { --s: 32px; --bi-row: var(--bi-row-box) !important; }
+.card.todo.blocky .cb.on .cb-ico { --bi-row: var(--bi-row-checked) !important; }
+.card.todo.blocky .cb.small .cb-ico { --s: 22px; }
+.card.todo.blocky .cb:focus-visible { outline-offset: 2px; }
+.card.todo.blocky .cb.cb-pop { animation: cb-pop 520ms var(--ease-pop); }
+@keyframes cb-pop { 0% { transform: scale(.8); } 40% { transform: scale(1.18) rotate(-6deg); } 70% { transform: scale(.96); } 100% { transform: none; } }
+.card.todo.blocky .todo-actions .ghost.mini { width: 30px; padding: 0; display: inline-grid; place-items: center; }
+.card.todo.blocky .todo-actions .bi { --s: 22px; margin-top: -2px; }
+.card.todo.blocky .todo-add .primary { display: inline-flex; align-items: center; gap: 4px; }
+.card.todo.blocky .todo-add .primary .bi { --s: 24px; margin: -4px 0 -4px -6px; }
+.card.todo.blocky .asg-why .bi.bi-due { --s: 17px; margin: -3px 3px 0 -1px; }
+.card.todo.blocky .todo-row .src .bi { --s: 20px; }
+.card.todo.blocky .cardtitle .bi.bi-title { --s: 28px; margin: -6px 6px -6px -2px; }
+.card.todo.blocky p.empty { padding-top: 4px; }
+
+/* ---------- background: two baked tiles of chunky jungle blocks behind the content, very faint and static (they
+   fade in once when the panel opens; nothing runs at rest). */
+.card.todo.blocky { isolation: isolate; }
+.card.todo .bk-bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.card.todo .bk-bg i { position: absolute; inset: 0; background-repeat: repeat; animation: bk-in 700ms ease-out both; }
+.card.todo .bk-bg i:first-child { background-image: var(--bk-far); background-size: 220px; opacity: .12; }
+.card.todo .bk-bg i:last-child { background-image: var(--bk-near); background-size: 280px; opacity: .18; background-position: 70px 40px; }
+@keyframes bk-in { from { opacity: 0; } }
+#cards .card.todo.folded .bk-bg { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card.todo .bk-bg i, .card.todo.blocky .cb.cb-pop { transition: none; animation: none; }
+}
+:root[data-juice="minimal"] .card.todo .bk-bg i, :root[data-juice="minimal"] .card.todo.blocky .cb.cb-pop { transition: none; animation: none; }
