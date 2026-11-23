@@ -62,6 +62,11 @@ How it's kept up to date:
 - **Record the app at ≥ 900 px wide.** Narrower viewports switch to the mobile layout and the avatar shrinks to a sliver. *Why:* the 760 px body recording showed only the UI.
 - **The app finds bones by V1's semantic names** (look-at, talk-gesture filter, VFX sockets). Rename other rigs to them rather than special-casing the runtime. *Why:* with Mixamo names the gestures would have silently played nothing.
 - **Calibrate a fidelity camera, inspect the overlay, then lock it.** A tight lens cropped the forearms and looked like a modelling error. *Why:* Phase A's first hero comparison.
+- **Before re-skinning a Tripo region, list every mesh with weights on the bones you will move** (e.g. any vertex on `f*.L`). Don't trust a parts map. *Why:* Phase C's streaking fur came from `part_18`, a second arm-fur part that still followed the finger bones.
+- **Fit an underlay under clumped fur from per-direction percentiles of the fur's own vertices, not ray casts.** Rays slip between clumps and hit the leg or nothing, so the sleeve pokes out. *Why:* C1's first sleeve showed as a dark slab behind the forearm.
+- **Evaluate deformation with a same-pose sheet against the previous candidate** (`phase_c_evidence.py` plays the same actions on both), and compare variants with `--quick` before choosing a parameter. *Why:* rigidity 0 / 0.35 / 1 look alike at rest and only differ under poses.
+- **In headless bpy, `import bpy` before `bmesh`.** *Why:* `ModuleNotFoundError: bmesh` on the first Phase C run.
+- **Playwright screenshots under SwiftShader at deviceScaleFactor 2 can time out** (30 s). Use 1× for app checks, or raise the timeout. *Why:* the first `threejs_hand_check.py` run.
 
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
