@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 @dataclass
 class Email:
     id: str
-    account: str             # "gmail" | "outlook"
+    account: str             # account id: "gmail" (first Gmail), "gmail-2", ... | "outlook"
     sender: str
     sender_email: str
     to: list[str]
@@ -20,6 +20,9 @@ class Email:
     thread_id: str = ""
     body: str = ""
     web_link: str = ""
+    account_label: str = ""  # the owner's name for that account ("Personal", "School")
+    flagged: bool = False    # starred in Gmail / flagged in Outlook / an Outlook task
+    bulk: bool = False       # newsletter, promo or notification (Gmail's tabs, a List-Unsubscribe header)
 
     def brief(self) -> dict:
         d = asdict(self)

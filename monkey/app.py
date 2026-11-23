@@ -31,10 +31,12 @@ from .config import Config, resource_path
 from .integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
 from .integrations.canvas_ics import CanvasCalendar, ICSCalendar
 from .integrations.garmin import GarminHealth
+from .integrations.accounts import EmailAccounts
 from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvider
 from .integrations.outlook_com import OutlookProvider
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
 from .memory.store import MonkeyMemory
+from .memory.todo_suggestions import SuggestionStore
 from .memory.todos import TodoStore, when_text
 from .notify import due_phrase
 from .notify.ntfy import PhoneMessage, PhoneNotifier, normalize_server, reminder_message, valid_topic
@@ -132,24 +134,26 @@ class MonkeyApp:
         self._calibration = None
 
         # Integrations
+        # Any number of Gmail accounts (one Google sign-in each) + classic Outlook. self.gmail/self.gcal are the first
+        # Gmail account's; self.accounts makes the rest and keeps labels and "Find to-dos in this inbox".
         self.google = GoogleAuth()
-        self.gmail = GmailProvider(self.google)
-        self.gcal = GoogleCalendarProvider(self.google)
-        self.outlook = OutlookProvider(enabled=lambda: self.cfg.settings.outlook_connected)
+        self.gmail = GmailProvider(self.google, "gmail", label=lambda: self.accounts.label("gmail"),
+                                   address=lambda: self.accounts.address("gmail"))
+        self.gcal = GoogleCalendarProvider(self.google, "gmail")
+        self.accounts = EmailAccounts(lambda: self.cfg.settings, self.cfg.save, self.google, self.gmail, self.gcal)
+        self.outlook = OutlookProvider(enabled=lambda: self.cfg.settings.outlook_connected,
+                                       label=lambda: self.accounts.label("outlook"))
         self.canvas = CanvasCalendar(lambda: self.cfg.settings.canvas_ics_url)
         self.ics_calendar = ICSCalendar(lambda: keys.get("calendar_ics"))   # private iCal links (no OAuth)
         self.canvas_api = CanvasAPI(lambda: self.cfg.settings.canvas_base_url, lambda: keys.get("canvas_token"))
         self.board = AssignmentBoard(self.canvas_api, self.canvas, LocalChecks(self.cfg.db_path))
         self.garmin = GarminHealth(self.cfg.data_dir / "garmin")
-        self.approval = ApprovalGate({
-            "gmail": lambda d: self.gmail.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body),
-            "outlook": lambda d: self.outlook.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body),
-        })
+        self.approval = ApprovalGate(self._sender_for)     # sends only from the account the draft was made in
         self.client = None
         self.services = Services(
             emit=self._emit, memory=self.memory, approval=self.approval,
-            mail={"gmail": self.gmail, "outlook": self.outlook},
-            calendars=[self.gcal, self.outlook, self.ics_calendar, self.canvas],
+            mail=self.accounts.mail_map(self.outlook),
+            calendars=[*self.accounts.calendars(), self.outlook, self.ics_calendar, self.canvas],
             image_search=self._images, video_search=self._videos if keys.get("youtube") else None,
             image_gen=self._generate_images,
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
@@ -159,6 +163,15 @@ class MonkeyApp:
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
+        from .brain.email_todos import EmailTodoScanner
+
+        self.suggestions = SuggestionStore(self.cfg.db_path)     # "Suggested from email" (never added on their own)
+        self.services.suggestions = self.suggestions
+        self._email_scan_stop = threading.Event()
+        self.email_todos = EmailTodoScanner(
+            self.suggestions, self._scan_sources, client=self._ensure_client,
+            choice=lambda: (lambda c: (c.model, c.effort))(self.policy.choice("email_todos")),
+            record_usage=self._record_usage, budget_ok=self._budget_ok)
         self.policy.write_memory_note(self.memory)
         self.router = Router(
             classify=self._classify,
@@ -346,10 +359,71 @@ class MonkeyApp:
             bundled = resource_path("monkey", "skills")
         return SkillLibrary(bundled, self.cfg.data_dir / "skills")
 
+    # ------------------------------------------------------------------ email accounts
+    def _sender_for(self, account: str):
+        """The approval gate's way to send a draft: only through the account it was drafted in."""
+        prov = self.services.mail.get(account)
+        if prov is None:
+            return None
+        return lambda d: prov.send_draft(d.provider_draft_id, d.to, d.cc, d.subject, d.body)
+
+    def refresh_accounts(self) -> None:
+        """After an account is added or removed: the brain's mail and calendar lists follow (same objects, in place,
+        and only what changed, since a turn may be reading them on another thread)."""
+        want = self.accounts.mail_map(self.outlook)
+        mail = self.services.mail
+        for k in [k for k in list(mail) if k not in want]:
+            mail.pop(k, None)
+        for k, v in want.items():
+            if mail.get(k) is not v:
+                mail[k] = v
+        cals = [*self.accounts.calendars(), self.outlook, self.ics_calendar, self.canvas]
+        if self.services.calendars != cals:
+            self.services.calendars[:] = cals
+
+    def _budget_ok(self) -> bool:
+        """Background model calls stop at 90% of the monthly budget (the brain keeps the rest for what you ask)."""
+        try:
+            budget = float(self.cfg.settings.monthly_budget_usd or 0)
+            return not budget or self.ledger.month_to_date() < 0.9 * budget
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _scan_sources(self) -> list:
+        """Inboxes with "Find to-dos in this inbox" on (and connected). Outlook is only read if it's already open."""
+        from .brain.email_todos import Source
+
+        self.refresh_accounts()
+        out = []
+        for acct, prov in list(self.services.mail.items()):
+            if self.accounts.scan_enabled(acct) and self._ok(prov):
+                out.append(Source(acct, self.accounts.label(acct), prov))
+        return out
+
+    def email_todo_tick(self) -> list[dict]:
+        """One read-only scan of the enabled inboxes. New suggestions go to the to-do panel; nothing is added."""
+        if not any(self.accounts.scan_enabled(a) for a in list(self.services.mail)):
+            return []
+        got = self.email_todos.scan()
+        if got.get("new"):
+            self._emit("todo_suggestions", {"items": self.suggestions.pending(), "new": len(got["new"])})
+        return got.get("new", [])
+
+    def start_email_todo_scan(self, first_after_s: float = 90.0) -> None:
+        def loop():
+            wait = first_after_s
+            while not self._email_scan_stop.wait(wait):
+                try:
+                    self.email_todo_tick()
+                except Exception:  # noqa: BLE001 - one bad inbox read must not stop the next scan
+                    log.warning("email to-do scan failed: %s", "see the account's status in Settings")
+                wait = max(5, int(self.cfg.settings.email_todo_scan_min or 15)) * 60
+        threading.Thread(target=loop, name="email-todos", daemon=True).start()
+
     # ------------------------------------------------------------------ morning brief sources
     def _calendars(self) -> list:
-        # your calendars (Google sign-in, Outlook, private iCal links); never the Canvas feed: due dates aren't classes
-        return [p for p in (self.gcal, self.outlook, self.ics_calendar) if self._ok(p)]
+        # your calendars (Google sign-ins, Outlook, private iCal links); never the Canvas feed: due dates aren't classes
+        return [p for p in (*self.accounts.calendars(), self.outlook, self.ics_calendar) if self._ok(p)]
 
     @staticmethod
     def _ok(p) -> bool:
@@ -377,7 +451,8 @@ class MonkeyApp:
                 out += p.list_events(start, start + timedelta(days=1))
             return out
 
-        mails = [p for p in (self.gmail, self.outlook) if self._ok(p)]
+        self.refresh_accounts()
+        mails = [p for p in list(self.services.mail.values()) if self._ok(p)]
 
         def emails():
             out = []
@@ -401,6 +476,7 @@ class MonkeyApp:
             canvas_token=self.canvas_token_status,
             class_notes=lambda: self.memory.read("classes.md") or "",
             todos=lambda: self.todos.items("open"),
+            todo_suggestions=self.suggestions.count_pending,
         )
 
     # ------------------------------------------------------------------ to-do reminders
@@ -1003,8 +1079,8 @@ class Api:
             "secrets_backend": secretstore.BACKEND,
             "wakeword": a.wakeword_label,
             "connections": {
-                "gmail": ks.get("google_token", False),
-                "google_calendar": ks.get("google_token", False),
+                "gmail": a.google.connected(),
+                "google_calendar": a.google.connected(),
                 "outlook": a.outlook.available(),
                 "canvas": bool(a.cfg.settings.canvas_ics_url),
                 "canvas_api": ks.get("canvas_token", False),
@@ -1641,8 +1717,9 @@ class Api:
         d = self._app.approval.get(draft_id)
         if d is None:
             return
-        prov = self._app.outlook if d.account == "outlook" else self._app.gmail
-        threading.Thread(target=prov.open_draft, args=(d.provider_draft_id,), daemon=True).start()
+        prov = self._app.services.mail.get(d.account)
+        if prov is not None:
+            threading.Thread(target=prov.open_draft, args=(d.provider_draft_id,), daemon=True).start()
 
     def open_url(self, url: str):
         self._app._open_url(url)
@@ -1664,17 +1741,16 @@ class Api:
 
         def run():
             try:
-                a.google.sign_in(on_url=lambda url: a.ui.emit("google", {"stage": "opening", "url": url}))
-                try:                                  # "Connected as you@gmail.com" (testers asked which account)
-                    prof = a.google.service("gmail", "v1").users().getProfile(userId="me").execute()
-                    a.cfg.update(google_account=str(prof.get("emailAddress", ""))[:120])
-                except Exception:  # noqa: BLE001
-                    pass
-                found = {}
+                acct = a.google.sign_in(on_url=lambda url: a.ui.emit("google", {"stage": "opening", "url": url}))
+                acct = acct or a.google.last_account_id or (a.accounts.google_ids() or ["gmail"])[0]
+                # "Connected as you@gmail.com" (testers asked which account); kept in settings, shown in Settings only
+                a.accounts.after_sign_in(acct, getattr(a.google, "last_address", ""))
+                a.refresh_accounts()
+                found = {"account": acct, "label": a.accounts.label(acct)}
                 try:                                  # proof both halves work (testers weren't sure the calendar did)
-                    found["emails"] = len(a.gmail.list_recent(max_results=10))
+                    found["emails"] = len(a.accounts.gmail(acct).list_recent(max_results=10))
                     now = datetime.now().astimezone()
-                    found["events"] = len(a.gcal.list_events(now, now + timedelta(days=7)))
+                    found["events"] = len(a.accounts.gcal(acct).list_events(now, now + timedelta(days=7)))
                 except Exception:  # noqa: BLE001
                     pass
                 a.ui.emit("google", {"stage": "done", **found})
@@ -1736,9 +1812,42 @@ class Api:
             return {"ok": False, "error": str(exc)}
         return self.save_key("google_client", text)
 
-    def google_sign_out(self):
-        self._app.google.sign_out()
-        self._app.cfg.update(google_account="")
+    def google_sign_out(self, account: str = ""):
+        """Remove one Gmail account (account id), or every one when no id is given."""
+        a = self._app
+        for acct in ([account] if account else a.accounts.google_ids()):
+            a.accounts.remove_google(acct)
+            a.suggestions.forget_account(acct)
+        if not account:
+            a.cfg.update(google_account="")
+        a.refresh_accounts()
+        return {"ok": True, "accounts": a.accounts.listing(a.outlook)}
+
+    def email_accounts(self):
+        """Settings → Accounts: every connected inbox with its label, address (this screen only) and to-do switch."""
+        a = self._app
+        try:
+            rows = a.accounts.listing(a.outlook)
+            for r in rows:
+                r["scan"] = a.email_todos.status.get(r["id"], {})
+            return {"ok": True, "accounts": rows, "has_client": bool(keys.get("google_client")),
+                    "signing_in": bool(getattr(a, "_google_signing_in", False))}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "accounts": []}
+
+    def email_account_update(self, account: str, changes: dict):
+        """Rename an account, or turn "Find to-dos in this inbox" on/off."""
+        a = self._app
+        known = {r["id"] for r in a.accounts.listing(a.outlook)}
+        if account not in known:
+            return {"ok": False, "error": "That account isn't connected."}
+        keep = {k: v for k, v in (changes or {}).items() if k in ("label", "scan_todos")}
+        if "label" in keep and not str(keep["label"] or "").strip():
+            keep["label"] = a.accounts.default_label(account)
+        a.accounts.set_meta(account, **keep)
+        if keep.get("scan_todos"):
+            threading.Thread(target=a.email_todo_tick, name="email-todos-now", daemon=True).start()
+        return {"ok": True, "accounts": a.accounts.listing(a.outlook)}
 
     def test_outlook(self):
         """The Connect button: the only place Monkey starts Outlook on its own. Success turns Outlook on."""
@@ -1785,6 +1894,7 @@ class Api:
     def disconnect_outlook(self):
         self._app.cfg.settings.outlook_connected = False
         self._app.cfg.save()
+        self._app.suggestions.forget_account("outlook")
         return {"ok": True}
 
     def learn_style(self):
@@ -1795,7 +1905,7 @@ class Api:
             return {"ok": False, "error": "Add your Anthropic key first"}
         try:
             c = a.policy.choice("style_learning")
-            guide = learn_style(a.client, [a.gmail, a.outlook], a.memory, record_usage=a._record_usage,
+            guide = learn_style(a.client, list(a.services.mail.values()), a.memory, record_usage=a._record_usage,
                                 model=c.model, effort=c.effort)
             return {"ok": True, "preview": guide[:600]}
         except Exception as exc:  # noqa: BLE001
@@ -1871,6 +1981,76 @@ class Api:
             return {"ok": True, "item": self._app.todos.restore(str(item_id))}
         except KeyError:
             return {"ok": False, "error": "Couldn't bring that one back."}
+
+    # to-dos suggested from email (Accept adds through the normal path; nothing is ever added on its own)
+    def todo_suggestions(self):
+        try:
+            return {"ok": True, "items": self._app.suggestions.pending()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "items": []}
+
+    def todo_suggestion_accept(self, suggestion_id: str, changes: dict | None = None):
+        """The owner clicked Accept: add it as their to-do, with the email as its origin."""
+        a = self._app
+        s = a.suggestions.get(str(suggestion_id))
+        if s is None or s["status"] != "pending":
+            return {"ok": False, "error": "That suggestion is gone (already accepted or dismissed)."}
+        ch = changes or {}
+        try:
+            item = a.todos.add(str(ch.get("text") or s["text"]), due=ch.get("due", s["due"]) or None,
+                               priority=str(ch.get("priority") or ("high" if s["signal"] in ("flagged", "task")
+                                                                    else "normal")),
+                               source="email")
+            item = a.todos.set_origin(item["id"], {"kind": "email", "account": s["account"],
+                                                   "account_label": s["account_label"], "evidence": s["evidence"],
+                                                   "subject": s["subject"], "link": s["link"], "suggestion": s["id"]})
+            a.suggestions.mark_accepted(s["id"], item["id"])
+        except (ValueError, KeyError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "item": item}
+
+    def todo_suggestion_dismiss(self, suggestion_id: str):
+        try:
+            self._app.suggestions.dismiss(str(suggestion_id))
+            return {"ok": True}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc) if isinstance(exc, ValueError) else "That suggestion is gone."}
+
+    def todo_suggestion_open(self, suggestion_id: str):
+        """Show the email: Gmail in the browser; Outlook in Outlook, only if it's already open (never starts it)."""
+        a = self._app
+        s = a.suggestions.get(str(suggestion_id))
+        if s is None:
+            return {"ok": False, "error": "That suggestion is gone."}
+        if s["kind"] in ("outlook", "outlook_task"):
+            from .integrations.outlook_com import OutlookNotOpen
+
+            row = a.suggestions.message_id(s["id"])
+            box: dict = {}
+
+            def run():
+                try:
+                    a.outlook.open_item(row)
+                except OutlookNotOpen as exc:
+                    box["error"] = "Open Outlook first: " + str(exc).split(",")[0].lower() + "."
+                except Exception as exc:  # noqa: BLE001
+                    box["error"] = f"Outlook couldn't show it ({type(exc).__name__})."
+
+            t = threading.Thread(target=run, name="outlook-open", daemon=True)
+            t.start()
+            t.join(15)
+            if t.is_alive():
+                return {"ok": False, "error": "Outlook didn't answer in time. Is it showing a dialog?"}
+            return {"ok": "error" not in box, **box}
+        if s["link"].startswith("https://mail.google.com/"):
+            a._open_url(s["link"])
+            return {"ok": True}
+        return {"ok": False, "error": "No link for that email."}
+
+    def email_todo_scan_now(self):
+        """Settings / the to-do panel: check the enabled inboxes now (in the background)."""
+        threading.Thread(target=self._app.email_todo_tick, name="email-todos-now", daemon=True).start()
+        return {"ok": True, "started": True}
 
     def todo_snooze(self, item_id: str, minutes: int = 10):
         try:
@@ -2454,6 +2634,7 @@ def run() -> None:
         app.updater.start_background()
         app.after_install_tasks()
         app.start_todo_reminders()
+        app.start_email_todo_scan()
 
         def startup_cleanup():
             from . import lifecycle

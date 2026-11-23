@@ -14,6 +14,12 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - The owner asked for reminders "as windows notifications and on my phone too". Settings → **Reminders**: in-app note (as before), Windows notifications (default on; Done / Snooze 10 min buttons, a click opens the To-do panel, works with the window in the tray) and the phone via ntfy (default off; "Set up my phone" makes a random topic kept in secrets.dat, QR code, test button, "show the to-do on my phone" privacy switch, own server/token optional). Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, reminder notifications).
 - Not tried on the Dell: the real toast, its buttons and a click from Action Center, and a real ntfy delivery. On the Dell: Settings → Reminders → Send a test Windows notification; Set up my phone → subscribe in the ntfy app → Send test notification.
 
+## Email accounts → to-do list (branch `feature/todo-email-accounts`, waiting for review)
+- ✉️ Any number of Gmail accounts (one Google sign-in each, "+ Add another Gmail account") plus classic Outlook, each with a label the owner picks. The old single Google sign-in moves over by itself on first start (no new sign-in).
+- Monkey reads every inbox and says which account each email is from. A draft names the account it goes out from and sends only from it.
+- Per inbox, "Find to-dos in this inbox" (off by default): a read-only check every 15 minutes puts **suggestions** in a "Suggested from email" section of the to-do panel (Accept / Dismiss / Open). Nothing is added on its own. Outlook is only read while it's already open.
+- Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, email accounts). Not tried on the Dell or with real accounts.
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

@@ -17,7 +17,7 @@ from typing import Callable, Literal
 @dataclass
 class PendingDraft:
     draft_id: str
-    account: str              # "gmail" | "outlook"
+    account: str              # account id: "gmail", "gmail-2", … | "outlook" (it is sent from this account only)
     provider_draft_id: str    # id of the real draft in Gmail/Outlook
     to: list[str]
     cc: list[str]
@@ -26,16 +26,20 @@ class PendingDraft:
     token: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     created: float = field(default_factory=time.time)
     status: Literal["pending", "confirming", "sent", "cancelled", "failed"] = "pending"
+    from_label: str = ""      # the owner's name for that account ("Personal", "School"), read back before sending
 
     def public(self) -> dict:
         """What the UI gets (includes the one-time token, which never goes to the model)."""
         return {
             "draft_id": self.draft_id, "account": self.account, "to": self.to, "cc": self.cc,
             "subject": self.subject, "body": self.body, "token": self.token, "status": self.status,
+            "from_label": self.from_label,
         }
 
 
 SendFn = Callable[[PendingDraft], None]
+# Either {account id: send function} or a function account id -> send function (None = no such account).
+Senders = dict[str, SendFn] | Callable[[str], SendFn | None]
 
 _SEND_INTENT = re.compile(
     r"^\s*(?:yo\s+)?(?:yes|yeah|yep|yup|ok(?:ay)?|cool|bet)?[\s,]*"
@@ -58,7 +62,7 @@ CONFIRM_WINDOW_S = 60
 
 
 class ApprovalGate:
-    def __init__(self, senders: dict[str, SendFn]):
+    def __init__(self, senders: Senders):
         self._senders = senders
         self._drafts: dict[str, PendingDraft] = {}
         self._lock = threading.Lock()
@@ -139,11 +143,17 @@ class ApprovalGate:
             d.status = "confirming"
             self._confirm_started = now
             return "confirm_needed", (
-                f"Sending \"{d.subject}\" to {self._who(d)}. Say yes to confirm, or cancel."
+                f"Sending \"{d.subject}\"{self._from(d)} to {self._who(d)}. Say yes to confirm, or cancel."
             )
         return None
 
     # ---- internals ---------------------------------------------------
+    @staticmethod
+    def _from(d: PendingDraft) -> str:
+        """" from your School account": with several accounts the owner must hear which one it goes out from."""
+        label = (getattr(d, "from_label", "") or "").strip()
+        return f" from your {label} account" if label else ""
+
     @staticmethod
     def _who(d: PendingDraft) -> str:
         """Everyone who will get it, read back before sending: To, then CC (by name, or a count past three)."""
@@ -155,7 +165,7 @@ class ApprovalGate:
         return f"{to}, with a copy to {cc_txt}"
 
     def _send(self, d: PendingDraft) -> PendingDraft:
-        sender = self._senders.get(d.account)
+        sender = self._senders(d.account) if callable(self._senders) else self._senders.get(d.account)
         if sender is None:
             d.status = "failed"
             raise RuntimeError(f"No sender configured for {d.account}")

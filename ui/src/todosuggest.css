@@ -1,0 +1,34 @@
+/* "Suggested from email" (to-do panel) and the email account list (Settings → Accounts). Kept in its own file so the
+   to-do panel's main styles can change without touching this. */
+.todo-suggest { margin: 8px 0 10px; border: 1px dashed var(--line); border-radius: 12px; padding: 8px 10px;
+  background: color-mix(in srgb, var(--panel2) 55%, transparent); }
+.todo-suggest .sug-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.todo-suggest .sug-toggle { font-weight: 700; cursor: pointer; }
+.todo-suggest .sug-head .meta { font-size: 12px; }
+.todo-suggest .sug-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.todo-suggest .sug { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+  border-top: 1px solid color-mix(in srgb, var(--line) 50%, transparent); padding-top: 6px; }
+.todo-suggest .sug:first-child { border-top: 0; padding-top: 0; }
+.todo-suggest .sug-main { min-width: 0; flex: 1; }
+.todo-suggest .sug-title { font-weight: 600; overflow-wrap: anywhere; }
+.todo-suggest .sug-flag { margin-left: 8px; font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.todo-suggest .sug-meta { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.todo-suggest .sug-acct { color: var(--text); }
+.todo-suggest .sug-quote { margin: 4px 0 0; padding: 2px 0 2px 8px; border-left: 3px solid var(--line); font-size: 12px;
+  font-style: italic; color: var(--muted); overflow-wrap: anywhere; }
+.todo-suggest .sug-btns { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: none; max-width: 45%; }
+.todo-suggest .sug-btns .mini { margin-left: 0; }
+.todo-suggest .primary.mini { padding: 0 10px; height: 24px; font-size: 13px; border-radius: 8px; }
+.todo-row .src.email { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+
+.acct-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.acct-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 10px; }
+.acct-list .acct-kind { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; color: var(--muted); }
+.acct-list .acct-label { flex: 0 1 10em; min-width: 6em; }
+.acct-list .acct-addr { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; flex: 1 1 10em; min-width: 8em; }
+.acct-list .acct-scan { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; flex: none; cursor: pointer; }
+.acct-list .acct-scan input[type=checkbox] { flex: none; min-width: 0; width: 18px; height: 18px; margin: 0; padding: 0;
+  accent-color: var(--accent); }
+.acct-list .acct-note { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.acct-list .ghost.mini { margin-left: 0; }

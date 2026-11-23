@@ -204,6 +204,7 @@ class Sources:
     sleep: Callable[[], dict | None] | None = None              # Garmin (optional)
     canvas_token: Callable[[], dict] | None = None              # {"status": ok|expiring|expired|none, "days": n}
     todos: Callable[[], list[dict]] | None = None               # open to-do items (TodoStore.items("open"))
+    todo_suggestions: Callable[[], int] | None = None            # how many to-dos wait in "Suggested from email"
 
 
 def _safe(fn, *a):
@@ -299,6 +300,13 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
     st, todos = _safe(src.todos)
     if st == "ok":
         todo_sec, todo_top = _todo_section(todos or [], now)
+        sst, n_sug = _safe(src.todo_suggestions)
+        if sst == "ok" and n_sug:
+            hint = f"{n_sug} suggested from email (Accept or Dismiss in To-do)."
+            if todo_sec is None:
+                todo_sec = Section("To-do", "empty", [], hint)
+            else:
+                todo_sec.note = f"{todo_sec.note} {hint}".strip()
         if todo_sec is not None:
             sections.append(todo_sec)
     elif st == "unavailable":

@@ -563,3 +563,36 @@ The owner asked: "Make reminders appear as windows notifications and on my phone
 **Tests:** `tests/test_reminder_notify.py` (fake toast backend: once per due, buttons, snooze, retract, focus skip, failures, non-Windows no-op, a Windows-only real-library check; fake ntfy HTTP: request shape, priority, privacy, timeout, retry once, no secrets in logs, background queue; settings persistence with the real `keys` store), `tests/test_reminder_settings_ui.py` (Playwright, `?demo&svg`).
 
 **Not verifiable in the cloud container:** a real toast, its buttons and clicks from Action Center, and a real ntfy delivery. Try on the Dell: Settings → Reminders → Send a test Windows notification, then Set up my phone → Send test notification.
+
+## 2026-11-23: several Gmail accounts + Outlook, and "Suggested from email" for the to-do list (branch `feature/todo-email-accounts`)
+
+The owner asked to "add the ability to connect multiple gmail accounts and my outlook account to the task queue" (the to-do list).
+
+**Accounts (`monkey/integrations/google.py`, `monkey/integrations/accounts.py`):**
+- One OAuth client (`google_client`) and one token per Google account. All tokens are in one secret, `google_accounts` = {"gmail": token, "gmail-2": token, …}, in the same DPAPI `secrets.dat` as every key, so Move-to-a-new-PC carries them.
+- **Migration:** the old single token (`google_token`) moves to account `gmail` on the first read (`google.migrate_legacy_token`, called by every account lookup). The old key is deleted only after the new one is saved and read back; if saving fails, the old key stays and it tries again next time. The old "Connected as" address (`settings.google_account`) moves into that account's entry. An old `.monkey` file imported later just becomes another account (or the same one, if it's the same token).
+- Non-secret parts are in `settings.email_accounts`: {id: {label, address, scan_todos}}. The address is shown only in Settings on this PC: never in logs (`logsafe` redacts addresses anyway), the Check-everything report (accounts there are named by label) or tests (made-up `example.com` addresses).
+- Signing in again with an address that's already connected refreshes that account instead of adding a duplicate. `GoogleAuth(account_id)` is per account; `GoogleAuth()` (app-wide) runs the sign-in and means "the first account" for older callers.
+- Outlook stays the opt-in classic-Outlook COM provider (Connect/Disconnect unchanged). It gets a label like the others.
+
+**Brain (`monkey/brain/tools.py`, `approval.py`):**
+- `get_emails` reads every connected inbox by default, merges newest first and tags each email with `account` (id) and `account_label`. `account` takes 'all', 'gmail' (every Gmail account), 'outlook', or an account label/id.
+- `read_email` finds the right inbox from the email id (cached from `get_emails`) even when asked for plain "gmail".
+- `draft_email` must resolve to exactly one account: with several Gmail accounts and no name, it asks which; a reply goes out from the inbox the email came in to. The draft card and the spoken read-back name the account ("Sending … from your Club account to …"). The approval gate sends only through the account the draft was made in.
+
+**Suggested from email (`monkey/brain/email_todos.py`, `monkey/memory/todo_suggestions.py`):**
+- Per account, "Find to-dos in this inbox" (off by default). `MonkeyApp.start_email_todo_scan`: first check 90 s after start, then every `email_todo_scan_min` (15) minutes, plus right after a switch is turned on.
+- Read-only: recent (3 days) unread or flagged/starred mail and open Outlook tasks, subject + preview only (Gmail `metadata` format, no bodies). Each inbox read has a 45 s deadline in a separate thread.
+- Outlook is only read if `outlook.exe` is already running, by attaching (`GetActiveObject`). The scan never starts Outlook, hidden or visible (the hidden-launch hang from v0.3.71).
+- Local filter first: flagged/starred and Outlook tasks are strong signals; newsletters/promos/notifications (Gmail's tabs, List-Unsubscribe, bulk senders, "unsubscribe" text) are dropped; other mail needs a request ("can you…", "please…", "due Friday"). Near-misses tested: "proofread the newsletter draft", "ignore my previous email… please confirm", "AI club… RSVP".
+- Assistant-directed mail ("ignore previous instructions", tool names, "Monkey, add…") is skipped before any model sees it.
+- Then at most one call per scan to the routed cheap model (new internal policy task `email_todos`, Haiku low), for up to 8 new emails that passed the filter, no tools, skipped at 90% of the monthly budget, usage recorded as `email_todos`. Its quote must appear word for word in the email and its to-do text can't contain links or addresses; otherwise the local suggestion stands. It can turn a plain email down, but not one the owner flagged.
+- Every email looked at is remembered by (account, message id) as pending/accepted/dismissed/skipped, so nothing goes to the model twice and a dismissed suggestion never returns. Only the quoted line and subject are stored (monkey.db), never bodies, and never in memory facts.
+- **Accept** (the owner's click) adds the to-do through `TodoStore.add` (source `email`) and records its origin (account label, quote, subject, link) in a new `origin` column. Flagged/task suggestions come in as high priority. **Dismiss** is permanent. **Open** shows the email in Gmail, or in Outlook if it's open.
+- The brain sees accepted items' account (`list_todos` → `from_email_account`) and how many suggestions wait (a count only; it can't accept them). The morning brief's To-do note says "N suggested from email".
+
+**UI:** Settings → Accounts lists every connected inbox (`ui/src/accounts.ts`): kind, a label you can rename, the address, "Find to-dos in this inbox", Remove (Gmail), and "+ Add another Gmail account". The to-do panel has a collapsible "Suggested from email" section on the Open tab (`ui/src/todosuggest.ts`, its own CSS file) with the account label, sender, due date, the quoted line, and Accept / Dismiss / Open. Accepted items show "✉ <label>". `?demo&accounts` shows made-up inboxes (plain `?demo` is unchanged).
+
+**Tests:** `tests/test_email_accounts.py` (token store, migration and failed-save safety, sign-in add/refresh/remove, merged reads with labels, drafts naming and using the right account, screen rules and near-misses, strong signals, the injection email reaching neither the model nor the list, model output checks, budget, Outlook never started, a hung read abandoned, accept/dismiss persistence across a restart, the brief note, no addresses in logs). `tests/test_email_accounts_ui.py` (Playwright, added to the CI browser job).
+
+**Not done / open:** not tried on the Dell or with a real Google or Outlook account (cloud container). Outlook flagged-mail and Tasks reads are written against the documented Outlook object model but only exercised with fakes. Calendar events that two Google accounts share can show twice.

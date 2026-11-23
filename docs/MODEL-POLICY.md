@@ -44,12 +44,15 @@ Generated with `python -m tools.model_policy.report`.
 | Deep research | Sonnet 5.5 · medium ($0.176) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.392) | $0.302 | 55.9s | $9.07 |
 | Make a picture (writing the image prompt) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0053) | $0.0003 | 1.9s | $0.010 |
 | Router (which task is this?) | Haiku 5.5 · low ($0.0001) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0001) | $0.0001 | 0.6s | $0.020 |
+| Find to-dos in email (background) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0003) | $0.0003 | 0.6s | $0.030 |
 | Learn my writing style (one time) | Sonnet 5.5 · high ($0.230) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.460) | $0.400 | 28.1s | $0.0000 |
 
-Monthly totals (heavy use): Auto **$23.30**, all Quick $14.40, all Important $51.68.
+Monthly totals (heavy use): Auto **$23.33**, all Quick $14.43, all Important $51.71.
 
-The policy also has two internal tasks that don't show up as chat requests:
+The policy also has three internal tasks that don't show up as chat requests:
 - **Router:** classifies requests that no rule catches.
+- **Find to-dos in email:** the background inbox scan for "Suggested from email". It runs only on new mail that passed
+  the local filter, at most once per scan, gets no tools, and is skipped at 90% of the monthly budget.
 - **Learn my writing style:** runs once.
 
 The numbers come from the Settings → Brain screen and are the same as above.

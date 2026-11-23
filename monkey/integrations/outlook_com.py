@@ -19,8 +19,9 @@ from datetime import datetime, timedelta
 from .base import DraftResult, Email, Event
 
 OL_MAIL = 0
-FOLDER_SENT, FOLDER_INBOX, FOLDER_CALENDAR = 5, 6, 9
+FOLDER_SENT, FOLDER_INBOX, FOLDER_CALENDAR, FOLDER_TASKS = 5, 6, 9, 13
 CLASS_MAIL = 43
+FLAG_MARKED = 2           # olFlagMarked: flagged for follow-up
 
 
 @contextmanager
@@ -91,6 +92,10 @@ class OutlookConnectError(RuntimeError):
     pass
 
 
+class OutlookNotOpen(RuntimeError):
+    """A background read found Outlook closed; it does nothing rather than start it."""
+
+
 def process_names() -> set[str]:
     """Lower-case names of running processes ("outlook.exe" = classic Outlook, "olk.exe" = new Outlook)."""
     try:
@@ -116,8 +121,11 @@ class OutlookProvider:
     """Implements both MailProvider and CalendarProvider."""
 
     name = "outlook"
+    kind = "outlook"
+    account_id = "outlook"
 
-    def __init__(self, enabled: Callable[[], bool] | None = None):
+    def __init__(self, enabled: Callable[[], bool] | None = None, label: Callable[[], str] | str = "Outlook"):
+        self._label = label
         self._quoted_tail: dict[str, str] = {}
         self._lock = threading.Lock()
         self._enabled = enabled or (lambda: True)
@@ -140,6 +148,70 @@ class OutlookProvider:
 
     def _ns(self):
         return self._app().GetNamespace("MAPI")
+
+    @property
+    def label(self) -> str:
+        return (self._label() if callable(self._label) else self._label) or "Outlook"
+
+    def set_label_source(self, label: Callable[[], str] | str) -> None:
+        self._label = label
+
+    # ---- background reads (to-do suggestions) ----------------------------
+    # These run on a timer, so they must never start Outlook (hidden or not) and never wait on it: they attach to an
+    # Outlook that's already open and signed in, and do nothing otherwise. The caller also puts a deadline on them.
+    def _attached_ns(self, procs: Callable[[], set[str]] = process_names, attach: Callable | None = None):
+        if "outlook.exe" not in procs():
+            raise OutlookNotOpen("Outlook isn't open, so Monkey didn't look (it never opens Outlook by itself).")
+        if attach is None:
+            import win32com.client  # type: ignore
+
+            attach = win32com.client.GetActiveObject
+        return attach("Outlook.Application").GetNamespace("MAPI")
+
+    def list_todo_candidates(self, days: int = 3, max_results: int = 15, procs: Callable[[], set[str]] = process_names,
+                             attach: Callable | None = None) -> list[Email]:
+        """Read-only: recent unread or flagged inbox mail (first 200 characters of the body as the snippet)."""
+        since = (datetime.now() - timedelta(days=max(1, int(days)))).strftime("%m/%d/%Y %I:%M %p")
+        out: list[Email] = []
+        with _com():
+            ns = self._attached_ns(procs, attach)
+            items = ns.GetDefaultFolder(FOLDER_INBOX).Items
+            items.Sort("[ReceivedTime]", True)
+            items = items.Restrict(f"[ReceivedTime] >= '{since}'")
+            item, scanned = items.GetFirst(), 0
+            while item is not None and len(out) < max_results and scanned < 200:
+                scanned += 1
+                try:
+                    if item.Class == CLASS_MAIL and (item.UnRead or getattr(item, "FlagStatus", 0) == FLAG_MARKED):
+                        out.append(self._to_email(item))
+                except Exception:  # noqa: BLE001 - odd items (reports, meeting requests)
+                    pass
+                item = items.GetNext()
+        return out
+
+    def list_open_tasks(self, max_results: int = 10, procs: Callable[[], set[str]] = process_names,
+                        attach: Callable | None = None) -> list[dict]:
+        """Read-only: unfinished Outlook tasks (Tasks folder) as {id, subject, snippet, due} (due 'YYYY-MM-DD' or '')."""
+        out: list[dict] = []
+        with _com():
+            ns = self._attached_ns(procs, attach)
+            items = ns.GetDefaultFolder(FOLDER_TASKS).Items.Restrict("[Complete] = False")
+            item = items.GetFirst()
+            while item is not None and len(out) < max_results:
+                try:
+                    due = getattr(item, "DueDate", None)
+                    due_s = f"{due.year:04d}-{due.month:02d}-{due.day:02d}" if due is not None and due.year < 4000 else ""
+                    out.append({"id": item.EntryID, "subject": item.Subject or "",
+                                "snippet": (item.Body or "")[:200].replace("\r\n", " "), "due": due_s})
+                except Exception:  # noqa: BLE001
+                    pass
+                item = items.GetNext()
+        return out
+
+    def open_item(self, entry_id: str, procs: Callable[[], set[str]] = process_names) -> None:
+        """Show one email/task in Outlook (only if Outlook is already open)."""
+        with _com():
+            self._attached_ns(procs).GetItemFromID(entry_id).Display(False)
 
     # ---- the Connect button ---------------------------------------------
     def connect(self, wait_s: float = 90.0, launch: Callable[[], None] = launch_visible,
@@ -196,6 +268,7 @@ class OutlookProvider:
             received=_aware(item.ReceivedTime), unread=bool(item.UnRead),
             thread_id=getattr(item, "ConversationID", "") or "",
             body=(item.Body or "") if with_body else "",
+            account_label=self.label, flagged=getattr(item, "FlagStatus", 0) == FLAG_MARKED,
         )
 
     def _iter_mail(self, folder_id: int, max_results: int, unread_only=False, query="", with_body=False):

@@ -103,7 +103,7 @@ def test_validation(tmp_path):
     st = TodoStore(tmp_path / "monkey.db")
     with pytest.raises(ValueError):
         st.add("   ")
-    t = st.add("Something", priority="urgent!!", source="email")          # unknown values fall back safely
+    t = st.add("Something", priority="urgent!!", source="pigeon")         # unknown values fall back safely
     assert t["priority"] == "normal" and t["source"] == "typed"
     with pytest.raises(KeyError):
         st.update("nope", text="x")

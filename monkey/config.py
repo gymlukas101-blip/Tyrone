@@ -81,6 +81,10 @@ class Settings:
     use_gmail: bool = True
     use_outlook: bool = True          # legacy, ignored (it never gated anything)
     outlook_connected: bool = False   # opt-in: Monkey touches Outlook only after you click Connect
+    # Email accounts: {"gmail": {"label": "Personal", "address": "…", "scan_todos": false}, "gmail-2": …, "outlook": …}.
+    # Tokens are not here (secrets.dat). scan_todos = "Find to-dos in this inbox" (read-only suggestions, opt-in).
+    email_accounts: dict = field(default_factory=dict)
+    email_todo_scan_min: int = 15     # how often enabled inboxes are checked for to-dos (minutes)
     canvas_ics_url: str = ""
     canvas_base_url: str = "https://canvas.wisc.edu"
     canvas_token_expires: str = ""    # YYYY-MM-DD; UW tokens are short-lived, Monkey warns before expiry

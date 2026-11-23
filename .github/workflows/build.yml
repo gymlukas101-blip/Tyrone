@@ -237,7 +237,7 @@ jobs:
       - name: Browser UI tests
         run: |
           export MONKEY_BROWSER_PATH="$(python -c 'from playwright.sync_api import sync_playwright as s; p = s().start(); print(p.chromium.executable_path); p.stop()')"
-          pytest -q tests/test_m4_avatar.py tests/test_m6_ui.py tests/test_sound_off.py tests/test_m1_fixes.py tests/test_todo_ui.py tests/test_reminder_settings_ui.py -k "not speaker"
+          pytest -q tests/test_m4_avatar.py tests/test_m6_ui.py tests/test_sound_off.py tests/test_m1_fixes.py tests/test_todo_ui.py tests/test_reminder_settings_ui.py tests/test_email_accounts_ui.py -k "not speaker"
 
   # Known-vulnerability report for the locked dependencies. Informational: it never blocks a release, so a new
   # advisory can't stop an urgent fix from shipping; read the job summary and update with tools/lock.sh --upgrade.
