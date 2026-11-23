@@ -137,5 +137,47 @@
    "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
   },
   "durable_copy": "sent to the owner as session attachments (E6 + F3 blend/glb, video, sheets)"
+ },
+ "body_B2_stage3a": {
+  "date": "2026-11-23",
+  "builder": "bpy python tools/character_v2/retarget.py -- character_v2_workspace/tripo_face/tripo_face_F3.blend ui/public/models/monkey.glb character_v2_workspace/tripo_body --name tripo_body_B2",
+  "outputs": {
+   "tripo_body_B2.blend": {
+    "sha256": "9fdfe0228abba249fb3196f7bca1aa56d36d50c90d780480c6c2cf55a79c0c7d",
+    "bytes": 7502453
+   },
+   "tripo_body_B2.glb": {
+    "sha256": "2ee83f1c4518e574b6211e719f3ea38fc1fd44176fc31f2026a0e009fa4522f2",
+    "bytes": 7184332,
+    "clips": [
+     "idle",
+     "listen",
+     "think",
+     "talk",
+     "talk_gest_open_palms"
+    ],
+    "morphs": 38
+   },
+   "tripo_body_B1.glb (before stance fix)": {
+    "sha256": "c72eb6e034da470d250b647296aa112f4ff935b6b2a8aea19e48a93aefacd538"
+   },
+   "body_performance.mp4": {
+    "sha256": "f7f0086c12e4e127029d3145bf776b96bf85b9301ea896de1852a2cc881ac5fa",
+    "seconds": 21.6
+   }
+  },
+  "approved_references": {
+   "03_EXPLODED_ASSEMBLY.png": "4f3c1d19d8a2556cbf8aaa17bedfe30ed1d0ea5cd7d58f6933750ff4fe703bc6",
+   "04_HERO_IMAGE_B_CROUCH.png": "17a498e17c7bfec57c77a98ea29d46dfd0c954d49db4afa73ba20f8336e11f2c",
+   "05_TURNAROUND.png": "83fa7beda3f690e2bc8d56ea23a5e5dce92fac03decf8be915ffc3e9729817a3",
+   "committed": false
+  },
+  "fidelity_locked_camera": "character_v2_workspace/fidelity/HERO_B_LOCKED_{camera,calibration}.json",
+  "references_unchanged": {
+   "MonkeyTripo.glb": "8f990a331882e3106c321fb3bc7580f190931854383fe1863543df940b49d107",
+   "tripo_face_F3.glb": "504c43734218d714e80d851ba1b8d1ab3fadd706e3fa7b3ad626d83e6726a4ff",
+   "tripo_face_F3.blend": "295d1c8d43715db21ebd6b7a6808cf782f6db680644d3c2fd1e22d7dbfa9db02",
+   "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
+  }
  }
 }

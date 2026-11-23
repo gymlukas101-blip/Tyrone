@@ -15,6 +15,8 @@ import { PerformanceDirector } from "./avatar/acting";
 import { FaceMixer } from "./avatar/face";
 import { addFurDetail, setFurStrength } from "./avatar/fur";
 
+/** How long an expression preset holds when its emote has no clip (ms). */
+const EXPR_HOLD_MS = 2600;
 const STATE_CLIP: Record<AvatarState, string> = {
   idle: "idle", listening: "listen", transcribing: "listen", thinking: "think", speaking: "talk",
 };
@@ -109,6 +111,9 @@ export class Avatar3D implements AvatarLike {
   private visNow: Record<string, number> = {};
   private jaw = 0;
   private expr: Record<string, number> = {};
+  /** When the current expression preset must be gone by (ms). Clip-independent: a missing, cancelled or
+   *  interrupted emote clip can never leave the face stuck (the clip's "finished" event may never come). */
+  private exprUntil = 0;
   private exprNow: Record<string, number> = {};
   private nextBlink = 0;
   private blinkUntil = 0;
@@ -478,6 +483,7 @@ export class Avatar3D implements AvatarLike {
     const a = this.actions.get(clip);
     if (name === "celebrate" || name === "dance" || name === "flex") bananaRain(this.host);
     this.expr = EXPRESSIONS[name] ?? EXPRESSIONS[clip] ?? {};
+    this.exprUntil = performance.now() + (a ? a.getClip().duration * 1000 + 600 : EXPR_HOLD_MS);
     if (!a) return;
     this.endGesture();
     a.reset().setEffectiveWeight(1).fadeIn(0.25).play();
@@ -730,6 +736,13 @@ export class Avatar3D implements AvatarLike {
     const standingUp = this.chainStage === "yawn" || this.chainStage === "sit_down";
     const sleepTarget = this.sleeping ? (standingUp ? 0.3 : 1) : 0;
     this.fireBeats();
+    // Expression presets return to neutral on time even if their clip is missing, was cancelled or was cut off
+    // by another clip (the mixer's "finished" event only fires for a clip that plays to its end).
+    if (this.exprUntil && t > this.exprUntil && (!this.emoting || !this.emoting.isRunning())) {
+      this.expr = {};
+      this.exprUntil = 0;
+      if (this.emoting && !this.emoting.isRunning()) { this.emoting = null; this.emoteName = null; }
+    }
     this.sleepAmt += (sleepTarget - this.sleepAmt) * (1 - Math.exp(-(this.sleeping ? 0.8 : 4) * dt));
     if (this.life) {
       this.life.sleepiness = this.sleepAmt;

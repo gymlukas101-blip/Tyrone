@@ -57,6 +57,12 @@ How it's kept up to date:
 - **Playwright video recording needs its own ffmpeg (not installed here); don't run `playwright install`.** Record a CDP screencast (`Page.startScreencast`) and encode the frames with the system `ffmpeg` at their own timestamps. *Why:* the F3 performance recording.
 - **With software WebGL, a still taken right after an event can show the frame before it.** Trust the morph weights read back from the live meshes, or wait about 400 ms. *Why:* the first wink and blink stills looked open while the weights were 1.
 
+- **Renaming items of a Blender collection while iterating it re-sorts it** (some get renamed twice). Iterate over `list(...)`. *Why:* the first retarget found "no clips" because the actions became `v1_v1_*`.
+- **Record app animation under software WebGL with virtual time** (`threejs_body_performance.py`: performance.now/rAF/setTimeout advanced 1/30 s per frame). Otherwise the app's 0.1 s frame clamp halves animation speed below 10 fps. Map screencast frames to virtual time (it also emits UI-repaint frames). *Why:* the first Stage 3A recording ran at 0.45× speed.
+- **Record the app at ≥ 900 px wide.** Narrower viewports switch to the mobile layout and the avatar shrinks to a sliver. *Why:* the 760 px body recording showed only the UI.
+- **The app finds bones by V1's semantic names** (look-at, talk-gesture filter, VFX sockets). Rename other rigs to them rather than special-casing the runtime. *Why:* with Mixamo names the gestures would have silently played nothing.
+- **Calibrate a fidelity camera, inspect the overlay, then lock it.** A tight lens cropped the forearms and looked like a modelling error. *Why:* Phase A's first hero comparison.
+
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
