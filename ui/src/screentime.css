@@ -1,0 +1,58 @@
+/* Phone screen time: the card at the top of the To-do panel and Settings → Phone (ui/src/screentime.ts). */
+.st-card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 2px 0 10px;
+  background: color-mix(in srgb, var(--panel2) 55%, transparent); display: grid; gap: 6px; }
+.st-card.off { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.st-top { display: flex; gap: 10px; align-items: flex-start; }
+.st-icon { font-size: 22px; line-height: 1; padding-top: 2px; }
+.st-main { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.st-total strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.st-facts { font-size: 12px; }
+
+/* today vs goal: one hue for the fill; past the goal the over-state is also said in words (facts line) */
+.st-meter { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
+.st-fill { display: block; height: 100%; border-radius: 4px; background: var(--series-1, #3987e5); }
+.st-meter.over .st-fill { background: var(--warn); }
+
+/* last 7 days: single series, thin bars with a 2px gap, rounded data ends, a dashed goal line */
+.st-week { flex: none; width: 112px; display: grid; gap: 2px; }
+.st-plot { position: relative; height: 40px; display: flex; align-items: flex-end; gap: 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 18%, transparent); }
+.st-bar { flex: 1; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--series-1, #3987e5); }
+.st-bar.today { background: var(--accent); }
+.st-goal-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
+.st-days { display: flex; gap: 2px; font-size: 10px; color: var(--muted); }
+.st-days span { flex: 1; text-align: center; }
+
+.st-apps { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.st-app { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--text); }
+.st-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; padding: 6px 8px;
+  border-radius: 8px; border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.st-goals { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.st-goal { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.st-goal.met .meta { color: var(--ok); }
+.st-group { flex-basis: 100%; display: grid; gap: 3px; padding-left: 22px; font-size: 12px; }
+.st-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; padding: 6px 8px;
+  border-radius: 8px; border: 1px solid var(--line); }
+.st-goal.missed .meta { color: var(--warn); }
+.st-err { color: #ffb3c0; }
+.st-more summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.st-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 13px; }
+.st-in { min-width: 0; width: 9em; padding: 4px 8px; }
+.st-in.short { width: 5.5em; }
+.st-in.wide { width: 100%; max-width: 360px; }
+.st-form select, .st-form input, #set-phone select, #set-phone input.st-in { background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; }
+
+/* Settings → Phone */
+#set-phone .st-steps li { margin: 3px 0; }
+#set-phone .st-btns { flex-wrap: wrap; gap: 6px; }
+#set-phone .st-status { flex: 1; }
+.st-qr { display: inline-block; padding: 6px; background: #fff; border-radius: 8px; margin: 6px 0; }
+.st-qr svg { display: block; width: 220px; max-width: 100%; height: auto; }
+.st-code { max-height: 180px; overflow: auto; font-size: 11px; white-space: pre; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+
+@media (max-width: 520px) {
+  .st-top { flex-wrap: wrap; }
+  .st-week { width: 100%; }
+}

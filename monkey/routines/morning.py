@@ -205,6 +205,7 @@ class Sources:
     canvas_token: Callable[[], dict] | None = None              # {"status": ok|expiring|expired|none, "days": n}
     todos: Callable[[], list[dict]] | None = None               # open to-do items (TodoStore.items("open"))
     todo_suggestions: Callable[[], int] | None = None            # how many to-dos wait in "Suggested from email"
+    screen_time: Callable[[], str | None] | None = None         # "Phone yesterday: 2h 14m ..." (opt-in)
 
 
 def _safe(fn, *a):
@@ -338,6 +339,11 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         st, sl = _safe(src.sleep)
         if st == "ok" and sl:
             sections.append(Section("Sleep", "ok", [str(sl.get("summary") or sl)[:140]]))
+
+    if src.screen_time is not None:
+        st, line = _safe(src.screen_time)
+        if st == "ok" and line:
+            sections.append(Section("Phone", "ok", [str(line)[:160]]))
 
     # top priority + next step, only from verified data
     top, step = "No deadlines in the next 3 days.", "Pick one project task for today."

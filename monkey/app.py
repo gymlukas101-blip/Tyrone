@@ -34,6 +34,7 @@ from .integrations.garmin import GarminHealth
 from .integrations.accounts import EmailAccounts
 from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvider
 from .integrations.outlook_com import OutlookProvider
+from .integrations.screentime import ScreenTime, ScreenTimeError, ScreenTimeStore
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
 from .memory.store import MonkeyMemory
 from .memory.todo_suggestions import SuggestionStore
@@ -130,6 +131,10 @@ class MonkeyApp:
                                                    snooze=self._todo_snooze_from_toast),
                                           icon=resource_path("assets", "monkey.png"))
         self.phone = PhoneNotifier(lambda: self.cfg.settings, keys.get, keys.set)
+        # Phone screen time (opt-in, off by default): daily summaries the owner's phone sends, tied to the to-dos
+        self.screentime = ScreenTime(ScreenTimeStore(self.cfg.db_path), self.todos, lambda: self.cfg.settings,
+                                     secret_get=keys.get, secret_set=keys.set, secret_delete=keys.delete,
+                                     emit=self._emit)
         self._bot_text: list[str] = []
         self._calibration = None
 
@@ -159,7 +164,7 @@ class MonkeyApp:
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin, history=self.history,
-            skills=self._skills(), todos=self.todos,
+            skills=self._skills(), todos=self.todos, screentime=self.screentime,
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
@@ -477,6 +482,7 @@ class MonkeyApp:
             class_notes=lambda: self.memory.read("classes.md") or "",
             todos=lambda: self.todos.items("open"),
             todo_suggestions=self.suggestions.count_pending,
+            screen_time=self.screentime.brief_line if self.screentime.enabled() else None,
         )
 
     # ------------------------------------------------------------------ to-do reminders
@@ -546,6 +552,19 @@ class MonkeyApp:
                 except Exception:  # noqa: BLE001 - a bad row must not stop reminders
                     log.warning("to-do reminder check failed", exc_info=True)
         threading.Thread(target=loop, name="todo-reminders", daemon=True).start()
+
+    def start_screentime(self, every_s: float = 60.0) -> None:
+        """Phone screen time: read new summaries, check goal to-dos, the once-a-day suggestion. Does nothing while
+        the feature is off (the default)."""
+        def loop():
+            while True:
+                try:
+                    self.screentime.tick()
+                except Exception:  # noqa: BLE001 - a bad file or a network hiccup must not stop it
+                    log.warning("screen-time check failed", exc_info=True)
+                if self._todo_stop.wait(every_s):
+                    return
+        threading.Thread(target=loop, name="screentime", daemon=True).start()
 
     # ------------------------------------------------------------------ conversation history (episodes)
     def _history_maintenance(self) -> None:
@@ -2103,6 +2122,87 @@ class Api:
             return {"ok": False, "error": str(exc)}
         self._app.cfg.update(ntfy_server=server)
         return {"ok": True, "server": server}
+    # phone screen time (Settings → Phone and the to-do panel's phone card)
+    def _st_state(self) -> dict:
+        from .integrations.screentime import CRYPTOJS_URL, TASKER_JS, pairing_uri, setup_steps
+
+        st = self._app.screentime
+        p = st.pairing()
+        status = st.status()
+        return {"ok": True, "status": status, "panel": st.panel(),
+                "steps": setup_steps(status["platform"], status["transport"], status["folder"], p),
+                "pair_uri": pairing_uri(p) if p else "", "tasker_js": TASKER_JS, "cryptojs_url": CRYPTOJS_URL}
+
+    def screentime_state(self):
+        try:
+            return self._st_state()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_pair(self):
+        """A new private relay topic and key (the old pairing stops working)."""
+        try:
+            self._app.screentime.pair()
+            return self._st_state()
+        except (ScreenTimeError, keys.KeySaveError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_unpair(self):
+        self._app.screentime.unpair()
+        return self._st_state()
+
+    def screentime_check(self):
+        r = self._app.screentime.check_now()
+        return {**self._st_state(), "check": r}
+
+    def screentime_manual(self, total: str, day: str = "today", pickups=None, top_app: str = "",
+                          top_app_time: str = ""):
+        try:
+            row = self._app.screentime.manual(str(total or "")[:40], str(day or "today")[:12], pickups,
+                                              top_app=str(top_app or "")[:80], top_app_time=str(top_app_time or "")[:20])
+            return {"ok": True, "day": row, "panel": self._app.screentime.panel()}
+        except ScreenTimeError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_import(self, text: str, filename: str = ""):
+        """A JSON/CSV file the owner picked (read in the UI; only its text comes here)."""
+        try:
+            got = self._app.screentime.ingest_text(str(text or ""), "import")
+            return {"ok": True, "days": len(got), "saved": sum(1 for g in got if g["saved"]),
+                    "panel": self._app.screentime.panel()}
+        except ScreenTimeError as exc:
+            return {"ok": False, "error": f"{str(filename)[:80] or 'That file'}: {exc}"}
+
+    def screentime_add_goal(self, kind: str, limit: str, app: str = "", repeat: bool = False, label: str = ""):
+        """kind total | app | group (`app` is then a comma-separated list of apps)."""
+        try:
+            g = self._app.screentime.add_goal(str(kind), str(limit or "")[:20], str(app or "")[:400], bool(repeat),
+                                              label=str(label or "")[:40])
+            return {"ok": True, "goal": g, "panel": self._app.screentime.panel()}
+        except (ScreenTimeError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_group_suggestion(self, accept: bool):
+        """The suggested "Social: TikTok, Instagram, YouTube ≤ 3h" group: accept (a daily goal to-do) or dismiss."""
+        try:
+            if accept:
+                self._app.screentime.accept_suggested_group()
+            else:
+                self._app.screentime.dismiss_suggested_group()
+            return {"ok": True, "panel": self._app.screentime.panel()}
+        except (ScreenTimeError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_stop_goal(self, goal_id: str):
+        try:
+            self._app.screentime.stop_goal(str(goal_id))
+            return {"ok": True, "panel": self._app.screentime.panel()}
+        except ScreenTimeError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def screentime_forget(self):
+        self._app.screentime.forget()
+        return self._st_state()
 
     # garmin
     def get_health(self, day: str = "today"):
@@ -2647,6 +2747,7 @@ def run() -> None:
         app.after_install_tasks()
         app.start_todo_reminders()
         app.start_email_todo_scan()
+        app.start_screentime()
 
         def startup_cleanup():
             from . import lifecycle

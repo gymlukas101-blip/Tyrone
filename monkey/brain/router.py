@@ -85,7 +85,8 @@ RULES: list[tuple[str, re.Pattern]] = [
         r"what should i (?:work on|do next|focus on)|canvas (?:due|to-?do))\b", re.I)),
     ("health", re.compile(
         r"\b(how (?:did|'?d) i sleep|sleep score|my sleep|heart ?rate|resting hr|hrv|body battery|stress level|"
-        r"steps today|garmin)\b", re.I)),
+        r"steps today|garmin|screen ?time|time on my phone|(?:was|been) (?:i )?on my phone|phone (?:usage|time))\b",
+        re.I)),
     ("calendar", re.compile(
         r"\b(calendar|my schedule|on my schedule|what'?s (?:on )?today|next class|when is my|what time is my|"
         r"am i free|meetings? today)\b", re.I)),
@@ -167,7 +168,7 @@ CLASSIFIER_PROMPT = (
     "(one-line stable fact), command (open a site, show pictures/videos, timers), weather, web_lookup (a current "
     "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, todo (the user's own to-do "
     "list: add, list, finish or get help with an item), health (Garmin sleep/heart "
-    "rate), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "
+    "rate, phone screen time), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "
     "read_email, triage (rank emails/events), briefing (overview of the day), study_help (explain or teach a "
     "concept), hard_problem (careful multi-step reasoning, proofs, planning), draft_email, research (multi-source "
     "research or a report), image_request (make a new picture). Difficulty 1-5. needs_web = true if the answer "
