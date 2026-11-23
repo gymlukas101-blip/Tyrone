@@ -26,11 +26,12 @@
   - Clash Royale: "Supercell-Magic", based on Comicraft's You Blockhead ([Comicraft](https://comicraft.com/?p=1082)).
   - Fortnite: Burbank Big Condensed, a commercial font ([Fonts in Use](https://www.fontsinuse.com/uses/54645/fortnite)).
 - **Open-license look-alikes:**
-  - **Lilita One** (SIL OFL 1.1), used here for display text ([Fontsource](https://fontsource.org/fonts/lilita-one/about)).
+  - **Lilita One** (SIL OFL 1.1), used for display text until 2026-11-23 (now Titan One) ([Fontsource](https://fontsource.org/fonts/lilita-one/about)).
   - Also suitable: Luckiest Guy (Apache 2.0), Bungee (OFL), and Anton or Teko (OFL) for condensed headers.
 - **Display text:** white or banana yellow, a thick ink stroke drawn behind the fill (`-webkit-text-stroke` + `paint-order: stroke fill`) and a hard drop shadow.
 - **Fallback:** a multi-direction `text-shadow` outline where `paint-order` isn't supported ([MDN](https://developer.mozilla.org/ja/docs/Web/CSS/paint-order)).
 - **Body text** stays in a plain sans.
+- **Since 2026-11-23:** Titan One replaces Lilita One for display and Nunito replaces Segoe UI for text, app-wide, both bundled (OFL); the display face only at 12 px and up. See `docs/ui/TODO-FONTS.md`. Toy-block 3D icons: `docs/ui/BLOCKY_ICONS.md`.
 
 ## Panels, cards, rarity
 - Panels have an ink border, an 18px radius, an inner top highlight, a 6px drop "lip", and a header strip in the accent color.

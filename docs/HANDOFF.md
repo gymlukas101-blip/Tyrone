@@ -25,6 +25,10 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - Owner: iPhone on iOS 27.2.1, automatic Shortcut route, goal ~3 h/day across TikTok + Instagram + YouTube: the phone card offers "Social: TikTok, Instagram, YouTube ≤ 3h" as a one-click daily goal to-do (app-group goals match names by alias, e.g. YT, IG, youtube.com).
 - Still open: what the Shortcuts *Get App & Website Data* action returns (the parser is lenient). Not tried on the phone or the Dell.
 
+## Blocky look (branch `feature/todo-blocky-ui`, waiting for review)
+- New fonts app-wide (Titan One + Nunito, bundled, OFL) and toy-block 3D icons in the header, mic and to-do panel, baked once on the PC into sprites (no WebGL at rest), a faint block background in the to-do panel, a "done!" pop. Juice and reduced motion respected; skipped on software GL. Prototype gallery of all 63 icons + backgrounds: `ui/prototypes/blocky-icons/`. Details: `docs/ui/BLOCKY_ICONS.md`, `docs/ui/TODO-FONTS.md`.
+- Not tried on the Dell (bake time on its GPU, crispness at its scaling).
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

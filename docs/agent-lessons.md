@@ -32,6 +32,8 @@ How it's kept up to date:
 - **Browser tests:** pin element handles, since locators re-resolve after the DOM changes. Assert invariants, not one sampled reason. Don't race UI timers (undo windows, redraws). *Why:* three flaky tests this way.
 - **Never switch branches or stash while a background test run uses the working tree:** use `git worktree add` for the other branch. *Why:* a stash under a running suite made its results meaningless and cost a rerun.
 - **Read failure names with `pytest -rf`, or run the failing files alone, before saying what broke.** *Why:* a `tail` of the output hid which tests failed.
+- **Prefix the class names of a new visual layer** (`bi-hero`, not `hero`). *Why:* the to-do icon layer's `.hero` and `.due` picked up the Today card's stat-tile and assignment styles (a framed box around the empty-state icon) and only a screenshot caught it.
+- **Container timings are noisy when other sessions run (load average 13–37 on 4 cores was seen):** repeat idle measurements, report the spread, and prefer counts that don't depend on load (running animations, frames over 50 ms). *Why:* the same idle run varied 177–419 ms/s between repeats.
 - **Fake clients in tests take `(content, stop_reason)` script items** (`tests/test_agent_loop.py` `FakeClient`). *Why:* wasted a debug round.
 
 ### Windows specifics

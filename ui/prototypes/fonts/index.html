@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-do Font Pairings</title>
+    <!-- Prototype only (not in the production build). Run `npm run dev` in ui/ and open /prototypes/fonts/.
+         Every font here is bundled from npm (@fontsource*), never a CDN. -->
+    <style>
+      body { overflow: auto !important; background: #062b14 !important; }
+      .page { max-width: 1500px; margin: 0 auto; padding: 18px 16px 60px; color: #f6ffe9; }
+      .page > h1 { font: 400 30px "Titan One", sans-serif; color: #ffd43b; -webkit-text-stroke: 5px #14240f; paint-order: stroke fill;
+        text-shadow: 0 3px 0 #14240f; margin: 0 0 4px; }
+      .page > p { max-width: 900px; color: #c6f0b6; margin: 4px 0 14px; }
+      .pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+      .pair { background: linear-gradient(180deg, #0a3a1c, #062b14); border: 3px solid #14240f; border-radius: 18px; padding: 10px 8px 12px; }
+      .pair > header { display: block; padding: 0 8px 6px; border: 0; box-shadow: none; background: none; }
+      .pair > header b { display: block; font-size: 17px; color: #ffd43b; }
+      .pair > header small { color: #b5e3a8; font: 12px/1.4 system-ui, sans-serif; }
+      .pair .card { animation: none !important; position: relative; }
+      .pair .done-only .todo-body > :not(.asg-list) { display: none; }
+      .pair .done-only { margin-top: 10px; }
+      .specimen { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 8px 0; }
+      .specimen .big { font-size: 30px; color: #fff; -webkit-text-stroke: 5px #14240f; paint-order: stroke fill; text-shadow: 0 3px 0 #14240f; }
+      .specimen .num { font-size: 26px; color: #ffd43b; -webkit-text-stroke: 4px #14240f; paint-order: stroke fill; text-shadow: 0 3px 0 #14240f;
+        font-variant-numeric: tabular-nums; }
+      table.m { width: 100%; border-collapse: collapse; margin: 10px 0 0; font: 12px/1.35 system-ui, sans-serif; }
+      table.m td, table.m th { padding: 3px 6px; border-top: 1px solid #1f6b37; text-align: left; }
+      table.m th { color: #ffd43b; font-weight: 700; }
+      .small-sizes { margin-top: 26px; }
+      .small-sizes h2, .contrast h2, .verdict h2 { font: 400 22px "Titan One", sans-serif; color: #fff; margin: 0 0 8px; }
+      .sz { display: grid; grid-template-columns: 220px 1fr; gap: 4px 12px; align-items: center; padding: 8px 10px; border-radius: 12px; }
+      .sz:nth-child(odd) { background: #0b4321; }
+      .sz .lbl { font: 12px system-ui, sans-serif; color: #b5e3a8; }
+      .sz .lines div { color: #f6ffe9; white-space: nowrap; overflow: hidden; }
+      .sz .lines div.muted { color: #b5e3a8; }
+      .contrast { margin-top: 26px; }
+      .contrast table { border-collapse: collapse; font: 13px/1.4 system-ui, sans-serif; }
+      .contrast td, .contrast th { padding: 4px 10px; border-top: 1px solid #1f6b37; text-align: left; }
+      .contrast th { color: #ffd43b; }
+      .swatch { display: inline-block; padding: 2px 8px; border-radius: 6px; border: 1px solid #14240f; }
+      .verdict { margin-top: 26px; max-width: 980px; color: #e9ffd9; }
+      .chosen { box-shadow: 0 0 0 4px #ffd43b, 0 0 24px #ffd43b66; }
+      .badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: #ffd43b; color: #14240f;
+        font: 700 11px system-ui, sans-serif; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>To-do panel: font pairings</h1>
+      <p>Each column renders the <b>real</b> to-do panel (<code>renderTodos</code> from <code>ui/src/todo.ts</code> with the app's CSS and
+        the panel skin) with only the two font variables swapped. Metrics are measured live in this page; the small-size strips
+        and the rendered-contrast numbers are what the Playwright run captures. Display = headings, buttons, badges, counters.
+        Text = task titles, due dates, steps, inputs.</p>
+      <div class="pairs" id="pairs"></div>
+      <section class="small-sizes"><h2>Task text at 12 / 14 / 16 px</h2><div id="sizes"></div></section>
+      <section class="contrast"><h2>Contrast on the panel's real backgrounds</h2><div id="contrast"></div></section>
+      <section class="verdict"><h2>Pick</h2><div id="verdict"></div></section>
+    </div>
+    <script type="module" src="./fonts.ts"></script>
+  </body>
+</html>

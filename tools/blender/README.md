@@ -14,6 +14,7 @@ with settings that keep the runtime contract (node, morph and clip names, KHR ma
 | `fur_cards.py` | 300 crossed alpha-tested tufts on the silhouette, skinned + shape keys from the body (`--count`, `--seed`) |
 | `contact_sheet.js` | Renders clips with the real app renderer (three.js) into a review sheet |
 | `axis_test.py` | Render-checks the DSL's axis conventions |
+| `blocky_icons.py` | Renders four toy-block icons' "pop" clip as sprite strips for the icon study (`docs/ui/BLOCKY_ICONS.md`, gallery only) |
 
 Rebuild the shipped model (each step edits it in place, in this order):
 
