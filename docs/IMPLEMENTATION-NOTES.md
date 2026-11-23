@@ -569,6 +569,7 @@ The owner asked: "Make reminders appear as windows notifications and on my phone
 - `AutomationService` tracks live tasks from its `automation` events (`task_running`) and calls `MonkeyApp.on_task_running` → `_overlay_visibility`. The Settings/tray switch (`overlay_enabled`) and computer access still win. The tray's "Show companion" appears only during a task.
 - On first show, `desktop_overlay.install` runs again if the hidden window wasn't found at startup, and re-shows the window so the taskbar drops its button (Windows only re-reads `WS_EX_TOOLWINDOW` on hide/show).
 - Tests: `tests/test_companion_visibility.py`.
+
 ## 2026-11-23: several Gmail accounts + Outlook, and "Suggested from email" for the to-do list (branch `feature/todo-email-accounts`)
 
 The owner asked to "add the ability to connect multiple gmail accounts and my outlook account to the task queue" (the to-do list).
