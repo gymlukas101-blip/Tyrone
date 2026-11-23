@@ -24,7 +24,7 @@ for pkg in ("openwakeword", "faster_whisper", "webview", "anthropic", "certifi",
         pass
 
 binaries = []
-for pkg in ("ctranslate2", "onnxruntime", "_sounddevice_data", "sherpa_onnx", "sentencepiece", "velopack"):
+for pkg in ("ctranslate2", "onnxruntime", "_sounddevice_data", "sherpa_onnx", "sentencepiece", "velopack", "winrt"):
     try:
         binaries += collect_dynamic_libs(pkg)
     except Exception:
@@ -38,6 +38,9 @@ hiddenimports = (
     + collect_submodules("playwright")
     + collect_submodules("pywinauto")
     + collect_submodules("websockets")
+    # Windows notifications: windows-toasts on pywinrt (namespace packages, each with its own compiled module)
+    + collect_submodules("windows_toasts")
+    + collect_submodules("winrt")
     + [
         "pyttsx3.drivers", "pyttsx3.drivers.sapi5", "comtypes.client",
         "win32com", "win32com.client", "pythoncom", "pywintypes",

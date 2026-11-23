@@ -33,6 +33,7 @@ replace those models.
 | three.js | MIT |
 | marked | MIT |
 | DOMPurify | MPL-2.0 OR Apache-2.0 |
+| qrcode-generator (phone setup QR code, drawn locally) | MIT |
 | Lilita One font (@fontsource/lilita-one) | SIL Open Font License 1.1 |
 
 ## Downloaded on your PC when you turn them on (not in the installer)

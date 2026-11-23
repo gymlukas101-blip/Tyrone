@@ -2,6 +2,7 @@
 
 export type Importance = "low" | "normal" | "high";
 import type { Todo, TodoSettings, TodoStep } from "./todo";
+import type { PhoneStatus, ReminderChannels } from "./reminders";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
 export interface AppState {
@@ -91,6 +92,12 @@ export interface Api {
   todo_delete(id: string): Promise<{ ok: boolean; error?: string }>;
   todo_restore(id: string): Promise<TodoResult>;
   todo_snooze(id: string, minutes: number): Promise<TodoResult>;
+  // reminders outside the window (Settings → Reminders): Windows notifications + phone (ntfy)
+  reminder_channels(): Promise<ReminderChannels>;
+  windows_test_notification(): Promise<{ ok: boolean; error?: string }>;
+  phone_setup(renew: boolean): Promise<ReminderChannels>;
+  phone_test(): Promise<{ ok: boolean; error?: string; status?: PhoneStatus }>;
+  phone_save_server(url: string): Promise<{ ok: boolean; error?: string; server?: string }>;
   get_health(day: string): Promise<{ ok: boolean; error?: string; health?: any }>;
   garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
   garmin_mfa(code: string): Promise<{ ok: boolean; status?: string; error?: string }>;
@@ -409,6 +416,7 @@ function mockApi(): Api {
     },
     async toggle_assignment() { return { ok: true, synced: true }; },
     ...demoTodoApi(emit, later),
+    ...demoReminderApi(state),
     async get_health() { return { ok: true, health: demoHealth() }; },
     async garmin_login() { return { ok: false, error: "Demo mode" }; },
     async garmin_mfa() { return { ok: false, error: "Demo mode" }; },
@@ -476,6 +484,40 @@ const dueInHours = (hours: number) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(Math.floor(d.getMinutes() / 15) * 15)}`;
 };
 const demoTodoSettings = { reminders: true, speak: false };
+/** Settings → Reminders in demo mode: a fake topic (never a real one) and a fake send. */
+function demoReminderApi(state: AppState) {
+  const ph = { topic: "", status: { state: "idle", at: null, detail: "" } as PhoneStatus };
+  const st = state.settings;
+  const channels = (): ReminderChannels => {
+    const server = st.ntfy_server || "https://ntfy.sh";
+    return {
+      ok: true,
+      windows: { enabled: st.todo_windows_notify !== false, available: true, detail: "Windows notifications are ready (demo)." },
+      phone: { enabled: !!st.todo_phone_notify && !!ph.topic, configured: !!ph.topic, server, topic: ph.topic,
+               subscribe_url: ph.topic ? `${server}/${ph.topic}` : "", has_token: !!state.keys.ntfy_token,
+               show_text: st.todo_phone_show_text !== false, status: { ...ph.status } },
+    };
+  };
+  const mint = () => "monkey-demo-" + Math.random().toString(36).slice(2, 12) + "-not-a-real-topic";
+  return {
+    async reminder_channels() { return channels(); },
+    async windows_test_notification() { return { ok: true }; },
+    async phone_setup(renew: boolean) { if (!ph.topic || renew) ph.topic = mint(); return channels(); },
+    async phone_test() {
+      await new Promise((r) => setTimeout(r, 300));
+      if (!ph.topic) return { ok: false, error: "no phone topic yet: click Set up my phone first" };
+      ph.status = { state: "ok", at: Date.now() / 1000, detail: "sent" };
+      return { ok: true, status: { ...ph.status } };
+    },
+    async phone_save_server(url: string) {
+      const u = (url || "").trim().replace(/\/+$/, "") || "https://ntfy.sh";
+      const full = u.includes("://") ? u : `https://${u}`;
+      if (!/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(full)) return { ok: false, error: "Use https:// for a server on the internet (demo)" };
+      st.ntfy_server = full;
+      return { ok: true, server: full };
+    },
+  };
+}
 const demoNow = () => Date.now() / 1000;
 const demoTodos: Todo[] = [
   { id: "t1", text: "Email Prof. Kim about the lab makeup", notes: "", due: localDue(-1, "17:00"), priority: "high", list: "school",

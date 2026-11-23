@@ -36,6 +36,9 @@ from .integrations.outlook_com import OutlookProvider
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
 from .memory.store import MonkeyMemory
 from .memory.todos import TodoStore, when_text
+from .notify import due_phrase
+from .notify.ntfy import PhoneMessage, PhoneNotifier, normalize_server, reminder_message, valid_topic
+from .notify.wintoast import Handlers, WindowsNotifier
 from .updater import Updater
 
 log = logging.getLogger("monkey")
@@ -119,6 +122,12 @@ class MonkeyApp:
             if self.cfg.settings.history_enabled else None
         self.todos = TodoStore(self.cfg.db_path)     # the user's to-do list (monkey.db, local only)
         self._todo_stop = threading.Event()
+        # Reminders outside the window (Settings → Reminders): Windows notifications and the phone (ntfy).
+        self.win_notify = WindowsNotifier(lambda: self.cfg.settings,
+                                          Handlers(open=self._todo_open_from_toast, done=self._todo_done_from_toast,
+                                                   snooze=self._todo_snooze_from_toast),
+                                          icon=resource_path("assets", "monkey.png"))
+        self.phone = PhoneNotifier(lambda: self.cfg.settings, keys.get, keys.set)
         self._bot_text: list[str] = []
         self._calibration = None
 
@@ -394,25 +403,60 @@ class MonkeyApp:
             todos=lambda: self.todos.items("open"),
         )
 
-    # ------------------------------------------------------------------ to-do reminders (in the app only)
+    # ------------------------------------------------------------------ to-do reminders
     def todo_tick(self, now: datetime | None = None) -> list[dict]:
-        """One reminder check: a nudge on screen (and, if turned on, one spoken line) for items whose due time is
-        coming up. Never a Windows or phone notification: those would need the owner's OK first."""
+        """One reminder check for items whose due time is coming up, once per due time (again only after a snooze
+        ends). Each channel is its own setting: the note in Monkey's window (+ an optional spoken line), a Windows
+        notification, the phone (ntfy, queued: this never waits on the network). The owner approved the two
+        outward channels; both stay off unless their settings are on."""
         st = self.cfg.settings
-        if not st.todo_reminders:
+        win = getattr(self, "win_notify", None)
+        phone = getattr(self, "phone", None)
+        in_app = bool(st.todo_reminders)
+        use_win = win is not None and win.enabled()
+        use_phone = phone is not None and phone.enabled()
+        if not (in_app or use_win or use_phone):
             return []
         now = now or datetime.now()
         fired = []
         for item in self.todos.due_reminders(now, max(0, int(st.todo_reminder_lead_min or 0))):
             self.todos.mark_reminded(item["id"])
-            self._emit("todo_reminder", {"item": item})
+            if in_app:
+                self._emit("todo_reminder", {"item": item})
+            if use_win:
+                win.notify(item, now, in_app=in_app)
+            if use_phone:
+                phone.submit(reminder_message(item["text"], due_phrase(item, now), high=item.get("priority") == "high",
+                                              show_text=bool(getattr(st, "todo_phone_show_text", True))))
             fired.append(item)
         speaking = self.speaker is not None and getattr(self.speaker, "speaking", False)
-        if fired and st.todo_speak_reminders and not speaking and not self._listening and self._agent_state == "idle":
+        if fired and in_app and st.todo_speak_reminders and not speaking and not self._listening \
+                and self._agent_state == "idle":
             first = fired[0]
             more = f" And {len(fired) - 1} more on your list." if len(fired) > 1 else ""
             self._say(f"Heads up: {first['text']}, {when_text(first['due'], now).replace('overdue since', 'was due')}.{more}")
         return fired
+
+    # Clicks on a Windows notification (they arrive on a WinRT thread): the in-app reminder's own actions.
+    def _todo_open_from_toast(self, item_id: str) -> None:
+        w = getattr(self, "_main_window", None)
+        if w is not None:
+            _raise_window(w)
+        self._emit("todo_open", {"id": item_id})
+
+    def _todo_done_from_toast(self, item_id: str) -> None:
+        try:
+            item = self.todos.complete(item_id)
+        except KeyError:
+            return                                   # deleted in the meantime
+        self._emit("todo_changed", {"action": "done", "item": item})
+
+    def _todo_snooze_from_toast(self, item_id: str, minutes: int) -> None:
+        try:
+            item = self.todos.snooze(item_id, minutes)
+        except KeyError:
+            return
+        self._emit("todo_changed", {"action": "snoozed", "item": item})
 
     def start_todo_reminders(self, every_s: float = 30.0) -> None:
         def loop():
@@ -989,6 +1033,8 @@ class Api:
                 validate_client(value)
             except ValueError as exc:
                 return {"ok": False, "error": str(exc)}
+        if name == "ntfy_topic" and not valid_topic(value):
+            return {"ok": False, "error": "A phone topic is 20 to 64 letters, digits, - or _ (long, so nobody can guess it)."}
         if name == "calendar_ics" and not ICSCalendar(lambda: value).urls():
             return {"ok": False, "error": "Paste the calendar's https:// (or webcal://) iCal link."}
         try:
@@ -1121,6 +1167,16 @@ class Api:
         allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
         if allowed.get("automation_browser", "chrome") not in ("chrome", "edge", "my_chrome"):
             allowed.pop("automation_browser")
+        if "ntfy_server" in allowed:
+            try:
+                allowed["ntfy_server"] = normalize_server(str(allowed["ntfy_server"] or ""))
+            except ValueError:
+                allowed.pop("ntfy_server")             # phone_save_server explains why; never save a bad address
+        if allowed.get("todo_phone_notify") is True and getattr(self._app, "phone", None) is not None:
+            try:
+                self._app.phone.ensure_topic()         # turning it on sets it up
+            except Exception as exc:  # noqa: BLE001 - Settings shows "not set up"; the switch still saves
+                log.warning("phone topic not saved: %s", type(exc).__name__)
         if "fish_voice_id" in allowed:
             from .audio.tts import normalize_voice_id
 
@@ -1785,10 +1841,17 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
+    def _retract_toast(self, item_id: str) -> None:
+        n = getattr(self._app, "win_notify", None)
+        if n is not None:
+            n.retract(str(item_id))
+
     def todo_update(self, item_id: str, changes: dict):
         keep = ("text", "notes", "due", "priority", "list", "status", "steps")
         try:
             got = self._app.todos.update(str(item_id), **{k: v for k, v in (changes or {}).items() if k in keep})
+            if got["status"] == "done" or "due" in (changes or {}):
+                self._retract_toast(item_id)          # handled in the app: clear its Windows notification too
             return {"ok": True, "item": got}
         except KeyError:
             return {"ok": False, "error": "That to-do is gone (deleted somewhere else?). Reopen the list."}
@@ -1798,6 +1861,7 @@ class Api:
     def todo_delete(self, item_id: str):
         try:
             self._app.todos.delete(str(item_id))
+            self._retract_toast(item_id)
             return {"ok": True}
         except KeyError:
             return {"ok": False, "error": "That to-do is already gone."}
@@ -1810,9 +1874,51 @@ class Api:
 
     def todo_snooze(self, item_id: str, minutes: int = 10):
         try:
-            return {"ok": True, "item": self._app.todos.snooze(str(item_id), int(minutes or 10))}
+            got = self._app.todos.snooze(str(item_id), int(minutes or 10))
+            self._retract_toast(item_id)
+            return {"ok": True, "item": got}
         except (KeyError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
+
+    # reminders outside the window (Settings → Reminders)
+    def reminder_channels(self):
+        """Windows + phone status for Settings. Includes the phone topic, so the owner can subscribe to it."""
+        a = self._app
+        try:
+            return {"ok": True, "windows": a.win_notify.describe(), "phone": a.phone.describe()}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("reminder settings failed: %s", type(exc).__name__)
+            return {"ok": False, "error": "Couldn't read the reminder settings."}
+
+    def windows_test_notification(self):
+        try:
+            return self._app.win_notify.test()
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"Couldn't show it ({type(exc).__name__})."}
+
+    def phone_setup(self, renew: bool = False):
+        """Make the random phone topic (saved encrypted), or a new one when renew=True."""
+        try:
+            self._app.phone.ensure_topic(renew=bool(renew))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("phone setup failed: %s", type(exc).__name__)
+            return {"ok": False, "error": f"Couldn't save the phone topic ({type(exc).__name__})."}
+        return self.reminder_channels()
+
+    def phone_test(self):
+        """Settings → Send test notification. Blocks this API thread (not the UI) for at most ~11 s."""
+        msg = PhoneMessage("Monkey reminder", "Test from Monkey: reminders will show up here.", high=False,
+                           tags=["white_check_mark"])
+        res = self._app.phone.send_now(msg)
+        return {"ok": res.ok, "error": "" if res.ok else res.detail, "status": dict(self._app.phone.status)}
+
+    def phone_save_server(self, url: str):
+        try:
+            server = normalize_server(str(url or ""))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._app.cfg.update(ntfy_server=server)
+        return {"ok": True, "server": server}
 
     # garmin
     def get_health(self, day: str = "today"):
@@ -2264,15 +2370,20 @@ def _listen_for_show(window) -> None:
 
     def wait():
         while kernel32.WaitForSingleObject(ev, 0xFFFFFFFF) == 0:
-            try:
-                window.show()
-                window.restore()
-                window.on_top = True                                  # pop above other windows, then behave normally
-                window.on_top = False
-            except Exception:  # noqa: BLE001
-                log.exception("couldn't show the window")
+            _raise_window(window)
 
     threading.Thread(target=wait, name="show-window", daemon=True).start()
+
+
+def _raise_window(window) -> None:
+    """Show Monkey's window (also from the tray) and pop it above other windows, then let it behave normally."""
+    try:
+        window.show()
+        window.restore()
+        window.on_top = True
+        window.on_top = False
+    except Exception:  # noqa: BLE001
+        log.exception("couldn't show the window")
 
 
 def run() -> None:
@@ -2468,11 +2579,24 @@ def selftest() -> int:
             problems.append(f"cleanup scan: {exc}")
 
         problems += _selftest_secrets(Path(tmp))
+        if sys.platform == "win32":                     # Windows notifications: winrt bundled and the toaster loads
+            from .notify.wintoast import WinToastBackend
+
+            toaster = WinToastBackend()
+            if not toaster.available:
+                problems.append(f"windows notifications: {toaster.reason}")
+            else:
+                try:
+                    toaster.build("selftest", ["Selftest", "due now"], high=False, expires=None,
+                                  buttons=[("Done", "done:selftest")], on_click=lambda _a: None)
+                except Exception as exc:  # noqa: BLE001
+                    problems.append(f"windows notifications: building a toast failed ({exc})")
 
         if find_model(resource_path("wakeword")) is None:
             problems.append("Hey Monkey keyword model not bundled")
         for mod in ("webview", "sounddevice", "openwakeword", "faster_whisper", "keyboard", "pystray", "playwright.sync_api",
-                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack", "psutil", "send2trash"):
+                    "googleapiclient", "google_auth_oauthlib", "garminconnect", "sherpa_onnx", "sentencepiece", "velopack", "psutil", "send2trash",
+                    "windows_toasts", "winrt.windows.ui.notifications"):
             try:
                 __import__(mod)
             except Exception as exc:  # noqa: BLE001

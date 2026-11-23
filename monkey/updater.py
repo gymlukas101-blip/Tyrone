@@ -157,11 +157,22 @@ class Updater:
 FIRST_RUN = threading.Event()   # set when Velopack says this is the first launch after installing
 
 
+def _forget_notification_identity() -> None:
+    """Uninstall: remove the per-user registry entry that names Monkey's Windows notifications (quick, never fails)."""
+    try:
+        from .notify.wintoast import unregister_aumid
+
+        unregister_aumid()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def velopack_startup() -> None:
     """Must run first thing in the frozen app (handles install/update/uninstall hooks)."""
     try:
         import velopack
 
-        velopack.App().on_first_run(lambda *_: FIRST_RUN.set()).run()
+        velopack.App().on_first_run(lambda *_: FIRST_RUN.set()) \
+            .on_before_uninstall_fast_callback(lambda *_: _forget_notification_identity()).run()
     except Exception as exc:  # noqa: BLE001 - dev runs / missing package
         log.debug("velopack startup skipped: %s", exc)

@@ -1,6 +1,6 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-20. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
+Last updated 2026-11-23. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
 
 **Not yet tried on the Dell:** Voice 2.0 (early commit, fast voice routing, soft ack; setting `early_commit` = false restores the old endpointing), hybrid computer use (needs a live model run, `docs/research/COMPUTER-USE-QUALITY.md` §7), the new face and lip sync, and the sounds.
 
@@ -8,7 +8,11 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 
 ## To-do list (branch `feature/todo-list`, waiting for review)
 - 📝 To-do panel and brain tools (`add_todo`, `list_todos`, `update_todo`, `delete_todo`): the owner's own to-do list in `monkey.db`, with quick add ("call the dentist tomorrow 5pm"), sub-steps, Undo, Monkey's "help me with this" (steps, then existing tools only), in-app reminders and a To-do section in the morning brief. Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23).
-- Not tried on the Dell. Open question for the owner: should reminders also show as Windows notifications? (Not built: outward-facing.)
+- Not tried on the Dell.
+
+## Reminder notifications (branch `feature/todo-notifications`, waiting for review)
+- The owner asked for reminders "as windows notifications and on my phone too". Settings → **Reminders**: in-app note (as before), Windows notifications (default on; Done / Snooze 10 min buttons, a click opens the To-do panel, works with the window in the tray) and the phone via ntfy (default off; "Set up my phone" makes a random topic kept in secrets.dat, QR code, test button, "show the to-do on my phone" privacy switch, own server/token optional). Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, reminder notifications).
+- Not tried on the Dell: the real toast, its buttons and a click from Action Center, and a real ntfy delivery. On the Dell: Settings → Reminders → Send a test Windows notification; Set up my phone → subscribe in the ntfy app → Send test notification.
 
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:

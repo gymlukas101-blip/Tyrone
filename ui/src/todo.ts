@@ -12,7 +12,7 @@ export interface Todo {
   status: "open" | "done"; steps: TodoStep[]; source: string; created: number; done_at: number | null;
 }
 export interface TodoSettings { reminders: boolean; speak: boolean }
-interface Hooks { celebrate: () => void; ask: (text: string) => void }
+interface Hooks { celebrate: () => void; ask: (text: string) => void; settings?: () => void }
 
 type Tab = "open" | "overdue" | "done";
 let cur: {
@@ -289,7 +289,9 @@ function draw(freshId?: string) {
       h("label", {}, h("input", { type: "checkbox", checked: cur.settings.reminders, onchange: (e: Event) => void setting("todo_reminders", (e.target as HTMLInputElement).checked) }),
         " Remind me in Monkey when something's due"),
       h("label", {}, h("input", { type: "checkbox", checked: cur.settings.speak, onchange: (e: Event) => void setting("todo_speak_reminders", (e.target as HTMLInputElement).checked) }),
-        " Say reminders out loud")),
+        " Say reminders out loud"),
+      cur.hooks.settings ? h("button", { type: "button", class: "linkish", id: "todoRemindSettings", onclick: () => cur?.hooks.settings?.() },
+        "Windows & phone notifications…") : null),
   );
   const ed = root.querySelector<HTMLInputElement>(".todo-edit .todo-text");
   if (ed && document.activeElement?.closest(".todo-edit") == null) ed.focus();
@@ -321,7 +323,8 @@ export async function refreshTodos(freshId?: string) {
   if (!cur.editing) draw(freshId);            // never wipe what the user is typing in the editor; it redraws on close
 }
 
-/** An in-app reminder: a toast with Done / Snooze (never a Windows notification). */
+/** An in-app reminder: a note in Monkey's window with Done / Snooze (Windows and phone notifications are sent by
+ *  the Python side, Settings → Reminders). */
 export function reminderToast(api: Api, t: Todo, onDone: () => void) {
   document.querySelectorAll(`.todo-remind[data-id="${CSS.escape(t.id)}"]`).forEach((n) => n.remove());
   const when = t.due ? (isOverdue(t.due) ? `was due ${dueLabel(t.due)}` : `due ${dueLabel(t.due)}`) : "";

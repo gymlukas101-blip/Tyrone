@@ -539,3 +539,27 @@ The owner asked for "a to do list UI that can remember everything I need to do a
 **Tests:** `tests/test_todos.py` (store, parsing, gates, fake-client agent loop, reminders, API, brief, routing), `tests/test_todo_ui.py` (Playwright in `?demo&svg`, added to the CI browser job), `ui/test/todoparse.test.ts`.
 
 **Open:** not tried on the Dell. Windows notifications for reminders are a question for the owner.
+
+## 2026-11-23: reminders as Windows notifications and on the phone (branch `feature/todo-notifications`)
+
+The owner asked: "Make reminders appear as windows notifications and on my phone too." That is the owner's OK for these two outward channels (CLAUDE.md: ask first). Both are settings in **Settings → Reminders**; nothing else became outward-facing.
+
+**Tick:** `MonkeyApp.todo_tick` still decides once per due time (`TodoStore.due_reminders` + `mark_reminded`; a snoozed item comes back once when its snooze ends). Each channel has its own switch: `todo_reminders` (note in the window, + `todo_speak_reminders`), `todo_windows_notify` (default **on**), `todo_phone_notify` (default **off**, needs setup). The tick runs only if at least one channel is on.
+
+**Windows (`monkey/notify/wintoast.py`):**
+- Library: `windows-toasts` 1.3.1 (MIT, WinRT through `winrt-*` 3.2.1 wheels). Pure Python on prebuilt WinRT wheels, `InteractableWindowsToaster` supports buttons and click callbacks. Pinned `<1.4`: 1.4.0 (winrt 4.x, COM activator) came out the day this was built. Alternatives: `winotify` (last release 2022; starts PowerShell for every toast, button clicks only open URLs or its own protocol handler, no callback into Python) and `win11toast` (also WinRT, but pulls in a dozen winrt packages for OCR/media/speech features Monkey doesn't need).
+- Identity: registers AUMID `velopack.Monkey` (Velopack's default process ID) under `HKCU\Software\Classes\AppUserModelId` with DisplayName "Monkey" and the icon. This works for an unpackaged PyInstaller/Velopack app without a shortcut AUMID. No COM activator: clicks reach Monkey while he runs (window hidden in the tray included); a toast from before a restart opens nothing.
+- Toast: line 1 the item, line 2 "Reminder · due today 5:00 PM (· high priority)", buttons Done and Snooze 10 min (the in-app handlers: `todos.complete` / `todos.snooze` + a `todo_changed` event), the body opens the window and the To-do panel (`todo_open` event). High-priority items use the Reminder scenario (stays until handled). Expires after 12 h.
+- No double reminder: skipped when the in-app note is on and Monkey's window is the foreground window (`GetForegroundWindow` belongs to our process). Done/snooze/delete in the app removes the toast from Action Center.
+- Not Windows (Linux CI): `UnavailableBackend`, status "only work on Windows", nothing shown. Bundling: `monkey.spec` collects `windows_toasts` and `winrt`; the exe selftest imports them and builds a toast.
+
+**Phone (`monkey/notify/ntfy.py`):** ntfy JSON publish to the server root (the topic is in the body, not the URL), `Title: Monkey reminder`, priority 4 for high items (else 3), tag ⏰.
+- Topic `monkey-` + 32 random URL-safe characters, made by "Set up my phone", saved with `keys.set("ntfy_topic")` (secrets.dat, DPAPI), never in settings.json. Optional access token `ntfy_token` through the same key field pattern. "New topic" replaces it.
+- Server `ntfy_server` (default https://ntfy.sh, self-hosted allowed; plain http only for local/home-network hosts).
+- Privacy toggle `todo_phone_show_text` (default on, explained in the UI): off sends only "You have a reminder".
+- Every request: 5 s timeout, one retry for network errors/5xx/429 (no retry on other 4xx). Reminders go through one background worker; the tick never waits. Failures set a quiet status line in Settings; logs carry only the error class or HTTP code, never topic, token or text.
+- Setup UI: install ntfy, subscribe to the shown topic (Copy), or scan a QR code drawn locally (`qrcode-generator`, MIT), "Send test notification".
+
+**Tests:** `tests/test_reminder_notify.py` (fake toast backend: once per due, buttons, snooze, retract, focus skip, failures, non-Windows no-op, a Windows-only real-library check; fake ntfy HTTP: request shape, priority, privacy, timeout, retry once, no secrets in logs, background queue; settings persistence with the real `keys` store), `tests/test_reminder_settings_ui.py` (Playwright, `?demo&svg`).
+
+**Not verifiable in the cloud container:** a real toast, its buttons and clicks from Action Center, and a real ntfy delivery. Try on the Dell: Settings → Reminders → Send a test Windows notification, then Set up my phone → Send test notification.

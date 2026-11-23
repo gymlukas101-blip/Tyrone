@@ -652,3 +652,16 @@ body.today-open #cards, body.today-open #log { display: none; }
 .todo-remind { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; bottom: 64px; border-color: var(--accent);
   box-shadow: 0 0 0 2px #ffd60a55, 0 6px 24px rgba(0, 0, 0, .35); }
 @media (prefers-reduced-motion: reduce) { .todo-row.fresh { animation: none; } }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* ---------------- Settings → Reminders (Windows + phone notifications) */
+.settings .remind .field.toggle { flex-wrap: nowrap; align-items: flex-start; }
+.settings .remind .field.toggle input[type="checkbox"] { flex: none; min-width: 0; margin-top: 2px; }
+.settings .remind .field.toggle > span { min-width: 0; color: var(--text); }
+.settings .remind h5 { margin: 14px 0 4px; font-size: 14px; }
+.settings .remind .win, .settings .remind .phone { margin-top: 8px; }
+.settings .remind ol.steps { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 6px; }
+.settings .remind code.topic { user-select: all; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 1px 6px; word-break: break-all; color: var(--text); }
+.settings .remind .qr { width: 148px; max-width: 60vw; margin-top: 6px; padding: 6px; background: #fff; border-radius: 8px; line-height: 0; }
+.settings .remind .qr svg { width: 100%; height: auto; display: block; }

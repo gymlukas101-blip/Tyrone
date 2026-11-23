@@ -8,6 +8,7 @@ import { type Api, type AppState, type Brief, type Importance, waitForApi } from
 import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
 import { renderAssignments, markChecked, undoToast } from "./assignments";
 import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
+import { reminderSettings } from "./reminders";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
@@ -489,6 +490,7 @@ async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
   renderTodos(c, api, { items: data.items ?? [], settings: data.settings }, {
     celebrate: () => avatar.emote("celebrate"),
     ask: (text) => { addMsg("sys", "🐒 Asked Monkey for help with a to-do"); void api.send_text(text, importance); },
+    settings: () => void openSettings("reminders"),
   }, tab ?? (data.filter === "overdue" || data.filter === "done" ? data.filter : "open"));
   return c;
 }
@@ -569,6 +571,11 @@ function onEvent(name: string, p: any) {
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
     case "todos": void todoCard(p); break;
     case "todo_changed":
+      // Done or snoozed from a Windows notification: its note in the window is handled too
+      if ((p.action === "done" || p.action === "snoozed") && p.item) {
+        document.querySelectorAll(`.todo-remind[data-id="${CSS.escape(p.item.id)}"]`).forEach((n) => n.remove());
+      }
+      if (p.action === "snoozed" && p.item) toast(`⏰ Snoozed for 10 minutes: ${p.item.text}`);
       if (p.action === "added" && p.item) toast(`✓ Added to your to-do list: ${p.item.text}`);
       if (p.action === "done" && p.item) { toast(`✓ Done: ${p.item.text}`); avatar.emote("celebrate"); }
       if (p.action === "deleted" && p.item) {
@@ -579,6 +586,7 @@ function onEvent(name: string, p: any) {
       }
       if (todoOpen()) void refreshTodos(p.action === "added" ? p.item?.id : undefined);
       break;
+    case "todo_open": void todoCard(); break;           // a Windows notification was clicked
     case "todo_reminder":
       if (p.item) {
         reminderToast(api, p.item, () => avatar.emote("celebrate"));
@@ -1154,6 +1162,7 @@ async function openSettings(section?: string) {
             h("label", { class: "field" }, auto, h("span", {}, "Download updates automatically")));
         })()),
       briefSettings(s),
+      reminderSettings(api, s, (st) => { appState = st; }),
       h("section", {}, h("h4", {}, "Memory"),
         h("p", { class: "help" }, "Everything Monkey remembers about you stays on this PC. You can see it, fix it or delete it here."),
         memoryInspector(),
@@ -1181,7 +1190,7 @@ async function openSettings(section?: string) {
 
 /** Settings layout: the everyday things first, developer things folded away under Advanced, and a menu to jump around. */
 const SETTINGS_SECTIONS: [string, string][] = [["start", "Start"], ["accounts", "Accounts"], ["sound", "Voice & sound"],
-  ["brief", "Morning brief"], ["memory", "Memory"], ["feel", "Look & mic"], ["advanced", "Advanced"]];
+  ["brief", "Morning brief"], ["reminders", "Reminders"], ["memory", "Memory"], ["feel", "Look & mic"], ["advanced", "Advanced"]];
 function organizeSettings(dlg: HTMLDialogElement) {
   const body = dlg.querySelector<HTMLElement>(".body")!;
   const sec = (title: string) => [...body.querySelectorAll<HTMLElement>(":scope > section")]
@@ -1192,6 +1201,7 @@ function organizeSettings(dlg: HTMLDialogElement) {
   const health = sec("Is everything working?"), you = sec("You"), keysSec = sec("API keys"), fishSec = sec("Monkey's voice (Fish Audio)");
   const mic = sec("Wake word & mic"), accounts = sec("Accounts"), garmin = sec("Garmin"), brain = sec("Brain & budget");
   const look = sec("Look & feel"), sound = sec("Sound"), images = sec("Images & updates"), brief = sec("Morning brief"), memory = sec("Memory");
+  const reminders = sec("Reminders");
   // Start: name + the two keys that matter (Claude required, Fish optional)
   if (health) health.id = "set-check";
   if (you) {
@@ -1229,7 +1239,7 @@ function organizeSettings(dlg: HTMLDialogElement) {
     return h("label", { class: "field toggle" }, cb, h("span", {}, "Show technical details (AI model per answer, memory file names, Avatar Lab)"));
   })()));
   // Order
-  const order = [health, you, accounts, sound, brief, memory, look].filter(Boolean) as HTMLElement[];
+  const order = [health, you, accounts, sound, brief, reminders, memory, look].filter(Boolean) as HTMLElement[];
   const tail = [...body.children].filter((x) => !order.includes(x as HTMLElement) && x !== adv);
   body.replaceChildren(...order, adv, ...tail.filter((x) => x.tagName !== "SECTION"));
   const nav = h("nav", { class: "settingsnav" }, ...SETTINGS_SECTIONS.map(([id, label]) =>

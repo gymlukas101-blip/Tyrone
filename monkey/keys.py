@@ -31,6 +31,8 @@ KNOWN_KEYS = {
     "export_password": "MONKEY_EXPORT_PASSWORD",
     "calendar_ics": "MONKEY_CALENDAR_ICS",     # private iCal link(s), one per line (Google "secret address")
     "chrome_bridge": "MONKEY_CHROME_BRIDGE",   # pairing token shared with the Monkey for Chrome extension
+    "ntfy_topic": "MONKEY_NTFY_TOPIC",         # phone reminders: the random ntfy topic (works like a password)
+    "ntfy_token": "MONKEY_NTFY_TOKEN",         # phone reminders: access token for a protected ntfy server
 }
 # Shown in Settings as "••••abcd" so you can tell which key is saved. Not for JSON blobs or passwords.
 HINTABLE = {"anthropic", "fish", "deepgram", "youtube", "openai", "brave", "canvas_token"}
