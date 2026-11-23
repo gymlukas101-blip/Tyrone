@@ -17,7 +17,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-REGION_OF = [("head", "head"), ("neck", "head"), ("eye", "head"), ("shoulder", "shoulders"), ("upper_arm", "upper_arms"),
+REGION_OF = [("head", "head"), ("neck", "head"), ("eye", "head"), ("brow", "head"), ("shoulder", "shoulders"), ("upper_arm", "upper_arms"),
              ("forearm", "forearms"), ("hand", "hands"), ("f1", "hands"), ("f2", "hands"), ("f3", "hands"),
              ("f4", "hands"), ("thumb", "hands"), ("chest", "torso"), ("spine", "torso"), ("hips", "hips"),
              ("thigh", "legs"), ("shin", "legs"), ("foot", "feet"), ("toe", "feet")]

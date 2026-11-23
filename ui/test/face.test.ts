@@ -105,3 +105,36 @@ describe("performance director", () => {
     expect(d.update(0.05).browUp_L).toBeGreaterThan(0);
   });
 });
+
+describe("brows (V2 per-side morphs)", () => {
+  it("a loud onset while talking lifts the brows briefly, rate-limited, never while silent", () => {
+    const m = new FaceMixer();
+    let out = run(m, { ...base, talking: true, level: 0.05 }, 1.0, 60);   // settle the slow follower
+    expect(out.browsUp ?? 0).toBeLessThan(0.01);
+    out = m.update({ ...base, talking: true, level: 0.7 }, 1 / 60);       // a stressed syllable
+    expect(out.browsUp).toBeGreaterThan(0.15);
+    expect((out.browInnerUp_L ?? 0) + (out.browOuterUp_L ?? 0) + (out.browInnerUp_R ?? 0)).toBeGreaterThan(0.2);
+    const n = m.beat.n;
+    run(m, { ...base, talking: true, level: 0.05 }, 0.1, 60);
+    m.update({ ...base, talking: true, level: 0.8 }, 1 / 60);              // too soon: no second beat
+    expect(m.beat.n).toBe(n);
+    out = run(m, { ...base, talking: false, level: 0.9 }, 0.05, 60);       // stops with speech
+    expect(out.browsUp ?? 0).toBe(0);
+  });
+
+  it("new cues use the per-side brows and keep the shared keys for older models", () => {
+    expect(cueFor("Uh-oh, that essay is due tomorrow.")).toBe("worried");
+    expect(cueFor("Okay, let's do this.")).toBe("focused");
+    const d = new PerformanceDirector();
+    d.setState("speaking");
+    d.play("skeptical");
+    let s: Record<string, number> = {};
+    for (let i = 0; i < 30; i++) s = d.update(1 / 60);
+    expect(s.browUp_L).toBeGreaterThan(0.5);                                // V1 key still there
+    expect(s.browDown_R).toBeGreaterThan(0.3);                              // V2: the other brow drops (asymmetry)
+    d.play("worried");
+    for (let i = 0; i < 30; i++) s = d.update(1 / 60);
+    expect(s.browInnerUp_L).toBeGreaterThan(0.4);
+    expect(s.browSqueeze).toBeGreaterThan(0.3);
+  });
+});

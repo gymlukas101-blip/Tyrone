@@ -89,7 +89,23 @@ def test_retarget_names_satisfy_the_app_bone_lookups():
     avatar = (ROOT / "ui" / "src" / "avatar3d.ts").read_text()
     upper = re.search(r"const UPPER = /(.+?)/;", avatar).group(1)
     key = lambda n: re.sub(r"[\[\].:/\s]", "", n)            # GLTFLoader name sanitising (life.ts `key`)
-    for n in ("spine", "chest", "neck", "head", "shoulder.L", "upper_arm.R", "forearm.L", "hand.R"):
+    for n in ("spine", "chest", "neck", "head", "shoulder.L", "upper_arm.R", "forearm.L", "hand.R", "f4.02.L", "thumb.01.L"):
         assert re.match(upper, key(n)), n
     assert not re.match(upper, key("thigh.L"))
     assert "exprUntil" in avatar and "EXPR_HOLD_MS" in avatar  # clip-independent expression cleanup
+
+
+def test_phase_c_names_match_the_app():
+    """The Phase C builder's brow morphs / corrective must be the names the app's acting and driver use."""
+    pc = (ROOT / "tools" / "character_v2" / "phase_c.py").read_text()
+    acting = (ROOT / "ui" / "src" / "avatar" / "acting.ts").read_text()
+    face = (ROOT / "ui" / "src" / "avatar" / "face.ts").read_text()
+    corr = (ROOT / "ui" / "src" / "avatar" / "correctives.ts").read_text()
+    for m in ("browInnerUp_L", "browInnerUp_R", "browOuterUp_L", "browOuterUp_R", "browDown_L", "browDown_R", "browSqueeze"):
+        assert f'"{m}"' in pc, m                                   # built in Blender
+        assert m in acting or m in face, m                         # used by the app's acting
+    assert '"elbowBend_L"' in pc and '"elbowBend_L"' in corr
+    assert re.search(r'bones: \["upper_armL", "forearmL", "handL"\]', corr)   # GLTFLoader-sanitised V1 names
+    assert 'f"brow.{n}"' in pc                                    # brow bones for clip animation
+    from_deg, to_deg = map(float, re.search(r'"elbowBend_L".*?from: (\d+), to: (\d+)', corr).groups())
+    assert from_deg < 120 <= to_deg + 1e-9                        # driven up to the bend it was solved at

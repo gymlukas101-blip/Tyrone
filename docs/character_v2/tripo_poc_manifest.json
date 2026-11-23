@@ -179,5 +179,72 @@
    "tripo_face_F3.blend": "295d1c8d43715db21ebd6b7a6808cf782f6db680644d3c2fd1e22d7dbfa9db02",
    "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
   }
+ },
+ "phaseC_C1": {
+  "date": "2026-11-23",
+  "builder": "bpy python tools/character_v2/phase_c.py -- character_v2_workspace/tripo_body/tripo_body_B2.blend character_v2_workspace/phase_c --name tripo_phaseC_C1 (PHASEC_INSET 0.93, PHASEC_RIGIDITY 1.0 defaults)",
+  "evidence": [
+   "tools/character_v2/phase_c_evidence.py",
+   "tools/character_v2/phase_c_sheets.py",
+   "tools/character_v2/threejs_hand_check.py",
+   "tools/character_v2/threejs_body_performance.py"
+  ],
+  "outputs": {
+   "tripo_phaseC_C1.blend": {
+    "sha256": "1ba43098c6beeaa6bc7170ce6a5edd8f92637a0cb2ec1c99bb5d942a05befe52",
+    "bytes": 7633151
+   },
+   "tripo_phaseC_C1.glb": {
+    "sha256": "ec58ad871ad7a405214745a33479d546daa757c2c8e1a9ef7509273bb1c27453",
+    "bytes": 7401488,
+    "new_morphs": [
+     "browInnerUp_L",
+     "browInnerUp_R",
+     "browOuterUp_L",
+     "browOuterUp_R",
+     "browDown_L",
+     "browDown_R",
+     "browSqueeze",
+     "elbowBend_L"
+    ],
+    "new_bones": [
+     "brow.L",
+     "brow.R"
+    ],
+    "clips": 14,
+    "draw_calls": 44,
+    "vertices": 29712
+   },
+   "body_performance.mp4": {
+    "sha256": "c538b719b1ea19ee7c43e203502d02dd81419baded10756a6ccceab3293192bd",
+    "seconds": 20.9
+   }
+  },
+  "fidelity_vs_hero_B": {
+   "overall": [
+    0.8858,
+    0.8893
+   ],
+   "forearms": [
+    0.788,
+    0.836
+   ],
+   "hands": [
+    0.832,
+    0.904
+   ],
+   "upper_arms": [
+    0.937,
+    0.931
+   ]
+  },
+  "references_unchanged": {
+   "MonkeyTripo.glb": "8f990a331882e3106c321fb3bc7580f190931854383fe1863543df940b49d107",
+   "tripo_face_F3.blend": "295d1c8d43715db21ebd6b7a6808cf782f6db680644d3c2fd1e22d7dbfa9db02",
+   "tripo_body_B2.blend": "9fdfe0228abba249fb3196f7bca1aa56d36d50c90d780480c6c2cf55a79c0c7d",
+   "tripo_body_B2.glb": "2ee83f1c4518e574b6211e719f3ea38fc1fd44176fc31f2026a0e009fa4522f2",
+   "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
+  },
+  "durable_copy": "sent to the owner as session attachments (C1 glb, evidence sheets, app sheet, video)"
  }
 }

@@ -13,6 +13,9 @@
 //     smile tints speech instead of fighting it, and fully released during a lip seal.
 //   - Vowel shapes and jaw don't double-count: the jaw is reduced when a viseme already opens the mouth.
 //   - Brows and eyes are independent of the mouth (asymmetric brows survive speech).
+//   - Brow beats: while talking, a loud onset (a stressed syllable) lifts the brows briefly, alternating both /
+//     left outer / right inner so it reads as emphasis, not a tic (rate-limited). Uses the V2 per-side brow morphs
+//     where the model has them, else the shared browsUp.
 //   - Easing is time-based (time constants in seconds), so it looks the same at 15, 30, 60 or 144 fps.
 // Everything is clamped to 0..1 and unknown morphs are ignored by the caller.
 
@@ -50,6 +53,8 @@ export class FaceMixer {
   out: Record<string, number> = {};            // final weights written this frame
   /** Speech timing (s). Attack fast so consonants land, release slower so the mouth doesn't chatter. */
   tau = { visUp: 0.035, visDown: 0.07, jawUp: 0.045, jawDown: 0.09, mood: 0.16, moodTalk: 0.12 };
+  /** Brow beats: slow loudness follower, current pulse (0..1), time since the last beat, beat counter. */
+  beat = { slow: 0, pulse: 0, since: 9, n: 0, minGap: 0.7, onset: 0.16, decay: 0.32 };
 
   update(i: FaceInput, dt: number): Record<string, number> {
     const out: Record<string, number> = {};
@@ -83,6 +88,22 @@ export class FaceMixer {
       else this.layer[k] = n;
       if (k in this.layer) out[k] = Math.max(out[k] ?? 0, this.layer[k]);
     }
+    // ---- brow beats (emphasis on stressed syllables while talking)
+    const b = this.beat;
+    b.since += dt;
+    b.slow = approach(b.slow, i.talking ? i.level : 0, dt, 0.35);
+    if (i.talking && i.level - b.slow > b.onset && b.since > b.minGap) { b.pulse = 1; b.since = 0; b.n++; }
+    b.pulse = b.pulse * Math.exp(-dt / b.decay);
+    if (!i.talking) b.pulse = 0;
+    if (b.pulse > 0.01) {
+      const p = b.pulse;
+      const add = (k: string, v: number) => { out[k] = clamp(Math.max(out[k] ?? 0, v)); };
+      const kind = (b.n - 1) % 3;                          // both, then left outer, then right inner
+      add("browsUp", p * (kind === 0 ? 0.22 : 0.1));
+      if (kind === 0) { add("browInnerUp_L", p * 0.25); add("browInnerUp_R", p * 0.25); }
+      else if (kind === 1) add("browOuterUp_L", p * 0.35);
+      else add("browInnerUp_R", p * 0.35);
+    }
     // mouthO from a mood and the O viseme shouldn't stack past fully round
     if (out.mouthO !== undefined) out.mouthO = clamp(out.mouthO * (1 - (this.vis.viseme_O ?? 0) * 0.5));
     // ---- overrides (yawn, blink, sleep) win outright
@@ -95,5 +116,6 @@ export class FaceMixer {
   resetSpeech() {
     this.vis = {};
     this.jaw = 0;
+    this.beat.pulse = 0;
   }
 }

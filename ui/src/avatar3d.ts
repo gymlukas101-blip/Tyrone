@@ -12,6 +12,7 @@ import { type Juice, Sfx } from "./avatar/sfx";
 import { Vfx } from "./avatar/vfx";
 import { type Beat, crossed } from "./avatar/events";
 import { PerformanceDirector } from "./avatar/acting";
+import { CorrectiveDriver } from "./avatar/correctives";
 import { FaceMixer } from "./avatar/face";
 import { addFurDetail, setFurStrength } from "./avatar/fur";
 
@@ -107,6 +108,8 @@ export class Avatar3D implements AvatarLike {
   /** Layered face (avatar/face.ts) and the performance director (avatar/acting.ts). */
   readonly face = new FaceMixer();
   readonly director = new PerformanceDirector();
+  /** Joint-angle-driven corrective morphs (V2 elbowBend_L); empty on models without them. */
+  correctives: CorrectiveDriver | null = null;
   private faceKeys = new Set<string>();
   private visNow: Record<string, number> = {};
   private jaw = 0;
@@ -278,7 +281,7 @@ export class Avatar3D implements AvatarLike {
     }
     this.clips = [...this.actions.keys()];
     // Talk gestures: upper body only, layered over the talk clip while he speaks.
-    const UPPER = /^(spine|chest|neck|head|shoulder|upper_arm|forearm|hand|f[123]|thumb)/;
+    const UPPER = /^(spine|chest|neck|head|shoulder|upper_arm|forearm|hand|f[1-4]|thumb)/;
     for (const clip of gltf.animations.filter((c) => c.name.startsWith("talk_gest_"))) {
       const upper = clip.clone();
       upper.tracks = upper.tracks.filter((t) => UPPER.test(t.name.split(".")[0]));
@@ -791,6 +794,10 @@ export class Avatar3D implements AvatarLike {
       this.faceKeys = new Set(Object.keys(out));
       for (const [k, v] of Object.entries(out)) this.setMorph(k, v);
     }
+
+    // Correctives last: the bones are posed by clips, gestures and life by now.
+    if (this.model && !this.correctives) this.correctives = new CorrectiveDriver(this.model, (n) => this.morphMap.has(n));
+    this.correctives?.update((n, v) => this.setMorph(n, v));
 
     // Glow follows the assistant state.
     const s = this.state;

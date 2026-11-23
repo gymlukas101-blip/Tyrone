@@ -5,41 +5,56 @@
 //   - Each reaction has phases: a short anticipation, the hit, a hold you can read, then a settle back.
 //   - Restraint: at most one reaction per sentence, a cooldown between them, and long stretches of calm.
 //   - Asymmetry reads as thought: one brow up, a half smirk; symmetric shapes are for big, honest emotion.
+//   - Brows carry most of the thought. On models with the V2 per-side brow morphs (browInnerUp/OuterUp/Down _L/_R,
+//     browSqueeze) the cues use them for real asymmetry; older models ignore unknown morphs and keep the five
+//     shared brow keys (browsUp, browsAngry, browsSad, browUp_L/R), which every cue still sets.
 //   - States get a resting attitude: attentive while listening, a searching squint while thinking.
 // No LLM call, nothing that delays speech: the text is already there when the sentence starts playing.
 
-export type Cue = "curious" | "skeptical" | "excited" | "sympathetic" | "surprised" | "warm" | "proud";
+export type Cue = "curious" | "skeptical" | "excited" | "sympathetic" | "surprised" | "warm" | "proud" | "worried" | "focused";
 
 interface Shape { [morph: string]: number }
 interface Phase { t: number; shape: Shape }          // keyframes: seconds from cue start → target shape
 
 const CUES: Record<Cue, { phases: Phase[]; dur: number }> = {
   // a lifted right brow and a tiny squint: "huh, tell me more"
-  curious: { dur: 1.3, phases: [{ t: 0, shape: { browUp_R: 0.15 } }, { t: 0.18, shape: { browUp_R: 0.6, squint: 0.15 } },
-    { t: 1.0, shape: { browUp_R: 0.5, squint: 0.1 } }] },
+  curious: { dur: 1.3, phases: [{ t: 0, shape: { browUp_R: 0.15 } },
+    { t: 0.18, shape: { browUp_R: 0.6, browOuterUp_R: 0.5, browInnerUp_R: 0.2, browDown_L: 0.15, squint: 0.15 } },
+    { t: 1.0, shape: { browUp_R: 0.5, browOuterUp_R: 0.4, squint: 0.1 } }] },
   // one brow up, the other slightly down, a half smirk, held: the readable "well, actually…"
   // (renders at app size showed 0.75 too subtle and a 0.3 squint reading as sleepy: bigger brow, lighter squint)
-  skeptical: { dur: 1.6, phases: [{ t: 0, shape: { squint: 0.15 } }, { t: 0.15, shape: { browUp_L: 1, browsAngry: 0.2, smirk_R: 0.5, squint: 0.12 } },
-    { t: 1.2, shape: { browUp_L: 0.85, smirk_R: 0.4, squint: 0.08 } }] },
+  skeptical: { dur: 1.6, phases: [{ t: 0, shape: { squint: 0.15, browDown_R: 0.2 } },
+    { t: 0.15, shape: { browUp_L: 1, browOuterUp_L: 0.6, browDown_R: 0.55, browsAngry: 0.2, smirk_R: 0.5, squint: 0.12 } },
+    { t: 1.2, shape: { browUp_L: 0.85, browOuterUp_L: 0.45, browDown_R: 0.4, smirk_R: 0.4, squint: 0.08 } }] },
   // anticipation dip, then a bright lift
   excited: { dur: 1.2, phases: [{ t: 0, shape: { squint: 0.25 } }, { t: 0.12, shape: { browsUp: 0.6, cheeksUp: 0.55, bigGrin: 0.5, wideEyes: 0.25 } },
     { t: 0.9, shape: { browsUp: 0.35, cheeksUp: 0.4, bigGrin: 0.35 } }] },
-  sympathetic: { dur: 1.6, phases: [{ t: 0, shape: {} }, { t: 0.25, shape: { browsSad: 0.55, sadEyes: 0.3, frown: 0.15 } },
-    { t: 1.3, shape: { browsSad: 0.4, sadEyes: 0.2 } }] },
+  sympathetic: { dur: 1.6, phases: [{ t: 0, shape: {} },
+    { t: 0.25, shape: { browsSad: 0.55, browInnerUp_L: 0.5, browInnerUp_R: 0.5, browSqueeze: 0.3, sadEyes: 0.3, frown: 0.15 } },
+    { t: 1.3, shape: { browsSad: 0.4, browInnerUp_L: 0.35, browInnerUp_R: 0.35, browSqueeze: 0.2, sadEyes: 0.2 } }] },
   // a quick squint before the eyes pop: the take reads bigger
-  surprised: { dur: 1.1, phases: [{ t: 0, shape: { squint: 0.35 } }, { t: 0.1, shape: { wideEyes: 0.85, browsUp: 0.9, mouthO: 0.35 } },
-    { t: 0.75, shape: { wideEyes: 0.5, browsUp: 0.5 } }] },
+  surprised: { dur: 1.1, phases: [{ t: 0, shape: { squint: 0.35, browDown_L: 0.25, browDown_R: 0.25 } },
+    { t: 0.1, shape: { wideEyes: 0.85, browsUp: 0.9, browOuterUp_L: 0.5, browOuterUp_R: 0.5, mouthO: 0.35 } },
+    { t: 0.75, shape: { wideEyes: 0.5, browsUp: 0.5, browOuterUp_L: 0.25, browOuterUp_R: 0.25 } }] },
   warm: { dur: 1.4, phases: [{ t: 0, shape: {} }, { t: 0.2, shape: { smile: 0.5, cheeksUp: 0.35, squint: 0.2 } },
     { t: 1.1, shape: { smile: 0.4, cheeksUp: 0.25 } }] },
   proud: { dur: 1.3, phases: [{ t: 0, shape: { squint: 0.2 } }, { t: 0.15, shape: { smirk_L: 0.55, browsUp: 0.3, chestPuff: 0.5 } },
     { t: 1.0, shape: { smirk_L: 0.4, chestPuff: 0.3 } }] },
+  // inner brows up and pinched together, a small frown: "uh-oh, that's due soon" (deadlines, warnings)
+  worried: { dur: 1.5, phases: [{ t: 0, shape: { browSqueeze: 0.2 } },
+    { t: 0.2, shape: { browInnerUp_L: 0.75, browInnerUp_R: 0.7, browSqueeze: 0.5, browsSad: 0.35, frown: 0.12 } },
+    { t: 1.2, shape: { browInnerUp_L: 0.5, browInnerUp_R: 0.45, browSqueeze: 0.35, browsSad: 0.2 } }] },
+  // brows down and drawn in, a firm squint: "let's do this" (starting a task, focus mode)
+  focused: { dur: 1.4, phases: [{ t: 0, shape: { browInnerUp_L: 0.15, browInnerUp_R: 0.15 } },
+    { t: 0.14, shape: { browDown_L: 0.55, browDown_R: 0.55, browSqueeze: 0.55, browsAngry: 0.3, squint: 0.25, smirk_L: 0.2 } },
+    { t: 1.1, shape: { browDown_L: 0.35, browDown_R: 0.35, browSqueeze: 0.35, browsAngry: 0.15, squint: 0.15 } }] },
 };
 
 /** Resting attitudes per voice state (subtle; reactions layer on top). */
 const STATE_REST: Record<string, Shape> = {
   listening: { browsUp: 0.18, wideEyes: 0.12 },                    // attentive
   transcribing: { browsUp: 0.12 },
-  thinking: { browUp_L: 0.3, squint: 0.18 },                       // searching, a little skeptical of the problem
+  thinking: { browUp_L: 0.3, browSqueeze: 0.25, browDown_R: 0.15, squint: 0.18 }, // searching, a little skeptical of the problem
 };
 
 const RULES: [RegExp, Cue][] = [
@@ -47,6 +62,8 @@ const RULES: [RegExp, Cue][] = [
   [/\b(sorry|unfortunately|sadly|ugh|that's rough|that sucks|bummer|i hear you)\b/i, "sympathetic"],
   [/\b(well,|actually|honestly|technically|supposedly|not so sure|hmm+|to be fair)\b/i, "skeptical"],
   [/\b(nice|awesome|let's go|great job|nailed it|amazing|yes!|woo)\b/i, "excited"],
+  [/\b(uh[- ]oh|careful|watch out|overdue|due (today|tonight|tomorrow)|running late|deadline)\b/i, "worried"],
+  [/\b(let's do this|let's get (to it|started)|focus|lock in|one thing at a time|game plan)\b/i, "focused"],
   [/\b(easy|done\.|got it covered|i got you|handled)\b/i, "proud"],
   [/\?\s*$/, "curious"],
   [/\b(glad|happy to|welcome|of course|anytime|love that)\b/i, "warm"],

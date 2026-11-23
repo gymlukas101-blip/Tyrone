@@ -33,7 +33,7 @@ VIS = [("viseme_sil", 90), ("viseme_kk", 70), ("viseme_E", 130), ("viseme_aa", 1
        ("viseme_TH", 80), ("viseme_SS", 110), ("viseme_aa", 90), ("viseme_PP", 90), ("viseme_O", 150),
        ("viseme_E", 90), ("viseme_nn", 80), ("viseme_aa", 140), ("viseme_SS", 120), ("viseme_sil", 140)]
 WATCH = ["viseme_aa", "viseme_PP", "viseme_O", "jawOpen", "smile", "squint", "cheeksUp", "blink_L", "blink_R",
-         "browsUp", "browsAngry", "browsSad"]
+         "browsUp", "browsAngry", "browsSad", "browInnerUp_L", "browInnerUp_R", "browOuterUp_L", "browOuterUp_R", "browDown_L", "browDown_R", "browSqueeze", "elbowBend_L"]
 
 
 def main(dist: Path, model: Path, out: Path) -> dict:
@@ -118,7 +118,10 @@ def main(dist: Path, model: Path, out: Path) -> dict:
                         .map(x => x.getClip().name + "@" + Math.round(x.getEffectiveWeight() * 100) / 100);
                     return { running, gesture: a.gesture ? a.gesture.getClip().name : null, morphs: m,
                              expr_until_in_ms: a.exprUntil ? Math.round(a.exprUntil - performance.now()) : 0,
-                             bones_deg: window.__boneDeg || {}, expr: Object.keys(a.expr || {}), state: a.state }; }""", WATCH)
+                             bones_deg: window.__boneDeg || {}, expr: Object.keys(a.expr || {}), state: a.state,
+                             correctives: a.correctives ? a.correctives.last : null, cue: a.director.cue,
+                             finger_f2_01_L_deg: (() => { const b = a.model && a.model.getObjectByName("f201L");
+                               return b ? Math.round(2 * Math.acos(Math.min(1, Math.abs(b.quaternion.w))) * 180 / Math.PI) : null; })() }; }""", WATCH)
 
             def phase(label, ms, snap=True):
                 f0 = p.evaluate("() => [window.__frames, performance.now(), window.__monkeyAvatarObj.mixer.time]")
@@ -146,6 +149,8 @@ def main(dist: Path, model: Path, out: Path) -> dict:
                 ev([["visemes", {v: 1.0}], ["level", {"v": 0.15 if v in ("viseme_sil", "viseme_PP") else 0.55}]])
                 if i == 6:
                     ev([["delta", {"text": "Want to knock out your homework first? "}]])     # "?" -> talk gesture
+                if i == 18:
+                    ev([["delta", {"text": "Uh-oh, your essay is due tomorrow. "}]])         # worried brows (V2)
                 if i % 4 == 0:
                     p.mouse.move(200 + 18 * i, 260 + (i % 3) * 40)
                 vwait(ms)
