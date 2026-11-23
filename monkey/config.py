@@ -89,6 +89,10 @@ class Settings:
     brief_lead_min: int = 90          # minutes before your earliest verified class
     brief_schedule: dict = field(default_factory=dict)   # {"by_day": {"mon": "08:50"}, "source": .., "confirmed_at": ..}
     brief_speak_on_open: bool = False # say a 2-sentence version when you open Monkey (opt-in)
+    # To-do list (monkey.db). Reminders are in the app only, while it runs: never Windows/phone notifications.
+    todo_reminders: bool = True       # a nudge on screen when an item with a due time comes up
+    todo_speak_reminders: bool = False  # also say it out loud (opt-in)
+    todo_reminder_lead_min: int = 10  # how many minutes before the due time
     anthropic_workspace_id: str = ""  # only for Console keys not tied to a workspace (found automatically)
     home_location: str = "Madison, WI"
     latitude: float = 43.0766          # UW-Madison campus

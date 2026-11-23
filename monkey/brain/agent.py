@@ -332,6 +332,7 @@ class Agent:
             begin = getattr(self.tools, "begin_turn", None)
             if begin is not None:
                 self.tools.session_id = self.session_id  # memory search skips this chat; it's already in context
+                self.tools.turn_source = source          # a to-do added this turn says whether it came by voice
                 begin(text, self.user_texts)
 
             self._mark("route_start")

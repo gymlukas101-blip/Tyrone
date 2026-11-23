@@ -27,7 +27,7 @@ function checkbox(checked: boolean) {
   return btn;
 }
 
-function burst(at: HTMLElement) {
+export function burst(at: HTMLElement) {
   const b = h("span", { class: "burst" });
   for (let i = 0; i < 10; i++) {
     const p = h("i", {});
@@ -141,7 +141,7 @@ function ring(done: number, total: number) {
     s("text", { x: 26, y: 30, "text-anchor": "middle", class: "ring-txt" }, `${done}/${total}`));
 }
 
-function undoToast(text: string, undo: () => void) {
+export function undoToast(text: string, undo: () => void) {
   const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
   const t = h("div", { class: "toast" }, text, " ",
     h("button", { class: "ghost mini", type: "button", onclick: () => { t.remove(); undo(); } }, "Undo"));

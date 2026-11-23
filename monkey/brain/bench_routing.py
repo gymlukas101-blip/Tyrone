@@ -1,4 +1,4 @@
-"""Routing benchmark: rules-first vs the Haiku classifier, on 42 representative (fake) voice requests.
+"""Routing benchmark: rules-first vs the Haiku classifier, on 46 representative (fake) voice requests.
 
 Runs inside Monkey (Settings -> Brain -> Run routing benchmark) with the key Monkey already stores, or from a dev
 checkout with `python -m tools.bench_routing [--live]`. Offline = rule coverage/precision ($0). Live = the Haiku
@@ -22,6 +22,10 @@ CASES: list[tuple[str, set[str]]] = [
     ("what do I have due tomorrow", {"assignments"}),
     ("what's due for my design class", {"assignments"}),
     ("I finished the reading quiz, check it off", {"check_off"}),
+    ("add buy groceries to my to-do list", {"todo"}),
+    ("remind me to call the dentist tomorrow at 5", {"todo"}),
+    ("what's on my to-do list", {"todo"}),
+    ("what do I need to do today", {"todo", "briefing", "assignments"}),
     ("when is my next class", {"calendar"}),
     ("what time is my speech class on thursday", {"calendar"}),
     ("do I have anything after 3 today", {"calendar"}),

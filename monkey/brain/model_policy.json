@@ -172,6 +172,30 @@
       },
       "why": "One tool call."
     },
+    "todo": {
+      "label": "To-do list (add, check off, help with an item)",
+      "min": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "default": [
+        "claude-haiku-5-5",
+        "medium"
+      ],
+      "max": [
+        "claude-sonnet-5-5",
+        "medium"
+      ],
+      "est": {
+        "rounds": 2,
+        "new_in": 600,
+        "out": 80,
+        "think": 250,
+        "searches": 0,
+        "per_month": 120
+      },
+      "why": "Adding or checking off is one tool call; 'help me with this' breaks the item into steps and may open a site or start a draft, so Important gets Sonnet."
+    },
     "health": {
       "label": "Garmin sleep / heart rate",
       "min": [

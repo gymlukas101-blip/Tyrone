@@ -6,6 +6,10 @@ Last updated 2026-11-20. Everything below is on `main`, including Voice 2.0 and 
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
 
+## To-do list (branch `feature/todo-list`, waiting for review)
+- 📝 To-do panel and brain tools (`add_todo`, `list_todos`, `update_todo`, `delete_todo`): the owner's own to-do list in `monkey.db`, with quick add ("call the dentist tomorrow 5pm"), sub-steps, Undo, Monkey's "help me with this" (steps, then existing tools only), in-app reminders and a To-do section in the morning brief. Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23).
+- Not tried on the Dell. Open question for the owner: should reminders also show as Windows notifications? (Not built: outward-facing.)
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

@@ -57,6 +57,11 @@ _HIGH = re.compile(
 _LOW = re.compile(r"\b(quick(?:ly)?|real quick|fast|briefly|short answer|tl;?dr|no big deal|whatever)\b", re.I)
 
 RULES: list[tuple[str, re.Pattern]] = [
+    # The user's own to-do list (not Canvas's "to-do", not computer tasks). First, so "add 'email my TA' to my
+    # to-do list" is a to-do and not an email draft.
+    ("todo", re.compile(
+        r"(?<!canvas )\bto-?dos?\b|\bto do list\b|\bremind me (?:to|about)\b|\b(?:on|to|off|from) my list\b|"
+        r"\bwhat(?: else)? do i (?:need|have|gotta) to do\b", re.I)),
     ("draft_email", re.compile(
         r"\b(draft|write|compose|reply|respond|answer|send)\b.{0,40}\b(e-?mail|message|note|reply|professor|prof|ta|advisor)\b"
         r"|\b(e-?mail)\b.{0,30}\b(back|to)\b", re.I)),
@@ -145,8 +150,8 @@ def rule_task(text: str) -> tuple[str | None, str]:
 
 
 # ---------------------------------------------------------------- classifier
-CLASSIFIER_TASKS = ["chat", "quick_fact", "command", "weather", "web_lookup", "assignments", "check_off", "health",
-                    "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
+CLASSIFIER_TASKS = ["chat", "quick_fact", "command", "weather", "web_lookup", "assignments", "check_off", "todo",
+                    "health", "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
                     "hard_problem", "draft_email", "research", "image_request"]
 
 
@@ -160,7 +165,8 @@ class TaskGuess(BaseModel):
 CLASSIFIER_PROMPT = (
     "Classify a college student's request to their voice assistant. Pick the task: chat (small talk), quick_fact "
     "(one-line stable fact), command (open a site, show pictures/videos, timers), weather, web_lookup (a current "
-    "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, health (Garmin sleep/heart "
+    "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, todo (the user's own to-do "
+    "list: add, list, finish or get help with an item), health (Garmin sleep/heart "
     "rate), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "
     "read_email, triage (rank emails/events), briefing (overview of the day), study_help (explain or teach a "
     "concept), hard_problem (careful multi-step reasoning, proofs, planning), draft_email, research (multi-source "

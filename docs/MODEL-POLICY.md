@@ -30,6 +30,7 @@ Generated with `python -m tools.model_policy.report`.
 | Quick web lookup (scores, hours, news) | Haiku 5.5 · medium ($0.016) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.038) | $0.016 | 5.4s | $2.43 |
 | Canvas assignments / what to work on | Haiku 5.5 · low ($0.0007) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.014) | $0.0008 | 3.4s | $0.100 |
 | Check off an assignment | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0035) | $0.0003 | 1.8s | $0.020 |
+| To-do list (add, check off, help with an item) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.0068) | $0.0004 | 2.7s | $0.050 |
 | Garmin sleep / heart rate | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.011) | $0.0006 | 3.0s | $0.040 |
 | Calendar (what's on today) | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · low** | Sonnet 5.5 · medium ($0.011) | $0.0005 | 2.0s | $0.040 |
 | Remember / forget something | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0042) | $0.0003 | 1.8s | $0.020 |
@@ -45,7 +46,7 @@ Generated with `python -m tools.model_policy.report`.
 | Router (which task is this?) | Haiku 5.5 · low ($0.0001) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0001) | $0.0001 | 0.6s | $0.020 |
 | Learn my writing style (one time) | Sonnet 5.5 · high ($0.230) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.460) | $0.400 | 28.1s | $0.0000 |
 
-Monthly totals (heavy use): Auto **$23.25**, all Quick $14.36, all Important $50.86.
+Monthly totals (heavy use): Auto **$23.30**, all Quick $14.40, all Important $51.68.
 
 The policy also has two internal tasks that don't show up as chat requests:
 - **Router:** classifies requests that no rule catches.

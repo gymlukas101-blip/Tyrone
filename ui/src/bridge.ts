@@ -1,6 +1,8 @@
 // Talks to the Python side (pywebview js_api). Falls back to a demo mock in a normal browser.
 
 export type Importance = "low" | "normal" | "high";
+import type { Todo, TodoSettings, TodoStep } from "./todo";
+export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
 export interface AppState {
   settings: Record<string, any>;
@@ -82,6 +84,13 @@ export interface Api {
   get_assignments(refresh: boolean): Promise<any>;
   dashboard(): Promise<any>;
   toggle_assignment(id: string, done: boolean): Promise<{ ok: boolean; synced?: boolean; error?: string }>;
+  // to-do list (monkey.db on this PC)
+  todo_list(): Promise<{ ok: boolean; error?: string; items?: Todo[]; settings?: TodoSettings }>;
+  todo_add(item: { text: string; due: string | null; priority: string; list: string; notes: string; steps: TodoStep[] }): Promise<TodoResult>;
+  todo_update(id: string, changes: Partial<Todo>): Promise<TodoResult>;
+  todo_delete(id: string): Promise<{ ok: boolean; error?: string }>;
+  todo_restore(id: string): Promise<TodoResult>;
+  todo_snooze(id: string, minutes: number): Promise<TodoResult>;
   get_health(day: string): Promise<{ ok: boolean; error?: string; health?: any }>;
   garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
   garmin_mfa(code: string): Promise<{ ok: boolean; status?: string; error?: string }>;
@@ -246,7 +255,12 @@ function mockApi(): Api {
         { ts: new Date(Date.now() - 3590e3).toISOString(), role: "bot", text: "Math 222 problem set Thursday and the CS 400 project on Friday. Start with the project, it's worth more." },
       ];
     },
-    async save_settings(c) { Object.assign(state.settings, c); return state; },
+    async save_settings(c) {
+      Object.assign(state.settings, c);
+      if ("todo_reminders" in c) demoTodoSettings.reminders = !!c.todo_reminders;
+      if ("todo_speak_reminders" in c) demoTodoSettings.speak = !!c.todo_speak_reminders;
+      return state;
+    },
     async send_text(text) {
       emit([["user", { text }], ["route", { label: "Opus 5.5 · medium", reason: "email drafting", importance: "normal" }],
             ["state", { state: "thinking" }]]);
@@ -255,6 +269,14 @@ function mockApi(): Api {
           emit([["route", { label: "Sonnet 5.5 · low", reason: "assignments / health lookup", importance: "normal" }],
                 ["assignments", demoBoard()]]);
           talk("Your Math 222 midterm tomorrow is twenty percent of your grade, and that CS 400 homework is missing. Hit those first.");
+        });
+        return;
+      }
+      if (/to-?do|remind me|my list/i.test(text)) {
+        later(800, () => {
+          emit([["route", { label: "Haiku 5.5 · medium", reason: "rule: todo", importance: "normal" }],
+                ["todos", { items: demoTodos, settings: demoTodoSettings }]]);
+          talk("Put your to-do list on screen. That lab makeup email is overdue, knock it out first.");
         });
         return;
       }
@@ -386,6 +408,7 @@ function mockApi(): Api {
         weather: { status: "ok", items: ["Cloudy, 38°F"], note: "" } } };
     },
     async toggle_assignment() { return { ok: true, synced: true }; },
+    ...demoTodoApi(emit, later),
     async get_health() { return { ok: true, health: demoHealth() }; },
     async garmin_login() { return { ok: false, error: "Demo mode" }; },
     async garmin_mfa() { return { ok: false, error: "Demo mode" }; },
@@ -441,6 +464,68 @@ function mockApi(): Api {
 }
 
 // ------------------------------------------------------------------ demo data
+const localDue = (days: number, hhmm?: string) => {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` + (hhmm ? `T${hhmm}` : "");
+};
+/** A due time a few hours from now (local), so the demo looks the same whatever time it's opened. */
+const dueInHours = (hours: number) => {
+  const d = new Date(Date.now() + hours * 3.6e6);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(Math.floor(d.getMinutes() / 15) * 15)}`;
+};
+const demoTodoSettings = { reminders: true, speak: false };
+const demoNow = () => Date.now() / 1000;
+const demoTodos: Todo[] = [
+  { id: "t1", text: "Email Prof. Kim about the lab makeup", notes: "", due: localDue(-1, "17:00"), priority: "high", list: "school",
+    status: "open", steps: [], source: "voice", created: demoNow() - 9e4, done_at: null },
+  { id: "t2", text: "Pick up package at the post office", notes: "Before the counter closes", due: dueInHours(3), priority: "normal", list: "",
+    status: "open", steps: [], source: "typed", created: demoNow() - 5e4, done_at: null },
+  { id: "t3", text: "Finish CS 400 project proposal", notes: "", due: localDue(3), priority: "high", list: "school",
+    status: "open", steps: [{ text: "Re-read the rubric", done: true }, { text: "Outline the three sections", done: false },
+                            { text: "Write the first draft", done: false }], source: "Monkey", created: demoNow() - 4e4, done_at: null },
+  { id: "t4", text: "Call the dentist to book a cleaning", notes: "", due: null, priority: "low", list: "", status: "open",
+    steps: [], source: "typed", created: demoNow() - 3e4, done_at: null },
+  { id: "t5", text: "Renew bus pass", notes: "", due: localDue(-2), priority: "normal", list: "", status: "done", steps: [],
+    source: "typed", created: demoNow() - 2e5, done_at: demoNow() - 7e4 },
+];
+const demoDeleted = new Map<string, Todo>();
+function demoTodoApi(_emit: (e: [string, any][]) => void, _later: (ms: number, fn: () => void) => void) {
+  const find = (id: string) => demoTodos.find((t) => t.id === id);
+  const copy = (t: Todo): Todo => ({ ...t, steps: t.steps.map((s) => ({ ...s })) });
+  return {
+    async todo_list() { return { ok: true, items: demoTodos.map(copy), settings: { ...demoTodoSettings } }; },
+    async todo_add(it: { text: string; due: string | null; priority: string; list: string; notes: string; steps: TodoStep[] }) {
+      if (!it.text.trim()) return { ok: false, error: "A to-do needs some text" };
+      const t: Todo = { id: "t" + Math.random().toString(16).slice(2, 8), text: it.text.trim(), notes: it.notes ?? "", due: it.due,
+        priority: (["low", "normal", "high"].includes(it.priority) ? it.priority : "normal") as Todo["priority"], list: it.list ?? "",
+        status: "open", steps: it.steps ?? [], source: "typed", created: demoNow(), done_at: null };
+      demoTodos.push(t);
+      return { ok: true, item: copy(t) };
+    },
+    async todo_update(id: string, ch: Partial<Todo>) {
+      const t = find(id);
+      if (!t) return { ok: false, error: "That to-do is gone" };
+      if (ch.status && ch.status !== t.status) t.done_at = ch.status === "done" ? demoNow() : null;
+      Object.assign(t, ch);
+      return { ok: true, item: copy(t) };
+    },
+    async todo_delete(id: string) {
+      const i = demoTodos.findIndex((t) => t.id === id);
+      if (i < 0) return { ok: false, error: "That to-do is gone" };
+      demoDeleted.set(id, demoTodos.splice(i, 1)[0]);
+      return { ok: true };
+    },
+    async todo_restore(id: string) {
+      const t = demoDeleted.get(id);
+      if (!t) return { ok: false, error: "Nothing to restore" };
+      demoDeleted.delete(id); demoTodos.push(t);
+      return { ok: true, item: copy(t) };
+    },
+    async todo_snooze(id: string) { const t = find(id); return t ? { ok: true, item: copy(t) } : { ok: false, error: "That to-do is gone" }; },
+  };
+}
 let labFav = "";
 const demoCleanup = () => [
   { kind: "app", label: "Old app: Monkey 0.1.0-dev (previous installer)", path: "C:\\Users\\you\\AppData\\Local\\Programs\\Monkey", status: "found", detail: "" },

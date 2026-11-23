@@ -35,6 +35,7 @@ from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvid
 from .integrations.outlook_com import OutlookProvider
 from .integrations.web_media import NWSWeather, brave_images, commons_images, youtube_search
 from .memory.store import MonkeyMemory
+from .memory.todos import TodoStore, when_text
 from .updater import Updater
 
 log = logging.getLogger("monkey")
@@ -116,6 +117,8 @@ class MonkeyApp:
 
         self.history = HistoryStore(self.cfg.db_path, self.cfg.settings.history_retention_days) \
             if self.cfg.settings.history_enabled else None
+        self.todos = TodoStore(self.cfg.db_path)     # the user's to-do list (monkey.db, local only)
+        self._todo_stop = threading.Event()
         self._bot_text: list[str] = []
         self._calibration = None
 
@@ -143,7 +146,7 @@ class MonkeyApp:
             weather=NWSWeather(lambda: (self.cfg.settings.latitude, self.cfg.settings.longitude)),
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin, history=self.history,
-            skills=self._skills(),
+            skills=self._skills(), todos=self.todos,
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
@@ -388,7 +391,37 @@ class MonkeyApp:
             sleep=sleep if self.garmin.connected() else None,
             canvas_token=self.canvas_token_status,
             class_notes=lambda: self.memory.read("classes.md") or "",
+            todos=lambda: self.todos.items("open"),
         )
+
+    # ------------------------------------------------------------------ to-do reminders (in the app only)
+    def todo_tick(self, now: datetime | None = None) -> list[dict]:
+        """One reminder check: a nudge on screen (and, if turned on, one spoken line) for items whose due time is
+        coming up. Never a Windows or phone notification: those would need the owner's OK first."""
+        st = self.cfg.settings
+        if not st.todo_reminders:
+            return []
+        now = now or datetime.now()
+        fired = []
+        for item in self.todos.due_reminders(now, max(0, int(st.todo_reminder_lead_min or 0))):
+            self.todos.mark_reminded(item["id"])
+            self._emit("todo_reminder", {"item": item})
+            fired.append(item)
+        speaking = self.speaker is not None and getattr(self.speaker, "speaking", False)
+        if fired and st.todo_speak_reminders and not speaking and not self._listening and self._agent_state == "idle":
+            first = fired[0]
+            more = f" And {len(fired) - 1} more on your list." if len(fired) > 1 else ""
+            self._say(f"Heads up: {first['text']}, {when_text(first['due'], now).replace('overdue since', 'was due')}.{more}")
+        return fired
+
+    def start_todo_reminders(self, every_s: float = 30.0) -> None:
+        def loop():
+            while not self._todo_stop.wait(every_s):
+                try:
+                    self.todo_tick()
+                except Exception:  # noqa: BLE001 - a bad row must not stop reminders
+                    log.warning("to-do reminder check failed", exc_info=True)
+        threading.Thread(target=loop, name="todo-reminders", daemon=True).start()
 
     # ------------------------------------------------------------------ conversation history (episodes)
     def _history_maintenance(self) -> None:
@@ -1730,6 +1763,57 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
+    # to-do list
+    def _todo_settings(self) -> dict:
+        st = self._app.cfg.settings
+        return {"reminders": bool(st.todo_reminders), "speak": bool(st.todo_speak_reminders)}
+
+    def todo_list(self):
+        try:
+            items = self._app.todos.items("open") + self._app.todos.items("done", done_limit=50)
+            return {"ok": True, "items": items, "settings": self._todo_settings()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def todo_add(self, item: dict):
+        try:
+            item = item or {}
+            got = self._app.todos.add(str(item.get("text", "")), due=item.get("due") or None,
+                                      priority=str(item.get("priority") or "normal"), list=str(item.get("list") or ""),
+                                      notes=str(item.get("notes") or ""), steps=item.get("steps") or [], source="typed")
+            return {"ok": True, "item": got}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def todo_update(self, item_id: str, changes: dict):
+        keep = ("text", "notes", "due", "priority", "list", "status", "steps")
+        try:
+            got = self._app.todos.update(str(item_id), **{k: v for k, v in (changes or {}).items() if k in keep})
+            return {"ok": True, "item": got}
+        except KeyError:
+            return {"ok": False, "error": "That to-do is gone (deleted somewhere else?). Reopen the list."}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def todo_delete(self, item_id: str):
+        try:
+            self._app.todos.delete(str(item_id))
+            return {"ok": True}
+        except KeyError:
+            return {"ok": False, "error": "That to-do is already gone."}
+
+    def todo_restore(self, item_id: str):
+        try:
+            return {"ok": True, "item": self._app.todos.restore(str(item_id))}
+        except KeyError:
+            return {"ok": False, "error": "Couldn't bring that one back."}
+
+    def todo_snooze(self, item_id: str, minutes: int = 10):
+        try:
+            return {"ok": True, "item": self._app.todos.snooze(str(item_id), int(minutes or 10))}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
     # garmin
     def get_health(self, day: str = "today"):
         try:
@@ -2258,6 +2342,7 @@ def run() -> None:
             log.warning("companion window extras unavailable", exc_info=True)
         app.updater.start_background()
         app.after_install_tasks()
+        app.start_todo_reminders()
 
         def startup_cleanup():
             from . import lifecycle

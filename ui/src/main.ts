@@ -6,7 +6,8 @@ import { Avatar3D, webglAvailable } from "./avatar3d";
 import type { AvatarLike, AvatarState } from "./avatar-types";
 import { type Api, type AppState, type Brief, type Importance, waitForApi } from "./bridge";
 import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
-import { renderAssignments, markChecked } from "./assignments";
+import { renderAssignments, markChecked, undoToast } from "./assignments";
+import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
@@ -476,6 +477,22 @@ function assignmentsCard(board: any) {
   }, (u) => api.open_url(u));
 }
 
+/** The to-do list panel. `data` comes from a "todos" event (Monkey showed it) or is loaded here (the button). */
+async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
+  if (!data?.items) {                 // the button, or Monkey's "todos" event (which only says which tab to show)
+    const r = await api.todo_list();
+    if (!r.ok) return toast(`⚠ ${r.error ?? "Couldn't load your to-do list"}`);
+    data = { ...r, filter: data?.filter };
+  }
+  document.querySelectorAll(".card.todo").forEach((c) => c.remove());
+  const c = card("📝 To-do");
+  renderTodos(c, api, { items: data.items ?? [], settings: data.settings }, {
+    celebrate: () => avatar.emote("celebrate"),
+    ask: (text) => { addMsg("sys", "🐒 Asked Monkey for help with a to-do"); void api.send_text(text, importance); },
+  }, tab ?? (data.filter === "overdue" || data.filter === "done" ? data.filter : "open"));
+  return c;
+}
+
 function healthCard(hd: any) {
   document.querySelectorAll(".card.health").forEach((c) => c.remove());
   const label = hd.date === new Date().toISOString().slice(0, 10) ? "today" : hd.date;
@@ -490,7 +507,7 @@ let stoppedAt = 0;
 function onEvent(name: string, p: any) {
   if (name === "stopped") stoppedAt = performance.now();
   // A reply, a new card or a draft to approve must never land behind the Today view: go back to the chat.
-  if (todayOpen() && ["user", "delta", "panel", "draft", "emails", "calendar", "images", "approval"].includes(name)) {
+  if (todayOpen() && ["user", "delta", "panel", "draft", "emails", "calendar", "images", "approval", "todos"].includes(name)) {
     toggleToday(false, false);
   }
   switch (name) {
@@ -550,6 +567,26 @@ function onEvent(name: string, p: any) {
     case "weather": weatherCard(p); break;
     case "assignments": assignmentsCard(p); break;
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
+    case "todos": void todoCard(p); break;
+    case "todo_changed":
+      if (p.action === "added" && p.item) toast(`✓ Added to your to-do list: ${p.item.text}`);
+      if (p.action === "done" && p.item) { toast(`✓ Done: ${p.item.text}`); avatar.emote("celebrate"); }
+      if (p.action === "deleted" && p.item) {
+        undoToast(`🗑 Deleted "${p.item.text}"`, async () => {
+          const back = await api.todo_restore(p.item.id);
+          if (back.ok) void refreshTodos(p.item.id); else toast(`⚠ ${back.error}`);
+        });
+      }
+      if (todoOpen()) void refreshTodos(p.action === "added" ? p.item?.id : undefined);
+      break;
+    case "todo_reminder":
+      if (p.item) {
+        reminderToast(api, p.item, () => avatar.emote("celebrate"));
+        avatar.emote("wave");
+        notifySound();
+        addMsg("sys", `⏰ Reminder: ${p.item.text}`);
+      }
+      break;
     case "emote":
       if (p.name === "sleep") (avatar as any).sleepNow?.();
       else avatar.emote(p.name);
@@ -703,6 +740,7 @@ $("#asgBtn").addEventListener("click", async () => {
   if (r.source === "none") return toast("Connect Canvas in Settings (token or calendar feed)");
   assignmentsCard(r);
 });
+$("#todoBtn").addEventListener("click", () => void todoCard());
 $("#healthBtn").addEventListener("click", async () => {
   const r = await api.get_health("today");
   if (!r.ok) return toast(`⚠ ${r.error}`);

@@ -1,0 +1,286 @@
+{
+ "now": "2026-11-23T10:00",
+ "note": "Shared by split_quick (monkey/memory/todos.py) and splitQuick (ui/src/todoparse.ts). now is a Monday, local time.",
+ "cases": [
+  {
+   "in": "call the dentist tomorrow 5pm",
+   "text": "call the dentist",
+   "due": "2026-11-24T17:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "finish essay by friday",
+   "text": "finish essay",
+   "due": "2026-11-27",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "pay rent on the 1st",
+   "text": "pay rent",
+   "due": "2026-12-01",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "buy milk",
+   "text": "buy milk",
+   "due": null,
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "laundry tonight",
+   "text": "laundry",
+   "due": "2026-11-23T20:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "submit lab report next friday at 11:59pm",
+   "text": "submit lab report",
+   "due": "2026-12-04T23:59",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "email TA at 3",
+   "text": "email TA",
+   "due": "2026-11-23T15:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "read chapter 5 by thursday",
+   "text": "read chapter 5",
+   "due": "2026-11-26",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "gym in 2 hours",
+   "text": "gym",
+   "due": "2026-11-23T12:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "dentist dec 5 at 9:30am",
+   "text": "dentist",
+   "due": "2026-12-05T09:30",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "renew passport 12/15",
+   "text": "renew passport",
+   "due": "2026-12-15",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "study for midterm next week !high #school",
+   "text": "study for midterm",
+   "due": "2026-11-30",
+   "priority": "high",
+   "list": "school"
+  },
+  {
+   "in": "call mom at noon",
+   "text": "call mom",
+   "due": "2026-11-23T12:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "take 2 a day",
+   "text": "take 2 a day",
+   "due": null,
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "go out in the sun",
+   "text": "go out in the sun",
+   "due": null,
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "sat exam prep by sat",
+   "text": "sat exam prep",
+   "due": "2026-11-28",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "meeting 17:00",
+   "text": "meeting",
+   "due": "2026-11-23T17:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "walk dog 3:30",
+   "text": "walk dog",
+   "due": "2026-11-23T15:30",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "trash 7am",
+   "text": "trash",
+   "due": "2026-11-24T07:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "project due 2026-12-01",
+   "text": "project",
+   "due": "2026-12-01",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "groceries this weekend",
+   "text": "groceries",
+   "due": "2026-11-28",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "clean room !low",
+   "text": "clean room",
+   "due": null,
+   "priority": "low",
+   "list": ""
+  },
+  {
+   "in": "quiz on wed",
+   "text": "quiz",
+   "due": "2026-11-25",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "remind me to call grandma tomorrow morning",
+   "text": "call grandma",
+   "due": "2026-11-24T09:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "taxes by end of week",
+   "text": "taxes",
+   "due": "2026-11-27",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "ship it in 30 min",
+   "text": "ship it",
+   "due": "2026-11-23T10:30",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "book flights in 3 days",
+   "text": "book flights",
+   "due": "2026-11-26",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "read 20 pages at 8",
+   "text": "read 20 pages",
+   "due": "2026-11-24T08:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "pick up package at 5 pm today",
+   "text": "pick up package",
+   "due": "2026-11-23T17:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "the 5th of january flight check-in",
+   "text": "flight check-in",
+   "due": "2027-01-05",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "haircut Monday 4pm",
+   "text": "haircut",
+   "due": "2026-11-23T16:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "return library books on monday",
+   "text": "return library books",
+   "due": "2026-11-23",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "feb 30 party",
+   "text": "feb 30 party",
+   "due": null,
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "pay phone bill 1/3",
+   "text": "pay phone bill",
+   "due": "2027-01-03",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "stretch in half an hour",
+   "text": "stretch",
+   "due": "2026-11-23T10:30",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "sign up for intramurals #sports high priority",
+   "text": "sign up for intramurals",
+   "due": null,
+   "priority": "high",
+   "list": "sports"
+  },
+  {
+   "in": "submit FAFSA by 2026-12-15T23:59",
+   "text": "submit FAFSA",
+   "due": "2026-12-15T23:59",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "watch lecture 2 tomorrow afternoon",
+   "text": "watch lecture 2",
+   "due": "2026-11-24T15:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "9am standup",
+   "text": "standup",
+   "due": "2026-11-24T09:00",
+   "priority": "normal",
+   "list": ""
+  },
+  {
+   "in": "finish 100% of the reading at 4",
+   "text": "finish 100% of the reading",
+   "due": "2026-11-23T16:00",
+   "priority": "normal",
+   "list": ""
+  }
+ ]
+}

@@ -513,3 +513,29 @@ Audit, sources, the bible and results are in `docs/audio/` (`SFX_AUDIT.md`, `SOU
 - blind listening results (review page);
 - trigger-to-sound latency and laptop-speaker check on the Windows PC;
 - the near-silent `ear_perk` take (owner's call in the Sound Lab).
+
+## 2026-11-23: to-do list (branch `feature/todo-list`)
+
+The owner asked for "a to do list UI that can remember everything I need to do and help me out with completing it".
+
+**Storage:** `monkey/memory/todos.py` `TodoStore`, a `todos` table in `monkey.db` (so it moves with the `.monkey` transfer file and never touches the repo or the memory files).
+- Fields: text, notes, due, priority (low/normal/high), list tag, status, steps (JSON checklist), source (typed/voice/Monkey), created/updated/done/deleted timestamps, reminder bookkeeping.
+- Due dates are local wall-clock strings, `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; a day-only item is overdue after midnight.
+- Migration-safe: missing columns are added on open. Deletes are soft (Undo), purged after 30 days.
+- `split_quick` parses "call the dentist tomorrow 5pm !high #health". `ui/src/todoparse.ts` is a port of it; both must pass `tests/todo_due_cases.json` (pytest, vitest and the browser test check it).
+
+**UI:** 📝 To-do header button and card (`ui/src/todo.ts`, assignments look): quick add with a visible parsed-date chip and date/time/priority fields to correct it, check off and delete with Undo, inline editor (text, due, priority, list, notes, steps), step checkboxes in the row, Open/Overdue/Done tabs, sort by due or priority, empty states, reminder toggles. Demo data in `?demo`. At under 560 px the header buttons now wrap instead of falling off.
+
+**Brain:** `add_todo`, `list_todos`, `update_todo`, `delete_todo` (the three writers are strict).
+- `add_todo` only adds when the user's message asks ("add", "remind me", "my list", or a yes after an offer). Otherwise it tells the model to offer. Evidence must quote the user; with no explicit ask, the item's words must come from the user. At most 10 adds per turn.
+- `update_todo` refuses while outside content (email, calendar, web) is in the conversation unless the user's own message asks for a change. `delete_todo` needs a quoted "delete/remove" request.
+- "Help me with X": the tool description and persona say to save 3–6 steps and then use existing tools (open_website, get_assignments, show_on_screen, draft_email as a draft only, propose_computer_task with the user's approval). No new outward action exists.
+- Router task `todo` (rule + classifier + policy Haiku low / medium / Sonnet medium), calibration sample and stubs, 4 bench cases, `docs/MODEL-POLICY.md` regenerated.
+
+**Reminders:** in the app only. `MonkeyApp.todo_tick` (every 30 s) shows a toast with Done / Snooze and a wave, once per due time, from 10 minutes before until 2 hours after. Speaking it is opt-in (`todo_speak_reminders`) and waits until Monkey is idle. No Windows or phone notifications: that needs the owner's OK first.
+
+**Morning brief:** a To-do section (overdue, due today, high priority) and the top to-do as top priority when Canvas has nothing due.
+
+**Tests:** `tests/test_todos.py` (store, parsing, gates, fake-client agent loop, reminders, API, brief, routing), `tests/test_todo_ui.py` (Playwright in `?demo&svg`, added to the CI browser job), `ui/test/todoparse.test.ts`.
+
+**Open:** not tried on the Dell. Windows notifications for reminders are a question for the owner.

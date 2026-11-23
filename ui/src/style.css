@@ -567,7 +567,7 @@ body.today-open #cards, body.today-open #log { display: none; }
 @media (max-width: 560px) {
   #side > header .icon.labeled small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #side > header .icon.labeled { min-width: 38px; padding-left: 6px; padding-right: 6px; }
-  #side > header { gap: 4px; }
+  #side > header { gap: 4px; flex-wrap: wrap; row-gap: 6px; }   /* very narrow: the buttons wrap, none fall off */
 }
 .todaybar { display: flex; gap: 6px; align-items: center; }
 
@@ -600,3 +600,55 @@ body.today-open #cards, body.today-open #log { display: none; }
   .fbpulse { animation: fbpulse-still .45s; }
   @keyframes fbpulse-still { 35% { filter: brightness(1.4); } }
 }
+
+/* ---------------- to-do list (reuses the assignments checklist look) */
+.todo-addwrap { margin: 4px 0 8px; }
+.todo-add { display: flex; gap: 8px; }
+.todo-add input, .todo-edit input, .todo-edit textarea, .todo-edit select, .todo-parsed input, .todo-parsed select {
+  background: #0b3f1e; border: 1px solid #2aa14f; color: var(--text); border-radius: 8px; padding: 6px 8px; font: inherit;
+  color-scheme: dark;
+}
+.todo-add input { flex: 1; min-width: 0; padding: 8px 10px; }
+.todo-add .primary { padding: 6px 14px; }
+.todo-parsed { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.todo-parsed[hidden] { display: none; }
+.todo-parsed-chip { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid var(--accent);
+  border-radius: 999px; padding: 1px 10px; font-weight: 600; }
+.todo-parsed-chip.none { border-color: var(--line); background: transparent; color: var(--muted); font-weight: 400; }
+.todo-due-in { display: inline-flex; gap: 4px; align-items: center; }
+.todo-due-in .ghost.mini { margin-left: 0; }
+.todo-due-in input[type=date] { width: 9.5em; }
+.todo-due-in input[type=time] { width: 8.5em; }
+.todo-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; }
+.tabs.sort { align-items: center; }
+.tabs.sort .meta { font-size: 12px; }
+.todo-row { max-height: 640px; }
+.todo-list.settled .todo-row:not(.fresh) { animation: none; }
+.todo-row.overdue { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.todo-row .flag { background: #c8102e; }      /* white on the brighter --bad is under 4.5:1 at 10px */
+.todo-row.fresh { animation: asg-in .35s ease backwards, todo-glow 1.6s ease; }
+@keyframes todo-glow { 0%, 40% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: none; } }
+.todo-row .asg-why { white-space: normal; }
+.linklike { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; }
+.linklike:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+.todo-row .src { font-size: 12px; }
+.todo-actions { display: flex; }
+.todo-actions .ghost.mini { margin-left: 4px; padding: 0 6px; }
+.todo-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.todo-steps li { display: flex; gap: 6px; align-items: center; }
+.todo-steps li.done span { text-decoration: line-through; color: var(--muted); }
+.cb.small, .cb.small svg { width: 20px; height: 20px; }
+.todo-editing { list-style: none; }
+.todo-edit { background: #0b4321; border: 1px solid var(--accent); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.todo-edit label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.todo-edit-row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.todo-edit-row label { flex-direction: row; align-items: center; gap: 6px; }
+.todo-edit-row .todo-list-in { width: 8em; }
+.todo-steps.edit li input { flex: 1; min-width: 0; }
+.todo-edit-steps { display: flex; flex-direction: column; gap: 4px; }
+.todo-edit-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.todo-foot { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.todo-foot label { display: inline-flex; gap: 4px; align-items: center; }
+.todo-remind { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; bottom: 64px; border-color: var(--accent);
+  box-shadow: 0 0 0 2px #ffd60a55, 0 6px 24px rgba(0, 0, 0, .35); }
+@media (prefers-reduced-motion: reduce) { .todo-row.fresh { animation: none; } }

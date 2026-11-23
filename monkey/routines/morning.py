@@ -203,6 +203,7 @@ class Sources:
     weather: Callable[[], dict] | None = None
     sleep: Callable[[], dict | None] | None = None              # Garmin (optional)
     canvas_token: Callable[[], dict] | None = None              # {"status": ok|expiring|expired|none, "days": n}
+    todos: Callable[[], list[dict]] | None = None               # open to-do items (TodoStore.items("open"))
 
 
 def _safe(fn, *a):
@@ -293,6 +294,16 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         sections.append(Section("Due in 72 h", "not_connected" if st == "not_connected" or not board
                                 else st, [], "Canvas not connected." if st != "unavailable" else f"Canvas unavailable ({board})."))
 
+    # the user's own to-do list: overdue first, then due today, then high priority
+    todo_top: dict | None = None
+    st, todos = _safe(src.todos)
+    if st == "ok":
+        todo_sec, todo_top = _todo_section(todos or [], now)
+        if todo_sec is not None:
+            sections.append(todo_sec)
+    elif st == "unavailable":
+        sections.append(Section("To-do", "unavailable", [], "To-do list unavailable."))
+
     st, tok = _safe(src.canvas_token)
     if st == "ok" and tok and tok.get("status") in ("expiring", "expired"):
         sections.append(Section("Canvas token", "expired" if tok["status"] == "expired" else "ok", [],
@@ -326,6 +337,9 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         a = due_soon[0]
         top = f"{a.get('title')} ({a.get('course', '')}), due {_due(a):%a %I:%M %p}"
         step = f"Open it on Canvas and do the first 25 minutes before {'class' if fc else 'lunch'}."
+    elif todo_top is not None:
+        top = f"{todo_top['text']} (to-do, {_todo_when(todo_top, now)})"
+        step = "Knock it out first thing, then check it off in To-do."
     elif fc:
         top = f"First class at {fc:%I:%M %p}".replace(" 0", " ")
         step = "Leave enough time to get there."
@@ -337,9 +351,42 @@ def build(now: datetime, schedule: Schedule, src: Sources, kind: str) -> Brief:
         spoken_bits.append(f"First class at {fc:%I:%M}".replace(" 0", " ") + ".")
     if due_soon:
         spoken_bits.append(f"Top priority: {due_soon[0].get('title')}.")
+    elif todo_top is not None:
+        spoken_bits.append(f"Top of your to-do list: {todo_top['text']}.")
     spoken = " ".join(spoken_bits[:2]) or "Morning. Your rundown is on screen."
     return Brief(today.isoformat(), kind, now.isoformat(timespec="minutes"),
                  fc.isoformat(timespec="minutes") if fc else None, sections, top, step, spoken)
+
+
+def _todo_when(t: dict, now: datetime) -> str:
+    from ..memory.todos import when_text
+
+    return when_text(t.get("due"), now)
+
+
+def _todo_section(todos: list[dict], now: datetime) -> tuple[Section | None, dict | None]:
+    """The brief's To-do section (None when the list is empty) and the item to name as top priority, if any."""
+    from ..memory.todos import due_datetime, is_overdue
+
+    open_ = [t for t in todos if t.get("status", "open") == "open"]
+    if not open_:
+        return None, None
+    local = now.astimezone().replace(tzinfo=None)
+    overdue = sorted((t for t in open_ if is_overdue(t, now)), key=lambda t: due_datetime(t["due"]))
+    today = sorted((t for t in open_ if t not in overdue and t.get("due")
+                    and due_datetime(t["due"]).date() == local.date()), key=lambda t: due_datetime(t["due"]))
+    high = sorted((t for t in open_ if t not in overdue and t not in today and t.get("priority") == "high"),
+                  key=lambda t: due_datetime(t.get("due")) or datetime.max)
+    items = ([f"{t['text']} (overdue, {_todo_when(t, now).replace('overdue since ', 'was due ')})" for t in overdue[:3]]
+             + [f"{t['text']} ({_todo_when(t, now)})" for t in today[:4]]
+             + [f"{t['text']} (high priority" + (f", {_todo_when(t, now)})" if t.get("due") else ")") for t in high[:2]])
+    rest = len(open_) - len(items)
+    note = (f"{len(open_)} open" + (f", {len(overdue)} overdue" if overdue else "")
+            + (f", {rest} more in To-do" if rest > 0 else "") + ".")
+    top = (overdue or today or high or [None])[0]
+    if not items:
+        return Section("To-do", "empty", [], f"{len(open_)} open, nothing due today."), None
+    return Section("To-do", "warn" if overdue else "ok", items, note), top
 
 
 class MorningRoutine:
