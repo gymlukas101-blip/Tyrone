@@ -296,7 +296,9 @@ def test_blocky_skin_bakes_icons_and_stays_still_at_rest(browser):
     assert card.locator("button[aria-label^='Delete'] .bi").count() == card.locator("button[aria-label^='Delete']").count()
     assert card.locator(".todo-add .primary .bi").count() == 1
     assert card.locator(".bk-bg").count() == 1
-    assert p.locator("#side > header .icon.labeled .bi").count() >= 6 and p.locator("#mic .bi").count() == 1   # header + mic
+    p.wait_for_function("""() => document.querySelectorAll('#side > header .icon.labeled .bi').length >= 6
+                                 && document.querySelectorAll('#mic .bi').length === 1""", timeout=120000)   # header + mic
+                                                                    # (baked after the panel; slower on CI's software GL)
     assert p.locator("#todoBtn small").inner_text() == "To-do"                                                 # label kept
     assert card.locator("button[aria-label^='Edit Pick up package']").count() == 1    # accessible names unchanged
     running = ("() => document.getAnimations().filter(a => a.playState === 'running' && "

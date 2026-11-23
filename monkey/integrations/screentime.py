@@ -357,6 +357,8 @@ def parse_text(text: str, *, today: date, keep_days: int = KEEP_DAYS_DEFAULT, so
             obj = json.loads(s)
         except ValueError as exc:
             raise ScreenTimeError(f"not valid JSON ({exc.msg})") from None
+        except RecursionError:                      # absurdly nested input (Windows' smaller stack hits it first)
+            raise ScreenTimeError("not valid JSON (nested too deeply)") from None
         if isinstance(obj, dict) and isinstance(obj.get("days"), list):
             obj = obj["days"]
         items = obj if isinstance(obj, list) else [obj]
@@ -847,8 +849,9 @@ class ScreenTime:
     def scan_folder(self, today: date | None = None) -> dict:
         folder = Path(self.folder())
         if not folder.is_dir():
-            raise ScreenTimeError(f"folder not found yet: {folder}. Finish the phone setup in Settings → Phone, or switch "
-                                  "to typing it in")
+            # The advice first: the status line is cut at 200 characters and Windows paths are long.
+            raise ScreenTimeError("folder not found yet. Finish the phone setup in Settings → Phone, or switch to typing "
+                                  f"it in. (Looked in {folder})")
         files = [p for p in folder.iterdir() if p.suffix.lower() in FILE_SUFFIXES and p.is_file()]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         read = skipped = 0
