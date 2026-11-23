@@ -1,0 +1,50 @@
+/* "Mailing lists" review panel and the task-helper additions to the Tasks dialog / HUD. Kept in its own file so the
+   main styles (and the UI motion / blocky-UI branches) can change without touching this. */
+.tasksdlg.mldlg { width: min(940px, 96vw); }
+.mldlg .ml-sugg .ghost.mini { width: auto; margin-left: 0; }
+.mldlg .ml-review h4 { margin: 4px 0; }
+.mldlg .ml-tools { justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mldlg .ml-filter { display: flex; flex-wrap: wrap; gap: 4px; }
+.mldlg .ml-filter .on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.mldlg .ml-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.mldlg .ml-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 6px;
+  border-bottom: 1px solid var(--line); }
+.mldlg .ml-table td { padding: 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent); vertical-align: top; }
+.mldlg .ml-table td.num { white-space: nowrap; }
+.mldlg .ml-table small { display: block; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.mldlg .ml-who { min-width: 12em; max-width: 22em; }
+.mldlg .ml-subj { font-style: italic; }
+.mldlg .ml-row.s-done, .mldlg .ml-row.s-kept { opacity: .8; }
+.mldlg .ml-acct { font-size: 12px; white-space: nowrap; }
+.ml-method { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.ml-method.m-one_click { border-color: var(--ok); }
+.ml-method.m-web { border-color: var(--normal); }
+.ml-method.m-manual { border-color: var(--warn); }
+.ml-st { font-size: 12px; }
+.ml-st.ok { color: var(--ok); }
+.ml-st.warn { color: var(--warn); }
+.ml-st.bad { color: var(--bad); }
+.mldlg .warn { color: var(--warn); }
+.mldlg .ml-sugg { border: 1px dashed var(--accent); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.mldlg .ml-sugg h4 { margin: 0 0 4px; }
+.mldlg .ml-sugg ul { margin: 0 0 6px; padding-left: 18px; font-size: 13px; }
+.mldlg .ml-foot { margin-top: 10px; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mldlg .ml-progress { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+.mldlg .ml-review { margin-top: 8px; }
+.mldlg .ml-steps { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.mldlg .ml-steps li p { margin: 2px 0 0; }
+.mldlg .toggle.off { opacity: .6; }
+
+/* Tasks dialog: what kind of task, and the hard limits line. */
+.tasksdlg .tpl-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.tasksdlg .tpl-pick button { text-align: left; max-width: 15em; }
+.tasksdlg .tpl-pick button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.tasksdlg .tpl-pick small { display: block; font-size: 11px; color: var(--muted); }
+.tasksdlg .limits { font-size: 12px; color: var(--muted); border-left: 3px solid var(--warn); padding-left: 8px; }
+/* HUD: the template chip and what an approval would do (spend, send, delete, account change). */
+.taskpanel .tpl-chip { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; margin-left: 6px; color: var(--muted); }
+.taskpanel .ap-kind { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 8px; padding: 1px 8px; margin: 2px 0 4px; }
+.taskpanel .ap-kind.k-spend { background: color-mix(in srgb, var(--bad) 25%, transparent); border: 1px solid var(--bad); }
+.taskpanel .ap-kind.k-send, .taskpanel .ap-kind.k-submit { background: color-mix(in srgb, var(--warn) 22%, transparent); border: 1px solid var(--warn); }
+.taskpanel .ap-kind.k-delete, .taskpanel .ap-kind.k-account { background: color-mix(in srgb, var(--high) 22%, transparent); border: 1px solid var(--high); }

@@ -31,6 +31,7 @@ Generated with `python -m tools.model_policy.report`.
 | Canvas assignments / what to work on | Haiku 5.5 · low ($0.0007) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.014) | $0.0008 | 3.4s | $0.100 |
 | Check off an assignment | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0035) | $0.0003 | 1.8s | $0.020 |
 | To-do list (add, check off, help with an item) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.0068) | $0.0004 | 2.7s | $0.050 |
+| Task helper (unsubscribe, do something on a website) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.0063) | $0.0004 | 2.5s | $0.020 |
 | Garmin sleep / heart rate | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · medium** | Sonnet 5.5 · medium ($0.011) | $0.0006 | 3.0s | $0.040 |
 | Calendar (what's on today) | Haiku 5.5 · low ($0.0005) | **Haiku 5.5 · low** | Sonnet 5.5 · medium ($0.011) | $0.0005 | 2.0s | $0.040 |
 | Remember / forget something | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0042) | $0.0003 | 1.8s | $0.020 |
@@ -46,14 +47,23 @@ Generated with `python -m tools.model_policy.report`.
 | Router (which task is this?) | Haiku 5.5 · low ($0.0001) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0001) | $0.0001 | 0.6s | $0.020 |
 | Find to-dos in email (background) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0003) | $0.0003 | 0.6s | $0.030 |
 | Learn my writing style (one time) | Sonnet 5.5 · high ($0.230) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.460) | $0.400 | 28.1s | $0.0000 |
+| Computer task planner (background) | Sonnet 5.5 · medium ($0.0075) | **Sonnet 5.5 · medium** | Opus 5.5 · medium ($0.015) | $0.0075 | 1.0s | $1.12 |
 
-Monthly totals (heavy use): Auto **$23.33**, all Quick $14.43, all Important $51.71.
+Monthly totals (heavy use): Auto **$24.47**, all Quick $15.56, all Important $54.21.
 
-The policy also has three internal tasks that don't show up as chat requests:
+The policy also has four internal tasks that don't show up as chat requests:
 - **Router:** classifies requests that no rule catches.
 - **Find to-dos in email:** the background inbox scan for "Suggested from email". It runs only on new mail that passed
   the local filter, at most once per scan, gets no tools, and is skipped at 90% of the monthly budget.
 - **Learn my writing style:** runs once.
+- **Computer task planner:** plans 1–4 steps of a general computer task per call (`computer/goal.py`, ClaudeGoalPlanner):
+  `default` is the planner, `max` is the one stall escalation. Deterministic steps (the course skill, cached verified
+  steps, the mailing-list unsubscribe page) make no model call. The per-task budget (40 calls, $1) still applies.
+
+**Task helper** (2026-11-23): the chat route for "unsubscribe me from…", "cancel my … trial", "do X on website Y". The
+reply is one tool call (`propose_computer_task`, `find_mailing_lists` or `propose_unsubscribe`) and a line, so Haiku is
+enough; the work itself is the computer task planner above. Finding mailing lists and one-click unsubscribes need no
+model at all.
 
 The numbers come from the Settings → Brain screen and are the same as above.
 

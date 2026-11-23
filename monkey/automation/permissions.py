@@ -74,6 +74,7 @@ class Decision:
     reason: str = ""
     needs_approval: bool = False
     user_only: bool = False
+    kind: str = ""                # spend | send | delete | account | submit | upload (for the approval card)
 
 
 # ---- word lists (matched on the control's accessible name, not on page prose) ----------------------------------
@@ -94,8 +95,39 @@ LOW_WORDS = _W("continue", "next", "next page", "back", "previous", "prev", "sta
                "view", "play", "pause", "replay", "close", "dismiss", "not now", "no thanks", "skip", "later", "ok",
                "got it", "expand", "collapse", "show", "hide", "menu", "home", "proceed", "go to", "module", "lesson")
 SENSITIVE_FIELD = re.compile(r"(passw|passcode|\bpin\b|one[- ]time|otp|2fa|mfa code|verification code|security code|"
-                             r"card ?number|credit card|cvv|cvc|expir|social security|\bssn\b|routing|account number|"
-                             r"bank)", re.I)
+                             r"card ?number|credit card|debit card|cvv|cvc|expir|social security|\bssn\b|routing|"
+                             r"account number|bank|name on (?:the )?card|card ?holder|iban|sort code|\bbic\b|swift|"
+                             r"paypal|billing zip|billing postal)", re.I)
+# Hard limit (limits.py): passwords and security settings are the owner's to change. Never approvable.
+SECURITY_CONTROL = re.compile(r"\b((?:change|reset|update|set|create|new|forgot|remove|edit) (?:your |my )?(?:password|"
+                              r"passcode|passkey)|(?:change|reset|forgot) (?:your |my )?pin|two[- ]factor|2[- ]step|multi[- ]factor|2fa|mfa|"
+                              r"authenticator app|security (?:settings|questions?|keys?|checkup)|recovery (?:e-?mail|phone|"
+                              r"codes?)|backup codes|sign[- ]in (?:&|and) security|app passwords?|passkeys?)\b", re.I)
+# What an outward-facing step does, for the approval card. Spending is always a stop-and-ask on that exact step.
+SPEND_WORDS = _W("pay", "pay now", "purchase", "buy", "buy now", "checkout", "check out", "place (?:your )?order",
+                 "order now", "complete (?:purchase|order|booking|payment)", "book now", "reserve now", "donate",
+                 "subscribe", "upgrade", r"start (?:my )?(?:free )?trial", "confirm (?:purchase|order|payment|booking)",
+                 "add (?:a )?payment", "rent", "tip")
+KIND_WORDS = [("send", _W("send", "post", "publish", "reply", "forward", "share", "invite", "comment", "tweet")),
+              ("delete", _W("delete", "remove", "erase", "deactivate", "close account", "unenroll", "withdraw",
+                            "drop (?:class|course)", "cancel (?:my )?(?:subscription|membership|plan|account|trial)")),
+              ("account", _W("unsubscribe", "enroll", "register", "grant", "allow access", "authorize",
+                             "turn (?:on|off)", "enable", "disable", "settings", "save changes", "update", "change",
+                             "accept(?: terms)?", "agree")),
+              ("submit", _W("submit", "save and submit", "apply", "confirm", "finish", "done", "save"))]
+
+
+def action_kind(action: "Action") -> str:
+    """spend | send | delete | account | submit | upload | '' — shown on the approval card."""
+    if action.kind == "upload" or (action.kind == "choose_file" and action.to_web):
+        return "upload"
+    name = (action.target.name if action.target else "") or ""
+    if SPEND_WORDS.search(name):
+        return "spend"
+    for kind, rx in KIND_WORDS:
+        if rx.search(name):
+            return kind
+    return ""
 SENSITIVE_WINDOW = re.compile(r"(1password|bitwarden|keepass|lastpass|dashlane|keeper|password manager|"
                               r"credential manager|windows security|user account control|bank|banking|paypal|venmo|"
                               r"wallet|sign in to your account)", re.I)
@@ -125,6 +157,8 @@ def classify(action: Action) -> tuple[Risk, str]:
         return Risk.MEDIUM, "picking a file in the app's Open/Save box"
     if t.sensitive or t.input_type in ("password",) or (action.kind == "type" and SENSITIVE_FIELD.search(name)):
         return Risk.FORBIDDEN, "sensitive field (passwords, codes and card numbers are yours to type)"
+    if action.kind in ("click", "press", "select", "type") and SECURITY_CONTROL.search(t.name or ""):
+        return Risk.FORBIDDEN, "passwords and security settings are yours to change"
     if action.kind in ("type", "select") and t.in_question:
         return Risk.USER_ONLY, "an answer to a question is yours to give"
     if action.kind == "click" and t.in_question and t.role in ("radio", "checkbox", "option", "textbox", "combobox"):
@@ -137,6 +171,8 @@ def classify(action: Action) -> tuple[Risk, str]:
         return Risk.MEDIUM, "editing a field (nothing is submitted)"
     if action.kind == "select":
         return Risk.MEDIUM, "choosing an option"
+    if SPEND_WORDS.search(t.name or ""):
+        return Risk.HIGH, "this spends money: Monkey stops here unless you approve this exact step"
     if HIGH_WORDS.search(t.name or ""):
         return Risk.HIGH, "this sends, submits, buys, deletes or changes something"
     if MEDIUM_WORDS.search(t.name or ""):
@@ -248,6 +284,10 @@ def url_allowed(url: str, allowed_domains: list[str]) -> tuple[bool, str]:
     if p.scheme not in ("http", "https"):
         return False, f"{p.scheme}: addresses are never opened"
     host = (p.hostname or "").lower().rstrip(".")
+    from .limits import MESSAGES, blocked_host
+
+    if (why := blocked_host(host)):
+        return False, MESSAGES[why]                       # hard limit: even "Any website" never opens these
     if "*" in allowed_domains and host:
         return True, ""                                   # the user let this task use any website
     for d in allowed_domains:
@@ -287,10 +327,12 @@ class Approval:
     token: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     status: str = "pending"           # pending | approved | used | denied
     created: float = field(default_factory=time.time)
+    kind: str = ""                    # what the step does: spend | send | delete | account | submit | upload
 
     def public(self) -> dict:
         return {"id": self.id, "task_id": self.task_id, "summary": self.summary, "risk": self.risk,
-                "status": self.status, "token": self.token}    # the UI needs the token; the model never sees this
+                "status": self.status, "token": self.token,    # the UI needs the token; the model never sees this
+                "kind": self.kind}
 
 
 class PermissionGate:
@@ -335,16 +377,50 @@ class PermissionGate:
                 return Decision(False, Risk.FORBIDDEN, f"that link leaves the allowed sites ({msg})")
         if risk == Risk.FORBIDDEN:
             return Decision(False, risk, why)
+        rules = getattr(scope, "rules", None) or {}
+        if rules:
+            d = self._template_rules(scope, rules, action, risk)
+            if d is not None:
+                return d
         if risk == Risk.USER_ONLY:
             # Your own answer or confirmation (said, typed or clicked in Monkey) lets him click exactly that, once.
             if self._consume(scope.id, action.fingerprint(page_url)):
                 return Decision(True, risk, "your choice")
             return Decision(False, risk, why, user_only=True)
-        if risk == Risk.HIGH or (risk == Risk.MEDIUM and getattr(scope, "confirm_medium", False)):
+        confirm_medium = getattr(scope, "confirm_medium", False) or bool(rules.get("confirm_medium"))
+        if risk == Risk.HIGH or (risk == Risk.MEDIUM and confirm_medium):
             if self._consume(scope.id, action.fingerprint(page_url)):
-                return Decision(True, risk, "you approved this")
-            return Decision(False, risk, why, needs_approval=True)
+                return Decision(True, risk, "you approved this", kind=action_kind(action))
+            return Decision(False, risk, why, needs_approval=True, kind=action_kind(action))
         return Decision(True, risk, why)
+
+    @staticmethod
+    def _template_rules(scope, rules: dict, action: Action, risk: Risk) -> Decision | None:
+        """A template's narrowing rules (templates.py), set by Monkey's UI when the task started. They only ever
+        refuse more; the one thing they allow is the exact control the owner pre-approved in a batch (an
+        unsubscribe page's own Unsubscribe button), and never a step that spends money."""
+        name = (action.target.name if action.target else "") or ""
+        if rules.get("read_only") and (risk >= Risk.HIGH and risk != Risk.USER_ONLY
+                                       or action.kind in ("upload", "choose_file")):
+            return Decision(False, Risk.FORBIDDEN, "this is a look-only task: Monkey won't book, buy, send, submit "
+                                                   "or change anything")
+        if rules.get("no_links") and action.kind == "navigate" and action.url not in (
+                getattr(scope, "start_url", ""), getattr(scope, "last_url", ""), "back", "reload"):
+            return Decision(False, Risk.FORBIDDEN, "this task stays on the page it was given")
+        if action.kind == "type" and "type_only" in rules:
+            allowed = {str(v).strip().lower() for v in rules.get("type_only") or [] if v}
+            if (action.text or "").strip().lower() not in allowed:
+                return Decision(False, Risk.FORBIDDEN, "this task may only type your own email address")
+        only = rules.get("click_only")
+        if only and action.kind in ("click", "double_click", "select", "press"):
+            if action.kind == "press" and risk == Risk.LOW:
+                return None                                   # Tab, arrows, Escape
+            if not re.search(only, name, re.I):
+                return Decision(False, Risk.FORBIDDEN, "this task may only press an obvious unsubscribe or confirm "
+                                                       "button")
+            if risk == Risk.HIGH and action_kind(action) != "spend":
+                return Decision(True, risk, "you approved this unsubscribe")
+        return None
 
     # ---- approvals ---------------------------------------------------------------------------------------------
     def request(self, task_id: str, action: Action, page_url: str, risk: Risk) -> Approval:
@@ -353,7 +429,8 @@ class PermissionGate:
             for a in self._approvals.values():
                 if a.task_id == task_id and a.fingerprint == fp and a.status == "pending":
                     return a
-            a = Approval("ap_" + secrets.token_hex(4), task_id, fp, action.describe(), risk.name.lower())
+            a = Approval("ap_" + secrets.token_hex(4), task_id, fp, action.describe(), risk.name.lower(),
+                         kind=action_kind(action))
             self._approvals[a.id] = a
             return a
 

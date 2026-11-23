@@ -62,6 +62,20 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("todo", re.compile(
         r"(?<!canvas )\bto-?dos?\b|\bto do list\b|\bremind me (?:to|about)\b|\b(?:on|to|off|from) my list\b|"
         r"\bwhat(?: else)? do i (?:need|have|gotta) to do\b", re.I)),
+    # The task helper: a job done *for* the owner on a website or in an app (propose_computer_task), or the mailing
+    # lists review (find_mailing_lists / propose_unsubscribe). Before draft_email, so "send an unsubscribe email"
+    # isn't a draft.
+    ("task_helper", re.compile(
+        r"\b(?:unsubscribe|opt (?:me )?out of|mailing lists?|"
+        r"stop (?:getting|receiving) (?:these |those |the |all |so many )?(?:e-?mails|newsletters|promos?|spam)|"
+        r"(?:cancel|end) my .{0,40}(?:subscription|free trial|trial|membership)|"
+        r"fill (?:in|out) (?:this|the|that|a|my) .{0,25}form|"
+        r"(?:on|at|in) (?:the |their )?(?:website|site|web ?page)\b.{0,60}\b(?:for me|and (?:change|cancel|turn|fill|"
+        r"find|download|update|book|order))|"
+        r"(?:go|log) (?:on|onto|into|to) .{0,40}\band (?:change|cancel|turn|fill|download|update|book|order)|"
+        r"(?:do|handle) (?:this|that|it) (?:on|in) (?:the )?(?:website|site|browser)|"
+        r"find .{0,60}\b(?:cheapest|lowest price|best price)\b.{0,60}\b(?:just show me|don'?t (?:book|buy|order))|"
+        r"task helper|computer task)\b", re.I)),
     ("draft_email", re.compile(
         r"\b(draft|write|compose|reply|respond|answer|send)\b.{0,40}\b(e-?mail|message|note|reply|professor|prof|ta|advisor)\b"
         r"|\b(e-?mail)\b.{0,30}\b(back|to)\b", re.I)),
@@ -152,7 +166,7 @@ def rule_task(text: str) -> tuple[str | None, str]:
 
 # ---------------------------------------------------------------- classifier
 CLASSIFIER_TASKS = ["chat", "quick_fact", "command", "weather", "web_lookup", "assignments", "check_off", "todo",
-                    "health", "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
+                    "task_helper", "health", "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
                     "hard_problem", "draft_email", "research", "image_request"]
 
 
@@ -167,7 +181,9 @@ CLASSIFIER_PROMPT = (
     "Classify a college student's request to their voice assistant. Pick the task: chat (small talk), quick_fact "
     "(one-line stable fact), command (open a site, show pictures/videos, timers), weather, web_lookup (a current "
     "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, todo (the user's own to-do "
-    "list: add, list, finish or get help with an item), health (Garmin sleep/heart "
+    "list: add, list, finish or get help with an item), task_helper (do a multi-step job FOR them on a website or "
+    "in an app: unsubscribe from mailing lists, fill in a form, change a setting, cancel a subscription, find "
+    "something on a site and show it), health (Garmin sleep/heart "
     "rate, phone screen time), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "
     "read_email, triage (rank emails/events), briefing (overview of the day), study_help (explain or teach a "
     "concept), hard_problem (careful multi-step reasoning, proofs, planning), draft_email, research (multi-source "

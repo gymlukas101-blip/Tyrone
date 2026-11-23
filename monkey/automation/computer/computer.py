@@ -379,11 +379,16 @@ class Computer:
         try:
             v = self.observe(name)
             ok = True
-            if "text" in expect:
+            if "text" in expect or "text_re" in expect:
                 drv = self.driver(name)
                 body = drv.visible_text() if hasattr(drv, "visible_text") else v.text
                 hay = " ".join(f"{v.title} {body} {' '.join(e.name + ' ' + e.value for e in v.elements)}".split())
-                ok &= " ".join(str(expect["text"]).split()).lower() in hay.lower()
+                if "text" in expect:
+                    ok &= " ".join(str(expect["text"]).split()).lower() in hay.lower()
+                if "text_re" in expect:                       # a template's "done" pattern, on visible text only
+                    import re as _re
+
+                    ok &= bool(_re.search(str(expect["text_re"]), f"{v.title} {body}", _re.I))
             if "url_contains" in expect:
                 ok &= str(expect["url_contains"]) in v.location
             if "el" in expect:

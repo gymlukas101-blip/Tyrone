@@ -226,6 +226,10 @@ class MonkeyApp:
         from .automation.service import AutomationService
 
         self.automation = AutomationService(self)          # idle until computer tasks are turned on and started
+        from .mailing.service import MailingService
+
+        self.mailing = MailingService(self)                # mailing lists: read-only scans; unsubscribes need your OK
+        self.services.mailing = self.mailing
 
     # ------------------------------------------------------------------ setup
     def _setup_logging(self) -> None:
@@ -424,6 +428,19 @@ class MonkeyApp:
                     log.warning("email to-do scan failed: %s", "see the account's status in Settings")
                 wait = max(5, int(self.cfg.settings.email_todo_scan_min or 15)) * 60
         threading.Thread(target=loop, name="email-todos", daemon=True).start()
+
+    def start_mailing_verify(self, first_after_s: float = 300.0) -> None:
+        """Once a day: lists the owner unsubscribed from a week ago are re-read (headers only) to see if mail still
+        arrives. Does nothing (no inbox reads) when no verification is due."""
+        def loop():
+            wait = first_after_s
+            while not self._email_scan_stop.wait(wait):
+                try:
+                    self.mailing.verify_tick()
+                except Exception:  # noqa: BLE001
+                    log.warning("mailing-list check failed")
+                wait = 24 * 3600
+        threading.Thread(target=loop, name="mailing-verify", daemon=True).start()
 
     # ------------------------------------------------------------------ morning brief sources
     def _calendars(self) -> list:
@@ -1841,6 +1858,7 @@ class Api:
         for acct in ([account] if account else a.accounts.google_ids()):
             a.accounts.remove_google(acct)
             a.suggestions.forget_account(acct)
+            a.mailing.store.forget_account(acct)
         if not account:
             a.cfg.update(google_account="")
         a.refresh_accounts()
@@ -1918,6 +1936,7 @@ class Api:
         self._app.cfg.settings.outlook_connected = False
         self._app.cfg.save()
         self._app.suggestions.forget_account("outlook")
+        self._app.mailing.store.forget_account("outlook")
         return {"ok": True}
 
     def learn_style(self):
@@ -2456,13 +2475,59 @@ class Api:
     def automation_start(self, objective: str, start_url: str, domains: list, mode: str = "managed_browser",
                          send_screenshots: bool = False, confirm_medium: bool = False, helper_sites: bool = True,
                          any_site: bool = True, skill: str = "course", apps: list | None = None,
-                         files: list | None = None, allow_physical: bool = False, window: dict | None = None):
+                         files: list | None = None, allow_physical: bool = False, window: dict | None = None,
+                         template: str = ""):
+        from .automation.templates import TEMPLATES
+
+        # The UI may name any listed template except unsubscribe_page, which only an approved mailing batch starts.
+        template = template if template in TEMPLATES and template != "unsubscribe_page" else ""
         return self._app.automation.start(objective, start_url, list(domains or []), mode, send_screenshots,
                                           confirm_medium, window=window, helper_sites=bool(helper_sites),
                                           any_site=bool(any_site),
                                           skill=skill if skill in ("course", "general") else "course",
                                           apps=list(apps or []), files=list(files or []),
-                                          allow_physical=bool(allow_physical))
+                                          allow_physical=bool(allow_physical), template=template)
+
+    def automation_templates(self):
+        return self._app.automation.templates()
+
+    # ------------------------------------------------------------ mailing lists (monkey/mailing)
+    def mailing_state(self):
+        return {"ok": True, **self._app.mailing.state()}
+
+    def mailing_scan(self):
+        m = self._app.mailing
+        if m.scanning:
+            return {"ok": False, "error": "Already checking your inboxes."}
+        return m.scan_async()
+
+    def mailing_prepare(self, ids: list):
+        return self._app.mailing.prepare(list(ids or []))
+
+    def mailing_run(self, batch_id: str, token: str):
+        return self._app.mailing.run(str(batch_id), str(token or ""))
+
+    def mailing_cancel(self, batch_id: str):
+        return self._app.mailing.cancel(str(batch_id))
+
+    def mailing_keep(self, list_id: str, keep: bool = True):
+        return self._app.mailing.keep(str(list_id), bool(keep))
+
+    def mailing_stop(self):
+        self._app.mailing.stop()
+        self._app.automation.emergency_stop()
+        return {"ok": True}
+
+    def mailing_open(self, list_id: str):
+        """The owner's own click on "Open page": the list's header unsubscribe page in their browser."""
+        from .mailing.headers import check_https_url
+
+        row = self._app.mailing.store.get(str(list_id))
+        url = (row or {}).get("web_url", "")
+        if not url or not check_https_url(url, resolve=None).ok:
+            return {"ok": False, "error": "This list has no usable unsubscribe page."}
+        self._app._open_url(url)
+        return {"ok": True}
 
     def automation_trace(self, task_id: str):
         return self._app.automation.trace(task_id)
@@ -2748,6 +2813,7 @@ def run() -> None:
         app.start_todo_reminders()
         app.start_email_todo_scan()
         app.start_screentime()
+        app.start_mailing_verify()
 
         def startup_cleanup():
             from . import lifecycle

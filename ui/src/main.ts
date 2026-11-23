@@ -22,6 +22,7 @@ import { flash, pop, pulse, setFeedbackSound, shake } from "./feedback";
 import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, computerEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
+import { initMailing, mailingEvent } from "./mailinglists";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
@@ -642,6 +643,9 @@ function onEvent(name: string, p: any) {
     case "automation_propose": void openTasks(p); notifySound(); break;
     case "automation_stopped": toast("Stopped every computer task. Nothing else will be clicked."); void refreshTasks(); break;
     case "automation_enabled": void refreshTasks(); break;
+    case "mailing_review": mailingEvent(name, p); notifySound(); break;      // Monkey pre-selected lists: your OK
+    case "mailing_lists": case "mailing_scan": case "mailing_progress": case "mailing_item": case "mailing_done":
+      mailingEvent(name, p); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
     case "heard": if (!p.text) { addMsg("sys", "Didn't catch that."); pop("❓ Didn't catch that"); } break;
     case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
@@ -1784,6 +1788,7 @@ async function bootOverlay() {
     "It's billed to whoever owns the Claude key (prepaid credit at console.anthropic.com), never a card in Monkey. Change the limit in Settings → Advanced.", 8000);
   await restoreTranscript();
   initComputer(api);
+  initMailing(api);
   $("#stage").append(controlBanner());
   $("#tasksBtn").addEventListener("click", () => void openTasks());
   initToday(api, $("#side"), $("#cards"));
