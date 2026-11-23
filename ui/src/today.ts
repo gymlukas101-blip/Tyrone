@@ -6,6 +6,7 @@
 // the cached brief and the cached assignment board.
 import { renderAssignments } from "./assignments";
 import { countdown, h, toast } from "./dom";
+import { pop } from "./motion";
 
 type Sec = { status: string; items: any[]; note: string };
 export interface Dash { ok: boolean; sections: Record<string, Sec>; stats?: Record<string, number>; brief_day?: string | null }
@@ -118,6 +119,7 @@ async function draw(attempt = 0) {
   }
   if (seq !== drawSeq || !root) return;          // a newer tab/draw started meanwhile: don't overwrite it
   panel.setAttribute("aria-labelledby", `todayTab-${tab}`);
+  panel.classList.toggle("m-quiet", attempt > 0);  // a background reload doesn't replay the entrance
   panel.replaceChildren(content);
   lastDrawMs = performance.now() - t0;
   if ((d as any)?.loading && attempt < 10) setTimeout(() => { if (seq === drawSeq && !root!.hidden) void draw(attempt + 1); }, 1500);
@@ -125,12 +127,16 @@ async function draw(attempt = 0) {
 }
 
 function select(next: Tab, focus = false) {
+  // The new tab's content slides in from the side the tab is on (motion.css: #todayPanel[data-m-dir]).
+  const from = TABS.findIndex(([id]) => id === tab), to = TABS.findIndex(([id]) => id === next);
+  root!.querySelector<HTMLElement>("#todayPanel")!.dataset.mDir = to > from ? "right" : to < from ? "left" : "";
   tab = next;
   root!.querySelectorAll<HTMLButtonElement>("[role=tab]").forEach((b) => {
     const on = b.dataset.tab === tab;
     b.setAttribute("aria-selected", String(on));
     b.tabIndex = on ? 0 : -1;
     if (on && focus) b.focus();
+    if (on && from !== to) pop(b, 0.7);
   });
   void draw();
 }

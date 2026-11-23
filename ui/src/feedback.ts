@@ -7,6 +7,7 @@
 //   pulse  the status label bumps once (a state change you might miss, like "Got it…")
 // With "reduce motion" on, pops and flashes fade in and out without scaling or shaking: still visible, never jumpy.
 import { h } from "./dom";
+import { level } from "./motion";
 
 /** The matching earcon for each kind of moment (set by main.ts once the sound engine is ready). Sound and sight
  *  come from one place, so a moment that flashes also sounds, and a silent moment stays silent. */
@@ -14,7 +15,7 @@ let sound: ((cue: string, intensity?: number) => void) | null = null;
 export function setFeedbackSound(fn: typeof sound) { sound = fn; }
 const FLASH_CUE: Record<"good" | "warn" | "bad", [string, number]> = { good: ["check", 0.8], warn: ["ui_error", 0.6], bad: ["ui_error", 1] };
 
-const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reduced = () => level() === "min";      // OS "reduce motion" or Juice minimal (motion.ts)
 let lastPop = "";
 let lastPopAt = 0;
 

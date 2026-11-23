@@ -4,6 +4,7 @@ import type { Api } from "./bridge";
 import { burst, undoToast } from "./assignments";
 import { decorate } from "./todo-blocky";
 import { h, toast } from "./dom";
+import { confetti, flip, pop, toastGone, toastShown } from "./motion";
 import { dueDate, dueLabel, isOverdue, splitQuick } from "./todoparse";
 import { loadSuggestions, suggestionsSection } from "./todosuggest";
 
@@ -276,6 +277,12 @@ function draw(freshId?: string) {
                   overdue: "Nothing overdue. You're on it. 🔒", done: "Nothing checked off yet." }[tab];
   const body = root.querySelector(".todo-body")!;
   const keepAdd = body.querySelector(".todo-addwrap") ?? quickAdd();
+  // Motion (motion.flip): rows glide when sorted, new ones pop in, removed ones shrink away. A different tab or the
+  // editor opening/closing is a new view: no ghosts of what it replaced.
+  const counts = { open: v.open.length, overdue: v.overdue.length, done: v.done.length };
+  const prev = drawnState;
+  const quiet = !!prev && (prev.tab !== tab || prev.editing !== cur.editing);
+  const play = flip(body, "li.todo-row", (el) => el.dataset.id);
   body.replaceChildren(
     h("div", { class: "asg-head" }, h("div", {},
       h("div", { class: "asg-headline" }, headline),
@@ -302,7 +309,23 @@ function draw(freshId?: string) {
   if (ed && document.activeElement?.closest(".todo-edit") == null) ed.focus();
   cur.drawn = true;           // rows slide in once; later redraws (a check, an edit) don't replay it for every row
   decorate(root);             // toy-block icons + background (visual layer only; see todo-blocky.ts)
+  play({ exits: !quiet, kind: quiet ? "rise" : undefined });
+  if (prev) {
+    // a count that changed bumps its tab; the tab you switched to (or the sort) pops; finishing the last one celebrates
+    const btns = body.querySelectorAll<HTMLButtonElement>(".todo-bar .tabs:not(.sort) button");
+    (["open", "overdue", "done"] as const).forEach((id, i) => {
+      if (id === tab && prev.tab !== tab) pop(btns[i], 0.7);
+      else if (prev.counts[id] !== counts[id]) pop(btns[i], 0.5);
+    });
+    if (prev.sort !== cur.sort) pop(body.querySelector(".tabs.sort button.on"), 0.7);
+    if (prev.counts.open > 0 && counts.open === 0) {
+      confetti(body.querySelector(".asg-headline"), 24);
+      pop(body.querySelector(".asg-headline"));
+    }
+  }
+  drawnState = { tab, editing: cur.editing, sort: cur.sort, counts };
 }
+let drawnState: { tab: Tab; editing: string | null; sort: string; counts: Record<Tab, number> } | null = null;
 
 async function setting(key: "todo_reminders" | "todo_speak_reminders", on: boolean) {
   if (!cur) return;
@@ -316,6 +339,7 @@ export function renderTodos(card: HTMLElement, api: Api, data: { items: Todo[]; 
   card.append(h("div", { class: "todo-body" }));
   cur = { root: card, api, hooks, items: data.items ?? [], settings: data.settings ?? { reminders: true, speak: false },
           tab, sort: cur?.sort ?? "due", editing: null, drawn: false };
+  drawnState = null;
   draw();
   void loadSuggestions(api).then(() => { if (cur && !cur.editing) draw(); });   // "Suggested from email"
 }
@@ -338,14 +362,15 @@ export function reminderToast(api: Api, t: Todo, onDone: () => void) {
   const el = h("div", { class: "toast todo-remind", role: "alert", "data-id": t.id },
     h("strong", {}, "⏰ " + t.text), " ", h("span", { class: "meta" }, when), " ",
     h("button", { type: "button", class: "ghost mini", onclick: async () => {
-      el.remove();
+      toastGone(el);
       const r = await api.todo_update(t.id, { status: "done" });
       if (r.ok) { onDone(); toast(`✓ Done: "${t.text}"`); void refreshTodos(); }
     } }, "Done"),
-    h("button", { type: "button", class: "ghost mini", onclick: async () => { el.remove(); await api.todo_snooze(t.id, 10); } }, "Snooze 10 min"),
-    h("button", { type: "button", class: "ghost mini", "aria-label": "Dismiss reminder", onclick: () => el.remove() }, "✕"));
+    h("button", { type: "button", class: "ghost mini", onclick: async () => { toastGone(el); await api.todo_snooze(t.id, 10); } }, "Snooze 10 min"),
+    h("button", { type: "button", class: "ghost mini", "aria-label": "Dismiss reminder", onclick: () => toastGone(el) }, "✕"));
   document.body.append(el);
-  setTimeout(() => el.remove(), 90_000);
+  toastShown(el);
+  setTimeout(() => toastGone(el), 90_000);
   return el;
 }
 

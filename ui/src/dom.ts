@@ -1,4 +1,5 @@
 // Tiny DOM helpers shared by the UI modules.
+import { toastGone, toastShown } from "./motion";
 
 export type Child = Node | string | null | undefined | false;
 
@@ -45,7 +46,8 @@ export function toast(text: string, ms?: number) {
   // the open dialog so messages shown while Settings is open are actually visible.
   const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
   host.append(t);
-  setTimeout(() => t.remove(), ms ?? (text.startsWith("⚠") ? 6500 : 3500));
+  toastShown(t);
+  setTimeout(() => toastGone(t), ms ?? (text.startsWith("⚠") ? 6500 : 3500));
 }
 
 export const safeHttp = (u: string) => (/^https:\/\//i.test(u) ? u : "");

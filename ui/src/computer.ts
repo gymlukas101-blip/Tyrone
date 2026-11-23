@@ -4,6 +4,7 @@ import type { Api, AutoState, AutoTask, Approval, ComputerEvent } from "./bridge
 import { h, toast } from "./dom";
 import { openMailing } from "./mailinglists";
 import { LIMITS, approvalKind, loadTemplates, templateChip, templatePicker } from "./tasktemplates";
+import { attention } from "./motion";
 
 let api: Api;
 let state: AutoState | null = null;
@@ -168,6 +169,9 @@ export function taskPanel(compact = false): HTMLElement {
           onclick: () => void control("done") }, pend.kind === "sign_in" ? "I'm signed in" : "I did it"));
       }
       parts.push(card);
+      // A new question or approval wiggles once when it first shows (redraws of the same one stay still).
+      const ask = `${t.id}:${pend.kind}:${pend.approval_id ?? pend.message}`;
+      if (box.dataset.ask !== ask) { box.dataset.ask = ask; requestAnimationFrame(() => attention(card)); }
     }
     const row = h("div", { class: "row taskctl" });
     if (LIVE.includes(t.state)) row.append(h("button", { type: "button", class: "ghost mini", onclick: () => void control("pause") }, "⏸ Pause"));

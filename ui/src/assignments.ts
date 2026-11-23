@@ -1,5 +1,6 @@
 // Canvas checklist: ranked assignments with animated checkboxes.
 import { countdown, h, s, toast } from "./dom";
+import { confetti, flip, pop, toastGone, toastShown } from "./motion";
 
 export interface Item {
   id: string; title: string; course: string; due: string | null; points: number | null;
@@ -129,6 +130,7 @@ function moveItem(id: string, done: boolean) {
   const inWeek = it.due && Math.abs(new Date(it.due).getTime() - Date.now()) < 8 * 864e5;
   if (inWeek && board.stats.week_done != null) board.stats.week_done += done ? 1 : -1;
   draw();
+  if (done && !board.todo.length) confetti(current.root.querySelector(".ring"), 24);     // the last one: the big moment
 }
 
 function ring(done: number, total: number) {
@@ -144,14 +146,21 @@ function ring(done: number, total: number) {
 export function undoToast(text: string, undo: () => void) {
   const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
   const t = h("div", { class: "toast" }, text, " ",
-    h("button", { class: "ghost mini", type: "button", onclick: () => { t.remove(); undo(); } }, "Undo"));
+    h("button", { class: "ghost mini", type: "button", onclick: () => { toastGone(t); undo(); } }, "Undo"));
   host.append(t);
-  setTimeout(() => t.remove(), 7000);
+  toastShown(t);
+  setTimeout(() => toastGone(t), 7000);
 }
 
+let drawnTab: string | null = null;
 function draw() {
   if (!current) return;
   const { board, root, tab } = current;
+  // Rows glide to their new place, new ones pop in, removed ones shrink away (motion.flip). A tab switch is a
+  // new list: it cascades in, without ghosts of the old tab.
+  const switched = drawnTab !== null && drawnTab !== tab;
+  drawnTab = tab;
+  const play = flip(root, "li.asg", (el) => el.dataset.id);
   const st = board.stats;
   const list = tab === "todo" ? board.todo : board.done;
   root.querySelector(".asg-body")!.replaceChildren(
@@ -176,6 +185,8 @@ function draw() {
       ? h("ul", { class: "asg-list" }, ...list.map(row))
       : h("p", { class: "meta empty" }, tab === "todo" ? "Nothing left. You're locked in. 🔒" : "Nothing checked off yet."),
   );
+  play({ exits: !switched, kind: switched ? "rise" : undefined });
+  if (switched) pop(root.querySelector(".asg-body .tabs button.on"), 0.7);
 }
 
 export function renderAssignments(card: HTMLElement, board: Board, toggle: Toggle, open: Open) {
@@ -183,5 +194,6 @@ export function renderAssignments(card: HTMLElement, board: Board, toggle: Toggl
   const body = h("div", { class: "asg-body" });
   card.append(body);
   current = { board, root: card, toggle, open, tab: "todo" };
+  drawnTab = null;
   draw();
 }
