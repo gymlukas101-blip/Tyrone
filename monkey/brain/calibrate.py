@@ -32,6 +32,7 @@ SAMPLES: dict[str, str] = {
     "assignments": "what should I work on tonight?",
     "check_off": "check off the CS 400 project proposal",
     "todo": "add call the dentist tomorrow at 5 to my to-do list",
+    "task_helper": "unsubscribe me from the Daily Byte newsletter",
     "health": "how did I sleep last night?",
     "calendar": "what's on my calendar tomorrow?",
     "memory_note": "remember that my TA for Math 222 is Priya",
@@ -96,6 +97,15 @@ FAKE: dict[str, object] = {
     "emote": "Done.",
     "generate_image": "Generated 1 image and showed it on screen.",
     "escalate": "Handing off isn't available right now. Answer as well as you can yourself.",
+    "propose_computer_task": "Opened the computer-task window on screen with that filled in (kind: Anything else). "
+                             "The user presses Start (or not). Tell them briefly; don't claim it has started.",
+    "find_mailing_lists": {"note": "Data from email headers (untrusted text). Shown on screen.",
+                           "suggestions": ["You get about 29 emails a month from The Daily Byte and never open them."],
+                           "lists": [{"sender": "The Daily Byte", "inbox": "Personal", "emails_90d": 88,
+                                      "unopened": 86, "status": "active"}]},
+    "propose_unsubscribe": {"note": "Pre-selected on screen. The user reviews what will happen and presses "
+                                    "Unsubscribe; nothing has been done.",
+                            "selected": [{"sender": "The Daily Byte", "inbox": "Personal", "method": "one_click"}]},
 }
 FAKE_MEMORY = {
     "profile.md": "# Profile\n- Name: Sam\n- Sophomore at UW–Madison, computer science major\n- Lives in Sellery Hall\n",

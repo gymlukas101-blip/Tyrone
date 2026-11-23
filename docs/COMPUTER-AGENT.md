@@ -189,7 +189,10 @@ What a run tests:
 
 ## General tasks: browser + Windows apps (hybrid computer use, on `main` since 2026-11-20)
 
-1. In 🖐 **Tasks**, pick **"General task: his browser + apps you pick"**.
+Since `feature/task-helper-general`, the Tasks form picks a *kind of task* (template) instead of course/general, and
+there's a 📭 **Mailing lists** review: see [automation/GENERAL_TASKS.md](automation/GENERAL_TASKS.md).
+
+1. In 🖐 **Tasks**, pick a kind of task other than **Course modules** (e.g. "Anything else").
 2. Fill in:
    - **What to do:** the objective.
    - **Start page and sites:** optional.

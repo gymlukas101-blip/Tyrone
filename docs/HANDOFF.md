@@ -28,6 +28,13 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 ## Blocky look (branch `feature/todo-blocky-ui`, waiting for review)
 - New fonts app-wide (Titan One + Nunito, bundled, OFL) and toy-block 3D icons in the header, mic and to-do panel, baked once on the PC into sprites (no WebGL at rest), a faint block background in the to-do panel, a "done!" pop. Juice and reduced motion respected; skipped on software GL. Prototype gallery of all 63 icons + backgrounds: `ui/prototypes/blocky-icons/`. Details: `docs/ui/BLOCKY_ICONS.md`, `docs/ui/TODO-FONTS.md`.
 - Not tried on the Dell (bake time on its GPU, crispness at its scaling).
+## Task helper for any task + mailing lists (branch `feature/task-helper-general`, waiting for review)
+- 🖐 The task helper isn't Canvas-only any more. Monkey offers a task from any goal ("cancel my Spotify free trial reminder", "find the cheapest flight… just show me", "fill in this form, let me review").
+- Templates add rules and checks; Course is one of them, unchanged.
+- **Hard no:** banking or payment sites, Instagram/Snapchat automation, typing payment details, passwords or security settings.
+- Spending, sending, submitting, deleting and account changes stop for the owner's OK on that exact step.
+- 📭 **Mailing lists:** reads list headers in every inbox and suggests lists the owner never opens. It unsubscribes only what the owner approves, per list: one-click, an email the owner sends from the draft card, or the list's own page. It then checks for 7 days that the mail stopped.
+- Design, audit and open decisions (archive/filter needs a broader Gmail scope; it's off): [`docs/automation/GENERAL_TASKS.md`](automation/GENERAL_TASKS.md). Not tried on the Dell, with a live planner, or with real inboxes.
 
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:

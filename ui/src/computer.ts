@@ -2,6 +2,8 @@
 // Everything consequential happens in Python behind PermissionGate; this file only asks and shows.
 import type { Api, AutoState, AutoTask, Approval, ComputerEvent } from "./bridge";
 import { h, toast } from "./dom";
+import { openMailing } from "./mailinglists";
+import { LIMITS, approvalKind, loadTemplates, templateChip, templatePicker } from "./tasktemplates";
 
 let api: Api;
 let state: AutoState | null = null;
@@ -119,7 +121,7 @@ export function taskPanel(compact = false): HTMLElement {
     const ap = approvals.find((a) => a.task_id === t.id && a.id === pend?.approval_id) ?? approvals.find((a) => a.task_id === t.id);
     const parts: HTMLElement[] = [
       h("div", { class: "taskhead" }, h("span", { class: `badge s-${t.state.toLowerCase()}` }, STATE_LABEL[t.state] ?? t.state),
-        h("span", { class: "tasknote" }, t.note || t.subgoal || "")),
+        h("span", { class: "tasknote" }, t.note || t.subgoal || ""), compact ? "" : templateChip(t.template)),
     ];
     if (!compact) parts.push(h("p", { class: "meta" }, `“${t.objective}”`));
     if (!compact) parts.push(h("p", { class: "meta" }, [t.progress?.modules_done ? `${t.progress.modules_done} module(s) done` : "",
@@ -157,7 +159,7 @@ export function taskPanel(compact = false): HTMLElement {
         card.append(h("button", { type: "button", class: "primary mini", onclick: () => void say("I confirm") }, "I confirm"),
           h("p", { class: "meta" }, "Only if it's true for you. You can also say or type “I confirm”."));
       } else if (pend.kind === "approval" && ap) {
-        card.append(h("div", { class: "row" },
+        card.append(approvalKind(ap.kind), h("div", { class: "row" },
           h("button", { type: "button", class: "primary mini", onclick: async () => {
             const r = await api.automation_approve(t.id, ap.id, ap.token, true); if (!r.ok) toast(`⚠ ${r.error}`); } }, "Allow once"),
           h("button", { type: "button", class: "ghost mini", onclick: () => void api.automation_approve(t.id, ap.id, "", false) }, "Don't")));
@@ -173,7 +175,9 @@ export function taskPanel(compact = false): HTMLElement {
     if (LIVE.includes(t.state) || t.state === "PAUSED") row.append(h("button", { type: "button", class: "ghost mini danger", onclick: () => void control("stop") }, "■ Stop"));
     if (!compact) row.append(h("button", { type: "button", class: "ghost mini", onclick: () => void showHistory(t.id) }, "History"));
     parts.push(row);
-    if (t.state === "COMPLETED" && t.outcome?.evidence) parts.push(h("p", { class: "meta ok" }, `Checked on the site: ${t.outcome.evidence.done} of ${t.outcome.evidence.total} complete.`));
+    const ev = t.outcome?.evidence;
+    if (t.state === "COMPLETED" && ev) parts.push(h("p", { class: "meta ok" }, typeof ev === "string"
+      ? `Checked on screen: “${ev}”` : `Checked on the site: ${ev.done} of ${ev.total} complete.`));
     box.replaceChildren(...parts);
   };
   onChange(draw); draw();
@@ -219,7 +223,7 @@ function browserPick(st: AutoState): HTMLElement {
         h("li", {}, "Click ", h("b", {}, "Load unpacked"), " and pick Monkey's extension folder ",
           h("button", { type: "button", class: "ghost mini", onclick: async () => { const r = await api.automation_bridge!("open_folder"); if (!r.ok) toast(`⚠ ${r.error ?? ""} ${r.path ?? ""}`, 6000); } }, "Open folder")),
         h("li", {}, "Click the 🍌 Monkey icon in Chrome's toolbar, paste this code and press Pair:"),
-        h("li", {}, "Open your Canvas page, click the Monkey icon → ", h("b", {}, "Let Monkey use this tab"), "."))]),
+        h("li", {}, "Open the page you want help with, click the Monkey icon → ", h("b", {}, "Let Monkey use this tab"), "."))]),
       h("div", { class: "row" }, code,
         h("button", { type: "button", class: "ghost mini", onclick: async () => { await navigator.clipboard.writeText(code.value).catch(() => code.select()); toast("Pairing code copied"); } }, "Copy"),
         h("button", { type: "button", class: "ghost mini", title: "The old code stops working; paste the new one in the extension",
@@ -237,25 +241,27 @@ function browserPick(st: AutoState): HTMLElement {
 }
 
 /** The Tasks dialog: on/off switch, the permission flow, the live panel and past tasks. */
-export async function openTasks(prefill?: { objective?: string; start_url?: string }) {
+export async function openTasks(prefill?: { objective?: string; start_url?: string; template?: string }) {
   await refresh();
+  const templates = await loadTemplates(api);
   let dlg = document.getElementById("tasksDlg") as HTMLDialogElement | null;
   if (!dlg) { dlg = h("dialog", { id: "tasksDlg", class: "tasksdlg" }) as HTMLDialogElement; document.body.append(dlg); }
   const st = state!;
   const sw = h("input", { type: "checkbox", checked: st.enabled }) as HTMLInputElement;
   sw.addEventListener("change", async () => { state = await api.automation_enable(sw.checked); toast(sw.checked ? "Computer tasks on" : "Computer tasks off: everything stopped"); void openTasks(); });
 
-  const objective = h("textarea", { rows: 2, placeholder: "e.g. Work through the 4 modules of the Title IX training on Canvas", value: prefill?.objective ?? "" }) as HTMLTextAreaElement;
+  // What kind of task: a template (general ones plan with Claude; "course" is the deterministic Canvas/LMS skill).
+  let tpl = templates.find((t) => t.id === prefill?.template) ?? templates.find((t) => t.id === "generic") ?? templates[0];
+  const objective = h("textarea", { rows: 2, placeholder: `e.g. ${tpl.example}`, value: prefill?.objective ?? "" }) as HTMLTextAreaElement;
   objective.value = prefill?.objective ?? "";
-  const url = h("input", { placeholder: "Start page, e.g. https://canvas.wisc.edu/courses/12345/modules", value: prefill?.start_url ?? "" }) as HTMLInputElement;
-  const domains = h("input", { placeholder: "canvas.wisc.edu" }) as HTMLInputElement;
+  const url = h("input", { placeholder: "Start page, e.g. https://example.org/account (optional)", value: prefill?.start_url ?? "" }) as HTMLInputElement;
+  const domains = h("input", { placeholder: "example.org" }) as HTMLInputElement;
   const fillHost = () => { try { const u = new URL(url.value.includes("://") ? url.value : `https://${url.value}`); if (!domains.value) domains.value = u.hostname; } catch { /* typing */ } };
   url.addEventListener("change", fillHost); fillHost();
   const shots = h("input", { type: "checkbox" }) as HTMLInputElement;
   const askMore = h("input", { type: "checkbox" }) as HTMLInputElement;
   const helpers = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
-  const general = h("input", { type: "radio", name: "mode" }) as HTMLInputElement;
-  const course = h("input", { type: "radio", name: "mode", checked: true }) as HTMLInputElement;
+  const isCourse = () => tpl.skill === "course";
   const apps = h("input", { placeholder: "notepad.exe, excel.exe" }) as HTMLInputElement;
   const files = h("textarea", { rows: 2, placeholder: "C:\\Users\\you\\Documents\\report.docx (one per line)" }) as HTMLTextAreaElement;
   const physical = h("input", { type: "checkbox" }) as HTMLInputElement;
@@ -264,10 +270,13 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     h("label", { class: "field" }, h("span", {}, "Apps he may use (program names)"), apps), winList,
     h("label", { class: "field" }, h("span", {}, "Files he may open, save or upload"), files),
     h("label", { class: "field toggle" }, physical, h("span", {}, "He may use my real mouse and keyboard in those apps when nothing else works (he waits while you're typing or moving the mouse)")));
+  const courseOnly: HTMLElement[] = [];
   const syncMode = async () => {
-    appBox.hidden = !general.checked;
-    helpers.closest("label")!.toggleAttribute("hidden", general.checked);
-    if (general.checked && st.windows_supported && !winList.childElementCount) {
+    appBox.hidden = isCourse();
+    for (const el of courseOnly) el.hidden = !isCourse();
+    helpers.closest("label")!.toggleAttribute("hidden", !isCourse() || anySite.checked);
+    objective.placeholder = `e.g. ${tpl.example}`;
+    if (!isCourse() && st.windows_supported && !winList.childElementCount) {
       const w = await api.automation_windows();
       const seen = new Set<string>();
       for (const x of w.windows.filter((x) => !x.sensitive && x.process)) {
@@ -277,12 +286,12 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
       }
     }
   };
-  general.addEventListener("change", () => void syncMode()); course.addEventListener("change", () => void syncMode());
+  const picker = templatePicker(templates, tpl.id, (t) => { tpl = t; void syncMode(); });
   const anySite = h("input", { type: "checkbox", checked: true }) as HTMLInputElement;
   const syncSites = () => {
     domains.disabled = anySite.checked;
     domains.closest("label")?.toggleAttribute("hidden", anySite.checked);
-    helpers.closest("label")?.toggleAttribute("hidden", anySite.checked);
+    helpers.closest("label")?.toggleAttribute("hidden", anySite.checked || !isCourse());
   };
   anySite.addEventListener("change", syncSites);
   const err = h("p", { class: "keynote" });
@@ -292,9 +301,10 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     let r: { ok: boolean; error?: string };
     try {
       r = await api.automation_start(objective.value, url.value.trim(), domains.value.split(/[,\s]+/).filter(Boolean),
-      "managed_browser", shots.checked, askMore.checked, helpers.checked && !general.checked, anySite.checked,
-      general.checked ? "general" : "course", apps.value.split(/[,\s]+/).filter(Boolean),
-      files.value.split(/\n+/).map((x) => x.trim()).filter(Boolean), physical.checked);
+      "managed_browser", shots.checked, askMore.checked, helpers.checked && isCourse(), anySite.checked,
+      isCourse() ? "course" : "general", isCourse() ? [] : apps.value.split(/[,\s]+/).filter(Boolean),
+      isCourse() ? [] : files.value.split(/\n+/).map((x) => x.trim()).filter(Boolean), physical.checked && !isCourse(),
+      null, isCourse() ? "" : tpl.id);
     } catch (e) {                                   // a crash in the app must still answer the click
       return fail(`Couldn't start: ${(e as Error)?.message ?? e}`);
     }
@@ -304,39 +314,44 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     void refresh();
   };
   const busy = !!current && (LIVE.includes(current.state) || current.state === "PAUSED");
+  const courseHelp = h("p", { class: "help" }, `Questions and confirmations are yours: Monkey reads each one out with his pick and a reason, then clicks exactly what you say ("B", "I confirm"). He clicks Complete module on his own.`);
+  const demoBtn = h("button", { type: "button", class: "ghost", onclick: async () => {
+    const d = await api.automation_demo(); objective.value = d.objective; url.value = d.url; domains.value = d.domain; } }, "Try the safe demo course");
+  courseOnly.push(courseHelp, demoBtn);
   const form = h("section", { class: "taskform" },
     h("h4", {}, "Start a task"),
     h("label", { class: "field" }, h("span", {}, "What should Monkey do?"), objective),
-    h("div", { class: "modes" },
-      h("label", {}, course, " ", h("b", {}, "Course modules in Monkey's browser"),
-        h("small", {}, " A separate browser window with its own sign-ins. He can only click on the sites below.")),
-      h("label", { class: st.windows_supported ? "" : "off" }, general, " ", h("b", {}, "General task: his browser + apps you pick"),
-        h("small", {}, " Plans with Claude, switches between the browser and the apps, checks the result on screen."))),
+    h("div", { class: "field" }, h("span", {}, "What kind of task"), picker),
     appBox,
     h("label", { class: "field" }, h("span", {}, "Start page"), url),
     h("label", { class: "field toggle" }, anySite, h("span", {}, h("b", {}, "Any website"),
-      " Canvas, Duo, module and video sites open freely. He still never types passwords or codes, asks before anything that sends, submits, buys or deletes, and quiz answers stay yours.")),
+      " Sites open freely (sign-in and video pop-ups included). He still never types passwords, codes or card details, asks before anything that sends, submits, buys, deletes or changes your account, and quiz answers stay yours.")),
     h("label", { class: "field" }, h("span", {}, "Sites he may use"), domains),
     browserPick(st),
     h("label", { class: "field toggle" }, shots, h("span", {}, "Let Claude see screenshots of these pages when he's unsure (they're sent to Anthropic's API; otherwise only the page's outline of buttons and text is sent, and only when the built-in steps don't know what to do)")),
     h("label", { class: "field toggle" }, helpers, h("span", {}, "Also allow the sign-in and video sites courses use (your school's login, Duo, Microsoft, Canvas, Kaltura, Panopto, YouTube, Vimeo). Anything else, he asks you first.")),
     h("label", { class: "field toggle" }, askMore, h("span", {}, "Ask me before he types into or saves anything, too")),
-    h("p", { class: "help" }, `Questions and confirmations are yours: Monkey reads each one out with his pick and a reason, then clicks exactly what you say ("B", "I confirm"). He clicks Complete module on his own. He never signs in or types passwords, and asks before anything that sends, submits, buys or deletes. Stop anytime with the Stop button or ${hotkey()}.`),
-    h("div", { class: "row" },
-      h("button", { type: "button", class: "ghost", onclick: async () => {
-        const d = await api.automation_demo(); objective.value = d.objective; url.value = d.url; domains.value = d.domain; } }, "Try the safe demo course"),
+    courseHelp,
+    h("p", { class: "help" }, `Reading and looking around are free. Anything outward-facing (send, submit, buy, delete, change your account) stops for your OK on that exact step. Page and email text can never give him orders. Stop anytime with the Stop button or ${hotkey()}.`),
+    h("p", { class: "limits" }, LIMITS),
+    h("div", { class: "row" }, demoBtn,
       h("button", { type: "button", class: "primary", disabled: busy || !st.enabled, onclick: start }, busy ? "A task is running" : "Allow and start")),
     err);
   const past = st.tasks.filter((t) => !LIVE.includes(t.state) && t.state !== "PAUSED").slice(0, 8).map((t) =>
     h("li", {}, h("span", { class: `badge s-${t.state.toLowerCase()}` }, STATE_LABEL[t.state] ?? t.state), " ", t.objective.slice(0, 70),
       " ", h("button", { type: "button", class: "ghost mini", onclick: () => void showHistory(t.id) }, "History")));
   dlg.replaceChildren(
-    h("div", { class: "taskstop" }, h("h3", {}, "🖐 Computer tasks"), h("button", { type: "button", class: "ghost mini", onclick: () => dlg!.close() }, "✕")),
+    h("div", { class: "taskstop" }, h("h3", {}, "🖐 Task helper"),
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "ghost mini", title: "Newsletters and promos in your inboxes: review and unsubscribe",
+          onclick: () => { dlg!.close(); void openMailing(); } }, "📭 Mailing lists"),
+        h("button", { type: "button", class: "ghost mini", "aria-label": "Close", onclick: () => dlg!.close() }, "✕"))),
     h("label", { class: "field toggle" }, sw, h("span", {}, h("b", {}, "Let Monkey do tasks in his own browser"),
       h("small", {}, " Off by default. Turning it off stops everything immediately. Monkey works normally without it."))),
     ...(st.enabled ? [taskPanel(false), busy ? h("p", { class: "meta" }, "One task at a time: pause or stop this one to start another.") : form, past.length ? h("section", {}, h("h4", {}, "Earlier tasks"), h("ul", { class: "pastlist" }, ...past)) : ""] : []),
   );
   syncSites();
+  void syncMode();
   if (!dlg.open) dlg.showModal();
   dlg.scrollTop = 0;
 }

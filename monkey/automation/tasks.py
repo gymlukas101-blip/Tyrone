@@ -87,6 +87,8 @@ class Task:
     apps: list = field(default_factory=list)         # native apps (process names) a hybrid task may use
     allow_physical: bool = False                     # may use the real mouse/keyboard when UIA patterns can't
     success: list = field(default_factory=list)      # machine-checkable end state [{"text": ...}, {"url_contains"...}]
+    template: str = ""                               # templates.py id (general tasks): guidance, checks, rules
+    rules: dict = field(default_factory=dict)        # the template's gate rules, set by Monkey's UI at start
     id: str = field(default_factory=lambda: "t_" + uuid.uuid4().hex[:10])
     state: S = S.READY
     subgoal: str = ""

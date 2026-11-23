@@ -4,6 +4,9 @@ export type Importance = "low" | "normal" | "high";
 import type { Todo, TodoSettings, TodoStep } from "./todo";
 import type { PhoneStatus, ReminderChannels } from "./reminders";
 import { demoScreenTimeApi, type ScreenTimeApi } from "./screentime";
+import type { MailingApi } from "./mailinglists";
+import type { TaskTemplate } from "./tasktemplates";
+import { demoGeneralTask, demoMailingApi } from "./demo-taskhelper";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
 /** One connected inbox (Settings → Accounts). The address is only ever shown on this PC's screen. */
@@ -156,7 +159,8 @@ export interface Api extends ScreenTimeApi {
   automation_enable(on: boolean): Promise<AutoState>;
   automation_start(objective: string, startUrl: string, domains: string[], mode: string, sendScreenshots: boolean,
                    confirmMedium: boolean, helperSites?: boolean, anySite?: boolean, skill?: string, apps?: string[],
-                   files?: string[], allowPhysical?: boolean): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+                   files?: string[], allowPhysical?: boolean, window?: null, template?: string): Promise<{ ok: boolean; error?: string; task?: AutoTask }>;
+  automation_templates?(): Promise<{ ok: boolean; templates: TaskTemplate[] }>;
   automation_trace?(taskId: string): Promise<{ ok: boolean; events: ComputerEvent[] }>;
   automation_bridge?(action: "status" | "new_code" | "open_folder"): Promise<BridgeStatus & { path?: string; error?: string }>;
   automation_demo(): Promise<{ ok: boolean; url: string; domain: string; objective: string }>;
@@ -167,11 +171,21 @@ export interface Api extends ScreenTimeApi {
   automation_stop_all(): Promise<{ ok: boolean }>;
   automation_windows(): Promise<{ ok: boolean; windows: { hwnd: number; title: string; process: string; sensitive: boolean }[] }>;
   overlay(action: string, value?: any): Promise<{ ok: boolean; mode?: string }>;
+  // mailing lists (monkey/mailing): see MailingApi in mailinglists.ts
+  mailing_state: MailingApi["mailing_state"];
+  mailing_scan: MailingApi["mailing_scan"];
+  mailing_prepare: MailingApi["mailing_prepare"];
+  mailing_run: MailingApi["mailing_run"];
+  mailing_cancel: MailingApi["mailing_cancel"];
+  mailing_keep: MailingApi["mailing_keep"];
+  mailing_stop: MailingApi["mailing_stop"];
+  mailing_open: MailingApi["mailing_open"];
 }
 
 export interface AutoTask {
   id: string; objective: string; mode: string; state: string; note: string; subgoal: string; start_url: string;
   skill?: string; apps?: string[]; files?: string[]; window?: { title?: string; process?: string };
+  template?: string; rules?: Record<string, unknown>;
   allowed_domains: string[]; pending: { kind: string; message: string; approval_id?: string;
     info?: { question?: string; options?: string[]; statement?: string; host?: string; word?: string; button?: string;
       recommend?: { letter: string; reason: string } } } | null;
@@ -185,7 +199,8 @@ export interface ComputerEvent { task_id?: string; ts: number; t: number; ev: st
   recovered_by?: string; subgoal?: string; x?: number; y?: number; space?: string }
 export interface BridgeStatus { ok: boolean; listening?: boolean; extension_connected?: boolean; tabs?: number;
   error?: string; port?: number; pairing_code?: string; extension_folder?: string }
-export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string }
+export interface Approval { id: string; task_id: string; summary: string; risk: string; status: string; token: string;
+  kind?: string }
 export interface AuditRow { ts: number; kind: string; risk: string; target: string; host: string; outcome: string }
 export interface AutoState { enabled: boolean; tasks: AutoTask[]; active: string | null; approvals: Approval[];
   demo_url: string; stop_hotkey: string; windows_supported: boolean; browser?: string; chrome_installed?: boolean }
@@ -383,6 +398,7 @@ function mockApi(): Api {
     async open_documents_folder() { return { ok: true }; },
     async open_memory_folder() {},
     ...demoAutomation(emit, later),
+    ...demoMailingApi(emit, later),
     async memory_search(q: string) {
       return { ok: true, hits: q ? [
         { kind: "fact", ref: "f1a2b3c4", text: "Comet Quest ranked mode ships before survival (demo)", date: "2026-11-18", source: "projects.md", status: "current", score: -2, sensitive: false },
@@ -766,11 +782,14 @@ function demoAutomation(emit: (e: [string, any][]) => void, later: (ms: number, 
     async automation_enable(on: boolean) { st.enabled = on; return st; },
     async automation_demo() { return { ok: true, url: "http://127.0.0.1:8765/", domain: "127.0.0.1",
       objective: "Work through all 4 modules of the demo safety training. I'll answer the questions and tick the confirmations myself." }; },
-    async automation_start(objective: string, url: string, domains: string[]) {
+    async automation_start(objective: string, url: string, domains: string[], _mode?: string, _shots?: boolean, _ask?: boolean,
+                           _helpers?: boolean, _any?: boolean, skill?: string, _apps?: string[], _files?: string[], _phys?: boolean,
+                           _win?: null, template?: string) {
       const t: AutoTask = { id: "t_demo", objective, mode: "managed_browser", state: "RUNNING", note: "Looking at the screen…", subgoal: "",
         start_url: url, allowed_domains: domains, pending: null, progress: { steps: 0, modules_done: 0 },
         usage: { actions: 0, model_calls: 0, usd: 0, elapsed_s: 0 }, created: Date.now() / 1000, updated: Date.now() / 1000, outcome: null, errors: [] };
       st.tasks = [t, ...st.tasks]; st.active = t.id;
+      if (skill === "general") return demoGeneralTask(t, template || "generic", st, emit, later);
       const steps: [number, Partial<AutoTask>, string][] = [
         [800, { note: "opening module 1", progress: { steps: 1, modules_done: 0 } }, "working"],
         [1800, { state: "WAITING", note: "the lesson is playing; I'll continue when it ends" }, "waiting"],

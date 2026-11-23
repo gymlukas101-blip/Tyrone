@@ -647,3 +647,35 @@ rest, the pop, reduced motion, cached second launch, header icons) and `test_dis
 rest of `test_todo_ui.py` unchanged and passing.
 
 **Open:** the Dell (bake time on its GPU, look at 125–150%), the owner's opinion of the shapes, header icons next.
+
+## 2026-11-23: the task helper does any task, and unsubscribes from mailing lists (branch `feature/task-helper-general`)
+The owner asked for the task helper "to be able to do anything, not just canvas assignments. For example it can unsubscribe from mailing lists for me". Branched from `feature/todo-email-accounts` (several inboxes). Full audit, permission model and design: [`docs/automation/GENERAL_TASKS.md`](automation/GENERAL_TASKS.md).
+
+**General tasks (`monkey/automation/`):**
+- Hard limits (`limits.py`): banking/payment sites, Instagram/Snapchat automation, payment details, passwords and security settings are refused with one clear sentence before a task starts, and in the gate as FORBIDDEN (never approvable). Forbidden sites stay closed even with "Any website".
+- Gate (`permissions.py`): spending words are always HIGH (stop-and-ask on that exact step) and approvals carry a `kind` (spend/send/submit/delete/account/upload) for the card. More payment-field words. Template rules that only narrow: `read_only`, `click_only`, `type_only`, `no_links`, `confirm_medium`.
+- Templates (`templates.py`): generic, look_only, form_fill, account_settings, shopping, course (the existing CourseSkill, unchanged) and the deterministic `unsubscribe_page`. Guidance goes into the planner context (trusted); a template's own "done" pattern is read back from the screen.
+- `GoalRunner`: the generalized system prompt; deterministic templates run without Claude (`HandOff` when stuck); a step the owner said no to is no longer asked a second time. `TaskManager` keeps a local screenshot of the result for templates that ask for one.
+- Service: `start(..., template=)`, hard-limit refusal first, `start_template()` / `wait_unsubscribe()` for approved unsubscribe pages, `templates()`. The e-stop also stops unsubscribe batches. The planner's models now come from the policy (`computer_task`).
+
+**Mailing lists (`monkey/mailing/`):**
+- A read-only scan of list headers in every connected inbox (Gmail `metadata`, Outlook internet headers only while it's open), grouped by List-Id or sender, with picks.
+- An owner-approved batch per list: one-click POST (RFC 8058, checked and pinned address, no cookies), `mailto` drafted in the right inbox through the existing email approval gate, or the web page under `unsubscribe_page`.
+- Results and a 7-day "still arriving?" check, stored in `monkey.db`.
+- Archive/filter afterwards is not built: it needs broader Gmail scopes (owner decision).
+
+**Brain:** route `task_helper`, tools `find_mailing_lists` / `propose_unsubscribe`, a broader `propose_computer_task` (template, refusals), a persona paragraph, policy tasks `task_helper` and internal `computer_task`, calibration samples, 4 routing bench cases. `docs/MODEL-POLICY.md` regenerated.
+
+**UI (new files `ui/src/mailinglists.ts`, `tasktemplates.ts`, `demo-taskhelper.ts`, `mailinglists.css`):**
+- The 📭 Mailing lists review and its approval screen.
+- In the Tasks form: a template picker and the hard-limits line. In the HUD: a template chip and "what this step does" on the approval card.
+- The Canvas copy is gone from the general form.
+- Small edits in `computer.ts`, `bridge.ts` and `main.ts`.
+
+**Tests:**
+- `tests/test_task_helper_limits.py` (67)
+- `tests/test_task_helper_general.py` (10, real Chromium)
+- `tests/test_mailing_lists.py` (34)
+- `tests/test_task_helper_ui.py` (2; added to the CI browser job with the general tests)
+
+**Not done / open:** not tried on the Dell, with a live Claude planner, or with real inboxes. Outlook's header property is only exercised with fakes. See §8 of the design doc for the owner's decisions.

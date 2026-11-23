@@ -196,6 +196,30 @@
       },
       "why": "Adding or checking off is one tool call; 'help me with this' breaks the item into steps and may open a site or start a draft, so Important gets Sonnet."
     },
+    "task_helper": {
+      "label": "Task helper (unsubscribe, do something on a website)",
+      "min": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "default": [
+        "claude-haiku-5-5",
+        "medium"
+      ],
+      "max": [
+        "claude-sonnet-5-5",
+        "medium"
+      ],
+      "est": {
+        "rounds": 2,
+        "new_in": 600,
+        "out": 80,
+        "think": 200,
+        "searches": 0,
+        "per_month": 40
+      },
+      "why": "One tool call that opens the permission window or the Mailing lists review, plus one line. The task itself is planned separately (computer_task)."
+    },
     "health": {
       "label": "Garmin sleep / heart rate",
       "min": [
@@ -572,6 +596,32 @@
         "no_prefix": true
       },
       "why": "Runs once over your sent mail; Opus picks up tone best."
+    },
+    "computer_task": {
+      "label": "Computer task planner (background)",
+      "min": [
+        "claude-sonnet-5-5",
+        "medium"
+      ],
+      "default": [
+        "claude-sonnet-5-5",
+        "medium"
+      ],
+      "max": [
+        "claude-opus-5-5",
+        "medium"
+      ],
+      "internal": true,
+      "est": {
+        "rounds": 1,
+        "new_in": 2500,
+        "out": 250,
+        "think": 0,
+        "searches": 0,
+        "per_month": 150,
+        "no_prefix": true
+      },
+      "why": "Plans 1-4 browser/app steps per call from a compact outline of the screen; Opus only after the same screen stalls twice. Read-only and deterministic steps (skills, the action cache, the unsubscribe page) cost nothing."
     }
   }
 }

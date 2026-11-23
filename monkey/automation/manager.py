@@ -461,8 +461,10 @@ class TaskManager:
         from .computer import Computer, Trace
         from .computer.drivers.browser import BrowserDriver
         from .computer.goal import GoalRunner
+        from .templates import get as get_template
 
-        if self.goal_planner is None:
+        tpl = get_template(t.template)
+        if self.goal_planner is None and not (tpl is not None and tpl.deterministic):
             t.outcome = {"result": "error", "detail": "no planner"}
             self._set(t, S.FAILED, "General tasks need Claude (add your Anthropic key in Settings).")
             return
@@ -488,7 +490,9 @@ class TaskManager:
         if "browser" in drivers:
             self._reconcile(t, self.session)
         while True:
-            res = GoalRunner(t, comp, self.goal_planner, host, cache=self.action_cache).run()
+            res = GoalRunner(t, comp, self.goal_planner, host, cache=self.action_cache, template=tpl).run()
+            if res == "completed" and tpl is not None and tpl.screenshot_result and "browser" in drivers:
+                self._keep_result_screenshot(t)
             if res != "stopped" or t.terminal:
                 return
             if f.stop.is_set() or self.gate.stopped.is_set():
@@ -507,6 +511,21 @@ class TaskManager:
                 self._set(t, S.RUNNING, "Resuming: looking at the screen again…")
                 continue
             return
+
+    def _keep_result_screenshot(self, t: Task) -> None:
+        """The final page, kept on this PC as the owner's proof (never sent anywhere): <data>/task-shots/<id>.png."""
+        if self.trace_dir is None or self.session is None or self.session.page is None:
+            return
+        from pathlib import Path
+
+        try:
+            out = Path(self.trace_dir).parent / "task-shots" / f"{t.id}.png"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(self.session.page.screenshot(type="png"))
+            t.outcome = {**(t.outcome or {}), "screenshot": str(out)}
+            self._save(t)
+        except Exception as exc:  # noqa: BLE001 - a missing screenshot must not turn a success into a failure
+            log.info("result screenshot failed: %s", type(exc).__name__)
 
     # ---- pieces --------------------------------------------------------------------------------------------------
     def _ask_new_site(self, t: Task, s: BrowserSession, f: _Flags, memo: dict) -> bool:

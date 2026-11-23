@@ -54,8 +54,13 @@ class AutomationService:
         from ..brain.costs import Usage, cost_usd
         from .computer.goal import ClaudeGoalPlanner
 
+        kw = {}
+        policy = getattr(self.app, "policy", None)
+        if policy is not None and policy.has("computer_task"):
+            # docs/MODEL-POLICY.md: the planner's model (default) and the one it escalates to on a stall (max).
+            kw["models"] = (policy.choice("computer_task", "default").model, policy.choice("computer_task", "max").model)
         return ClaudeGoalPlanner(client, record_usage=self.app._record_usage,
-                                 cost_fn=lambda model, u: cost_usd(model, Usage.from_response(u)))
+                                 cost_fn=lambda model, u: cost_usd(model, Usage.from_response(u)), **kw)
 
     def _grounder(self):
         client = getattr(self.app, "client", None)
@@ -297,21 +302,42 @@ class AutomationService:
         parts = (host or "").lower().split(".")
         return ".".join(parts[-2:]) if len(parts) >= 3 and parts[-1] == "edu" else host
 
+    @staticmethod
+    def templates() -> dict:
+        from .templates import listing
+
+        return {"ok": True, "templates": listing()}
+
     def start(self, objective: str, start_url: str, domains: list[str], mode: str = "managed_browser",
               send_screenshots: bool = False, confirm_medium: bool = False, window: dict | None = None,
               helper_sites: bool = True, any_site: bool = True, skill: str = "course",
-              apps: list[str] | None = None, files: list[str] | None = None, allow_physical: bool = False) -> dict:
+              apps: list[str] | None = None, files: list[str] | None = None, allow_physical: bool = False,
+              template: str = "") -> dict:
+        """skill: "course" (the course template), "general", or a template id (templates.py). A general task
+        without a template gets the one its goal matches (generic otherwise)."""
+        from . import templates as T
+        from .limits import check_goal
+
         if not self.enabled():
             return {"ok": False, "error": "Turn on computer tasks first (the switch at the top of this window)."}
         objective = (objective or "").strip()
         if len(objective) < 4:
             return {"ok": False, "error": "Say what Monkey should do (one sentence is enough)."}
+        refusal = check_goal(objective, start_url, [d for d in domains or [] if d != "*"], apps)
+        if refusal is not None:
+            return {"ok": False, "error": refusal.message, "refused": refusal.limit}
+        if skill not in ("course", "general") and T.get(skill) is not None:
+            skill, template = ("course", "") if skill == "course" else ("general", skill)
+        if template == "course":
+            skill, template = "course", ""
         needs_browser = skill != "general" or bool((start_url or "").strip()) or not apps
         if needs_browser and (err := self._chrome_not_ready()):
             return {"ok": False, "error": err}       # say it now, not as a task that fails a second after "Started"
         if skill == "general":
+            tpl = T.get(template) or T.pick(objective, start_url)
             return self._start_general(objective, start_url, ["*"] if any_site else domains, send_screenshots,
-                                       confirm_medium, window, apps or [], files or [], allow_physical)
+                                       confirm_medium, window, apps or [], files or [], allow_physical,
+                                       template=tpl.id, rules=tpl.rules_for())
         if mode != "managed_browser":
             return {"ok": False, "error": "Window tasks are read-only previews in this version: use the Monkey "
                                          "browser for tasks."}
@@ -339,7 +365,7 @@ class AutomationService:
         return {"ok": True, "task": t.public()}
 
     def _start_general(self, objective, start_url, domains, send_screenshots, confirm_medium, window, apps, files,
-                       allow_physical) -> dict:
+                       allow_physical, template: str = "generic", rules: dict | None = None) -> dict:
         """A general task: Monkey's browser (sites you list) and/or Windows apps you list, files you list."""
         import os
 
@@ -359,11 +385,58 @@ class AutomationService:
         try:
             t = self.mgr.create(objective, start_url, domains, skill="general", mode="managed_browser",
                                 send_screenshots=bool(send_screenshots), confirm_medium=bool(confirm_medium),
-                                window=dict(window or {}), apps=apps, files=files, allow_physical=bool(allow_physical))
+                                window=dict(window or {}), apps=apps, files=files, allow_physical=bool(allow_physical),
+                                template=template, rules=dict(rules or {}))
             self.mgr.start(t.id)
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "task": t.public()}
+
+    # ---- the unsubscribe_page template (monkey/mailing) ------------------------------------------------------------
+    def start_template(self, template: str, objective: str, start_url: str, type_only: list[str] | None = None) -> dict:
+        """A narrow task started by Monkey itself after the owner approved it elsewhere (a mailing-list batch): only
+        the start page's own site, the template's rules, no screenshots to Claude, no apps or files."""
+        from urllib.parse import urlsplit
+
+        from . import templates as T
+
+        tpl = T.get(template)
+        if tpl is None or not tpl.deterministic:
+            return {"ok": False, "error": "unknown template"}
+        if not self.enabled():
+            return {"ok": False, "error": "Computer tasks are off."}
+        host = (urlsplit(start_url).hostname or "").lower()
+        if not host or urlsplit(start_url).scheme != "https":
+            return {"ok": False, "error": "only https pages"}
+        if err := self._chrome_not_ready():
+            return {"ok": False, "error": err}
+        return self._start_general(objective, start_url, [host], False, False, None, [], [], False,
+                                   template=tpl.id, rules=tpl.rules_for(type_only=type_only or []))
+
+    def wait_unsubscribe(self, task_id: str, stopped, timeout_s: float = 180.0) -> tuple[str, str, str]:
+        """Wait for an unsubscribe_page task: (status for the mailing store, detail, screenshot path). Anything that
+        needs the owner (a sign-in, no obvious button, an approval) ends the task: the list is marked "needs you"."""
+        import time as _time
+
+        from .tasks import S
+
+        end = _time.time() + timeout_s
+        while _time.time() < end:
+            t = self.mgr.get(task_id)
+            if t is None:
+                return "failed", "the task disappeared", ""
+            if t.state == S.COMPLETED:
+                return "done", (t.outcome or {}).get("evidence", "the page confirmed it")[:200], \
+                    (t.outcome or {}).get("screenshot", "")
+            if t.state in (S.FAILED, S.CANCELLED):
+                return "failed" if t.state == S.FAILED else "needs_manual", t.note[:200], ""
+            if t.state in (S.NEEDS_INPUT, S.BLOCKED, S.PAUSED) or stopped():
+                note = (t.pending or {}).get("message") or t.note
+                self.mgr.stop(task_id)
+                return "needs_manual", (note or "stopped")[:200], ""
+            _time.sleep(0.3)
+        self.mgr.stop(task_id)
+        return "needs_manual", "the page took too long", ""
 
     def trace(self, task_id: str, limit: int = 200) -> dict:
         """The task's structured trace (no typed text, no screenshots), for the task history view."""
@@ -425,7 +498,12 @@ class AutomationService:
         return {"ok": True, "windows": [w.public() for w in list_windows()]}
 
     def emergency_stop(self) -> None:
+        """The kill switch (Stop button, the hotkey, turning computer tasks off): every task and any unsubscribe
+        batch stop at once; the gate refuses every action until a task is started again."""
         self.gate.stopped.set()
+        mailing = getattr(self.app, "mailing", None)
+        if mailing is not None:
+            mailing.stop()
         if self._mgr is not None:
             self._mgr.emergency_stop()
         self.app.ui.emit("automation_stopped", {})
