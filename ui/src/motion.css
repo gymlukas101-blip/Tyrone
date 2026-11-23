@@ -40,58 +40,58 @@
 @keyframes m-toast-in { from { scale: calc(1 - .2 * var(--m-amp)); translate: 0 calc(var(--m-stack, 0px) + 18px * var(--m-amp)); } }
 
 /* ---------- chat: bubbles slide in from their own side; system lines rise */
-.msg { animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both; }
+.msg { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
 .msg.user { animation-name: m-op, m-right; transform-origin: right bottom; }
 .msg.bot { animation-name: m-op, m-left; transform-origin: left bottom; }
 .msg.earlier, .msg.m-still { animation: none; }
 .msg.m-alert { animation: m-attn 560ms var(--m-ease-out); }           /* errors show at once, then wobble */
-.memchip, #log .divider { animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both; }
+.memchip, #log .divider { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
 
 /* ---------- cards / panels: readable in --m-read, then the springy settle */
-.card, .update-toast { animation: m-op var(--m-read) linear both, m-pop calc(var(--m-move) + 60ms) var(--m-ease-move) both; }
+.card, .update-toast { animation: m-op var(--m-read) linear backwards, m-pop calc(var(--m-move) + 60ms) var(--m-ease-move) backwards; }
 .card.draft:not(.sent) { animation: m-attn 560ms var(--m-ease-out) 60ms; }     /* waiting on your OK: shown at once */
-#cards .card:not(.folded) > :not(h3):not(.close) { animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both; }
+#cards .card:not(.folded) > :not(h3):not(.close) { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
 .card .items > li, .grid > img, .vlist > button, .ttiles > .ttile, .lab-tile, .card.health :is(.hero, .tile, .chartwrap, .stagebar-wrap) {
-  animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both;
+  animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards;
 }
 :is(.items > li, .grid > img, .vlist > button, .ttiles > .ttile):nth-child(2) { animation-delay: calc(var(--m-stagger) * 1); }
 :is(.items > li, .grid > img, .vlist > button, .ttiles > .ttile):nth-child(3) { animation-delay: calc(var(--m-stagger) * 2); }
 :is(.items > li, .grid > img, .vlist > button, .ttiles > .ttile):nth-child(4) { animation-delay: calc(var(--m-stagger) * 3); }
 :is(.items > li, .grid > img, .vlist > button, .ttiles > .ttile):nth-child(n+5) { animation-delay: calc(var(--m-stagger) * 4); }
 .card.sent { animation: m-punch 360ms var(--m-ease-out); }
-dialog[open] { animation: m-op var(--m-read) linear both, m-pop calc(var(--m-move) + 60ms) var(--m-ease-move) both; }
-dialog[open]::backdrop { animation: m-glow-in var(--m-base) linear both; }
-details[open] > :not(summary) { animation: m-op var(--m-read) linear both, m-drop var(--m-move) var(--m-ease-move) both; }
-.lightbox { animation: m-op var(--m-fast) linear both; }
-.lightbox figure { animation: m-op var(--m-read) linear both, m-pop var(--m-move) var(--m-ease-move) both; }
+dialog[open] { animation: m-op var(--m-read) linear backwards, m-pop calc(var(--m-move) + 60ms) var(--m-ease-move) backwards; }
+dialog[open]::backdrop { animation: m-glow-in var(--m-base) linear backwards; }
+details[open] > :not(summary) { animation: m-op var(--m-read) linear backwards, m-drop var(--m-move) var(--m-ease-move) backwards; }
+.lightbox { animation: m-op var(--m-fast) linear backwards; }
+.lightbox figure { animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards; }
 
 /* Lists managed by motion.flip (to-do, assignments): the JS does entrances, moves and exits. */
 .asg-list > .asg { animation: none; }
 .todo-row.fresh { animation: todo-glow 1.6s ease; }
-.todo-edit { animation: m-op var(--m-read) linear both, m-grow-y var(--m-move) var(--m-ease-move) both; transform-origin: top center; }
-.todo-parsed:not([hidden]) { animation: m-op var(--m-read) linear both, m-drop var(--m-move) var(--m-ease-move) both; }
-.empty { animation: m-op var(--m-read) linear both, m-pop var(--m-move) var(--m-ease-move) both; }
+.todo-edit { animation: m-op var(--m-read) linear backwards, m-grow-y var(--m-move) var(--m-ease-move) backwards; transform-origin: top center; }
+.todo-parsed:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-drop var(--m-move) var(--m-ease-move) backwards; }
+.empty { animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards; }
 .m-ghost { pointer-events: none; z-index: 1; list-style: none; }
 .m-ghost, .m-ghost * { animation: none !important; transition: none !important; }
 
 /* ---------- toasts: pop up from the bottom; older ones step up (motion.restack sets --m-stack) */
 .toast { translate: 0 var(--m-stack, 0px); transition: translate var(--m-base) var(--m-ease-move);
-         animation: m-op var(--m-read) linear both, m-toast-in var(--m-move) var(--m-ease-move) both; }
-.toast.todo-remind { animation: m-attn 560ms var(--m-ease-out) 40ms; }       /* role=alert: at once, then wobble */
+         animation: m-op var(--m-read) linear backwards, m-toast-in var(--m-move) var(--m-ease-move) backwards; }
+.toast.todo-remind { animation: none; }       /* role=alert: shown at once; motion.toastShown wobbles it */
 
 /* ---------- Today view + tabs */
-#today:not([hidden]) { animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both; }
-#todayPanel > * { animation: m-op var(--m-read) linear both, m-rise var(--m-move) var(--m-ease-move) both; }
+#today:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
+#todayPanel > * { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards; }
 #todayPanel[data-m-dir="left"] > * { animation-name: m-op, m-left; }
 #todayPanel[data-m-dir="right"] > * { animation-name: m-op, m-right; }
 #todayPanel.m-quiet > * { animation: none; }
 .focushero.is-done { animation: m-punch 360ms var(--m-ease-out); }
-.focusactions .donemsg { display: inline-block; animation: m-op var(--m-read) linear both, m-pop var(--m-move) var(--m-ease-move) both; }
+.focusactions .donemsg { display: inline-block; animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards; }
 
 /* ---------- stage status: chips appear with a pop; the control banner drops in */
-#convChip:not([hidden]) { animation: m-op var(--m-read) linear both, m-pop var(--m-move) var(--m-ease-move) both, convPulse 2.4s ease-in-out var(--m-move) infinite; }
-#controlBanner:not([hidden]) { animation: m-op var(--m-read) linear both, m-drop var(--m-move) var(--m-ease-move) both; }
-#routeChip:not(:empty) { animation: m-op var(--m-read) linear both; }
+#convChip:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-pop var(--m-move) var(--m-ease-move) backwards, convPulse 2.4s ease-in-out var(--m-move) infinite; }
+#controlBanner:not([hidden]) { animation: m-op var(--m-read) linear backwards, m-drop var(--m-move) var(--m-ease-move) backwards; }
+#routeChip:not(:empty) { animation: m-op var(--m-read) linear backwards; }
 
 /* ---------- voice state (html[data-voice]): glows react to Monkey without moving anything near him */
 #composer, #stateLabel { position: relative; }
@@ -136,7 +136,7 @@ details[open] > :not(summary) { animation: m-op var(--m-read) linear both, m-dro
 :root[data-motion="min"] :is(#mic:hover, :root[data-voice="thinking"] #stateLabel, .m-busy) { animation: none; }
 :root[data-motion="min"] :is(.msg.m-alert, .card.draft:not(.sent), .toast.todo-remind, .card.sent, .focushero.is-done,
                              .settings label.toggle input:checked, .todo-foot input:checked) { animation: none; }
-:root[data-motion="min"] #convChip:not([hidden]) { animation: m-op var(--m-read) linear both; }
+:root[data-motion="min"] #convChip:not([hidden]) { animation: m-op var(--m-read) linear backwards; }
 :root[data-motion="min"] .toast { transition: none; }
 :root[data-motion="min"] :is(#send, .primary, .icon, #mic, .ghost, .draft .send, #importance button, .tabs button, .ghost.mini, .star, .opt, .card .close) {
   transition: box-shadow 90ms ease-out, filter 150ms;
@@ -145,7 +145,7 @@ details[open] > :not(summary) { animation: m-op var(--m-read) linear both, m-dro
   :root { --m-amp: 0; --m-move: 0s; --m-read: 90ms; --m-stagger: 0ms; }
   #mic:hover, :root[data-voice="thinking"] #stateLabel, .m-busy, .msg.m-alert, .card.draft, .toast.todo-remind, .card.sent, .focushero.is-done,
   .settings label.toggle input, .todo-foot input { animation: none !important; }
-  #convChip:not([hidden]) { animation: m-op var(--m-read) linear both; }
+  #convChip:not([hidden]) { animation: m-op var(--m-read) linear backwards; }
   .toast { transition: none; }
 }
 

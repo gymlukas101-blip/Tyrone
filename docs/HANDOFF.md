@@ -36,6 +36,10 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - 📭 **Mailing lists:** reads list headers in every inbox and suggests lists the owner never opens. It unsubscribes only what the owner approves, per list: one-click, an email the owner sends from the draft card, or the list's own page. It then checks for 7 days that the mail stopped.
 - Design, audit and open decisions (archive/filter needs a broader Gmail scope; it's off): [`docs/automation/GENERAL_TASKS.md`](automation/GENERAL_TASKS.md). Not tried on the Dell, with a live planner, or with real inboxes.
 
+## UI motion (branch `feature/ui-motion`, waiting for review)
+- Expressive, readable motion for every UI event and interaction: `ui/src/motion.ts` + `ui/src/motion.css`, inventory and rules in `docs/ui/MOTION.md`, notes and perf numbers in `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, UI motion).
+- Follows Settings → Juice level (Minimal = short fades only) and the Windows "reduce motion" setting. Not tried on the Dell.
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

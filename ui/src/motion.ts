@@ -378,19 +378,15 @@ export function voice(state: string) {
 // ------------------------------------------------------------------ toasts: newest at the bottom, older ones step up
 const STACK_GAP = 8;
 export function restack(host: Element = document.body) {
+  // One column for every toast (reminders sit higher in CSS): newest at the bottom, each older one above it.
   const toasts = [...host.querySelectorAll<HTMLElement>(":scope > .toast:not([data-leaving])")];
-  const groups = new Map<string, HTMLElement[]>();
-  for (const t of toasts) {
-    const k = t.classList.contains("todo-remind") ? "remind" : "toast";
-    (groups.get(k) ?? groups.set(k, []).get(k)!).push(t);
-  }
-  const heights = new Map(toasts.map((t) => [t, t.offsetHeight] as const));    // read every height, then write
-  for (const list of groups.values()) {
-    let off = 0;
-    for (let i = list.length - 1; i >= 0; i--) {
-      list[i].style.setProperty("--m-stack", `${-off}px`);
-      off += heights.get(list[i])! + STACK_GAP;
-    }
+  const box = new Map(toasts.map((t) => [t, { h: t.offsetHeight, base: parseFloat(getComputedStyle(t).bottom) || 0 }] as const));
+  const floor = Math.min(...[...box.values()].map((x) => x.base));      // read everything first, then write
+  let at = floor;
+  for (let i = toasts.length - 1; i >= 0; i--) {
+    const { h, base } = box.get(toasts[i])!;
+    toasts[i].style.setProperty("--m-stack", `${base - at}px`);
+    at += h + STACK_GAP;
   }
 }
 /** Restack once per frame however many toasts came and went in it. */
@@ -402,8 +398,14 @@ function restackSoon(host: Element) {
 }
 /** Call after a toast is appended: stacks it with the others and gives alerts a "look here" once they're shown. */
 export function toastShown(t: HTMLElement) {
-  restackSoon(t.parentElement ?? document.body);
-  if (t.getAttribute("role") === "alert") attention(t);
+  const host = t.parentElement ?? document.body;
+  if (t.getAttribute("role") === "alert") {
+    // an alert lands in its final place at once (it's never slid in), then wobbles
+    t.style.transition = "none";
+    restack(host);
+    requestAnimationFrame(() => { t.style.transition = ""; });
+    attention(t);
+  } else restackSoon(host);
 }
 /** Remove a toast with a quick exit, then let the rest of the stack settle. */
 export function toastGone(t: HTMLElement) {

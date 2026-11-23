@@ -679,3 +679,43 @@ The owner asked for the task helper "to be able to do anything, not just canvas 
 - `tests/test_task_helper_ui.py` (2; added to the CI browser job with the general tests)
 
 **Not done / open:** not tried on the Dell, with a live Claude planner, or with real inboxes. Outlook's header property is only exercised with fakes. See §8 of the design doc for the owner's decisions.
+## 2026-11-23: UI motion (branch `feature/ui-motion`)
+
+**What:** motion for every UI event and interaction (84 in the inventory, `docs/ui/MOTION.md`), from one small system:
+`ui/src/motion.ts` (levels, plans, FLIP lists, toasts, count-up, confetti-lite, attention) and `ui/src/motion.css`
+(tokens, insert-time entrances, voice-state glows, button springs, level overrides). Hooks in existing files are a few
+lines each (`main.ts`, `dom.ts`, `todo.ts`, `assignments.ts`, `today.ts`, `feedback.ts`, `computer.ts`).
+
+**Rules kept:** opacity + individual `translate`/`scale`/`rotate` only; text opaque within 110 ms; errors, approvals and
+reminders appear at once and then wobble; nothing new loops at idle; Juice *Minimal* or OS reduce-motion = 90 ms fades
+only; Juice *Calm* = half travel, no overshoot. The avatar is untouched.
+
+**Found and fixed while measuring:**
+- `animation-fill-mode: both` on every chat bubble kept a finished animation "in effect" on each one, and streaming a
+  long reply measured about 40% more main-thread time than `main` (loaded-machine runs). Entrances use `backwards` now
+  (the end state is the element's own) and streaming is level with `main` again.
+- A CSS rule on `:root[data-hidden] *` to pause loops while hidden was checked by every style recalc; the pause is done
+  with WAAPI `pause()`/`play()` on `visibilitychange` instead.
+- FLIP and toast restacking read layout once per frame (requestAnimationFrame), not once per event, so a burst of 10
+  to-dos or toasts doesn't thrash layout.
+
+**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, cloud container with software rendering, load ≈1,
+3 alternating runs each, medians; `main` → this branch):
+
+| | main | branch |
+|---|---|---|
+| Idle main-thread CPU | 80.1 ms/s | 80.3 ms/s |
+| Idle CPU after the bursts | 96.8 ms/s | 90.9 ms/s |
+| Animations running at idle | 6 (vines, leaves) | 6 (the same) |
+| Running animations while the window is hidden | 6 | 0 |
+| Streaming a 400-delta reply: CPU / frame p95 / long tasks | 1171 ms / 16.8 ms / 0 | 1056 ms / 16.7 ms / 0 |
+| Adding 10 to-dos: CPU / frame p95 / max / long tasks | 385 ms / 16.7 / 33.3 ms / 0 | 384 ms / 16.8 / 33.4 ms / 0 |
+| 30 mixed events: CPU / frame p95 / long tasks | 264 ms / 16.8 ms / 0 | 295 ms / 16.7 ms / 0 |
+| Idle CPU with the 3D avatar (`?demo`, 2 runs) | 1010 ms/s | 1046 ms/s (within run-to-run noise; the software-rendered avatar dominates) |
+
+Under heavy machine load (other jobs, load ≈17) every number roughly doubles for both builds and long tasks appear in
+both; compare builds only from alternating runs on a quiet machine. Not measured on the Dell.
+
+**Tests:** `ui/test/motion.test.ts` (19: levels, GPU-only properties, readability limits, Juice-minimal/reduced paths,
+calm, count-up frames, `leave`). The browser suites run with motion on (`?demo&svg`); entrances never block clicks
+(elements are in the DOM at once; exits are `inert`, ghosts sit in a click-through layer outside the panels).
