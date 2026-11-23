@@ -26,7 +26,8 @@ KNOWN_KEYS = {
     "openai": "OPENAI_API_KEY",
     "brave": "BRAVE_API_KEY",
     "canvas_token": "CANVAS_TOKEN",
-    "google_token": "MONKEY_GOOGLE_TOKEN",     # OAuth token JSON (refresh token)
+    "google_token": "MONKEY_GOOGLE_TOKEN",     # single-account OAuth token (before multi-account; moved on first read)
+    "google_accounts": "MONKEY_GOOGLE_ACCOUNTS",  # {"gmail": token JSON, "gmail-2": …}: one token per Google account
     "google_client": "MONKEY_GOOGLE_CLIENT",   # OAuth client JSON (Desktop app)
     "export_password": "MONKEY_EXPORT_PASSWORD",
     "calendar_ics": "MONKEY_CALENDAR_ICS",     # private iCal link(s), one per line (Google "secret address")

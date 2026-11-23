@@ -9,6 +9,8 @@ import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
 import { renderAssignments, markChecked, undoToast } from "./assignments";
 import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
 import { reminderSettings } from "./reminders";
+import { setSuggestions } from "./todosuggest";
+import { emailAccountsList } from "./accounts";
 import { renderHealth } from "./health";
 import { decorateJungle } from "./jungle";
 import { renderAvatarLab } from "./avatarlab";
@@ -373,7 +375,9 @@ function draftCard(d: any) {
   document.querySelectorAll(`.draft[data-id="${d.draft_id}"]`).forEach((n) => n.remove());
   const subj = h("input", { value: d.subject });
   const body = h("textarea", {}, d.body);
-  const status = h("span", { class: "badge" }, d.account === "outlook" ? "wisc.edu Outlook" : "Gmail");
+  const kindName = d.account === "outlook" ? "Outlook" : "Gmail";
+  const fromName = d.from_label ? `From: ${d.from_label} (${kindName})` : (d.account === "outlook" ? "wisc.edu Outlook" : "Gmail");
+  const status = h("span", { class: "badge", title: "The account this email goes out from" }, fromName);
   const c = card("✉️ Draft: check it, then Send",
     h("div", {}, status, " ", h("span", { class: "meta" }, "Not sent yet. Edit anything, then click Send.")),
     h("label", {}, "To"), h("input", { value: [...d.to, ...(d.cc?.length ? ["cc: " + d.cc.join(", ")] : [])].join(", "), readOnly: true }),
@@ -395,7 +399,7 @@ function draftCard(d: any) {
       const when = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       (c.querySelector(".cardtitle") ?? c.querySelector("h3"))!.textContent = `✅ Sent to ${d.to.join(", ")}`;
       const sub = c.querySelector(".meta");
-      if (sub) sub.textContent = `Sent at ${when}. It's in your ${d.account === "outlook" ? "Outlook" : "Gmail"} Sent folder.`;
+      if (sub) sub.textContent = `Sent at ${when}. It's in your ${d.from_label ? `${d.from_label} (${kindName})` : kindName} Sent folder.`;
       subj.readOnly = true; (body as HTMLTextAreaElement).readOnly = true;
       c.querySelector(".actions")!.replaceChildren(h("strong", {}, `✓ Sent at ${when}`));
       addMsg("sys", `Email sent to ${d.to.join(", ")} at ${when}`);
@@ -434,7 +438,7 @@ function emailsCard(p: any) {
   card("📥 Email", h("ul", { class: "items" }, ...p.emails.slice(0, 12).map((e: any) => h("li", {},
     h("div", { class: "clickable rowbtn", title: "Click to have Monkey read it", role: "button", tabindex: "0",
       onclick: () => { api.send_text(`Read me the email "${e.subject}" from ${e.sender} (id ${e.id}, ${e.account}).`, null); } },
-      h("span", { class: "badge" }, e.account === "gmail" ? "Gmail" : e.account === "outlook" ? "Outlook" : e.account),
+      h("span", { class: "badge" }, e.account_label || (e.account === "outlook" ? "Outlook" : String(e.account ?? "").startsWith("gmail") ? "Gmail" : e.account)),
       h("div", {}, h("div", {}, (e.unread ? "● " : "") + e.subject),
         h("div", { class: "meta" }, `${e.sender} · ${fmtTime(e.received)}`)))))));
 }
@@ -570,6 +574,11 @@ function onEvent(name: string, p: any) {
     case "assignments": assignmentsCard(p); break;
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
     case "todos": void todoCard(p); break;
+    case "todo_suggestions":           // the inbox scan found new to-dos to suggest (nothing was added)
+      setSuggestions(p.items);
+      if (todoOpen()) void refreshTodos();
+      if (p.new) toast(`✉ ${p.new} new to-do suggestion${p.new === 1 ? "" : "s"} from email: open To-do to accept or dismiss`, 6000);
+      break;
     case "todo_changed":
       // Done or snoozed from a Windows notification: its note in the window is handled too
       if ((p.action === "done" || p.action === "snoozed") && p.item) {
@@ -988,14 +997,15 @@ async function openSettings(section?: string) {
             const r = await api.google_sign_in();
             if (!r.ok) { st.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
             st.textContent = "Opening Google sign-in in your browser…";
-          } }, connected ? "Sign in again" : "Sign in with Google");
+          } }, connected ? "+ Add another Gmail account" : "Sign in with Google");
           return h("div", {},
-            h("p", { class: "help" }, connected ? `✓ Connected${appState.settings.google_account ? ` as ${appState.settings.google_account}` : ""}. Monkey can read your Gmail and Google Calendar.` :
+            h("p", { class: "help" }, connected ? "✓ Connected. Monkey reads every inbox and calendar below, and says which account each email is from. "
+              + "Signing in with an account that's already here just refreshes it." :
               "Needs a one-time Google setup (about 5 minutes, steps below). Only want your schedule? The calendar link above is enough."),
             !connected && h("div", { class: "field" }, status(hasClient), h("span", {}, "Step 1: your Google setup file"), pick,
               h("span", { class: "meta" }, hasClient ? "✓ Loaded" : "the client_secret_….apps.googleusercontent.com.json in your Downloads")),
-            h("div", { class: "field" }, status(connected), h("span", {}, connected ? "Google account" : "Step 2: sign in"), signIn,
-              connected && h("button", { class: "ghost", type: "button", onclick: async () => { await api.google_sign_out(); openSettings(); } }, "Sign out")),
+            connected && emailAccountsList(api, () => void openSettings()),
+            h("div", { class: "field" }, status(connected), h("span", {}, connected ? "More accounts" : "Step 2: sign in"), signIn),
             h("div", { class: "field" }, h("span", {}, ""), st),
             !connected && googleSetupGuide());
         })(),
@@ -1294,7 +1304,8 @@ function googleEvent(p: any) {
           extLink("https://console.cloud.google.com/auth/audience", "Google Cloud → Audience"),
           ", click Publish app (or add your Gmail under Test users), then Cancel here and sign in again.")));
   } else if (p.stage === "done") {
-    toast(p.emails != null ? `✓ Google connected: found ${p.emails} recent emails and ${p.events} calendar events this week` : "✓ Google connected", 6000);
+    const who = p.label ? ` (${p.label})` : "";
+    toast(p.emails != null ? `✓ Google connected${who}: found ${p.emails} recent emails and ${p.events} calendar events this week` : `✓ Google connected${who}`, 6000);
     void openSettings();
   } else if (p.stage === "cancelled") {
     if (st) st.textContent = "Sign-in cancelled. Click Sign in with Google to try again.";
@@ -1668,7 +1679,7 @@ function moveToNewPc(): HTMLElement {
     const r = await api.export_memory(pw.value, withKeys.checked);
     if (!r.ok) { out.textContent = `⚠ ${r.error}`; toast(`⚠ ${r.error}`); return; }
     const size = (r.mb ?? 0) >= 1 ? `${r.mb} MB` : "under 1 MB";
-    const KEYNAME: Record<string, string> = { anthropic: "Claude key", fish: "Fish voice key", google_token: "Google sign-in",
+    const KEYNAME: Record<string, string> = { anthropic: "Claude key", fish: "Fish voice key", google_token: "Google sign-in", google_accounts: "Google sign-ins",
       google_client: "Google setup file", calendar_ics: "calendar link", canvas_token: "Canvas access token", openai: "OpenAI key",
       youtube: "YouTube key", brave: "Brave key", deepgram: "Deepgram key" };
     const which = (r.keys ?? []).map((k) => KEYNAME[k] ?? k).join(", ");

@@ -521,6 +521,32 @@
       },
       "why": "Only runs when no rule matches; must be fast and nearly free."
     },
+    "email_todos": {
+      "label": "Find to-dos in email (background)",
+      "min": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "default": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "max": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "internal": true,
+      "est": {
+        "rounds": 1,
+        "new_in": 1500,
+        "out": 250,
+        "think": 0,
+        "searches": 0,
+        "per_month": 120,
+        "no_prefix": true
+      },
+      "why": "Only for new unread or flagged mail that passed the local filter, at most once per scan; one short structured answer, no tools."
+    },
     "style_learning": {
       "label": "Learn my writing style (one time)",
       "min": [

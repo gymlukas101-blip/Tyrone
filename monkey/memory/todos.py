@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 PRIORITIES = ("low", "normal", "high")
-SOURCES = ("typed", "voice", "Monkey")
+SOURCES = ("typed", "voice", "Monkey", "email")   # email = accepted from "Suggested from email"
 PRIO_RANK = {"high": 0, "normal": 1, "low": 2}
 DELETED_KEEP_S = 30 * 86400          # deleted items stay restorable (Undo) this long, then they're purged
 
@@ -34,6 +34,7 @@ COLUMNS: dict[str, str] = {           # name -> type/default; new columns are ad
     "status": "TEXT NOT NULL DEFAULT 'open'",
     "steps": "TEXT NOT NULL DEFAULT '[]'",   # JSON [{"text": .., "done": bool}]
     "source": "TEXT NOT NULL DEFAULT 'typed'",
+    "origin": "TEXT NOT NULL DEFAULT ''",          # JSON: where it came from (an email: account label, quote, link)
     "created": "REAL",
     "updated": "REAL",
     "done_at": "REAL",
@@ -366,6 +367,10 @@ class TodoStore:
         d["due_time"] = "T" in (d.get("due") or "")
         d.pop("snooze_until", None)
         d.pop("reminded_for", None)
+        try:
+            d["origin"] = json.loads(d.get("origin") or "{}") or None
+        except ValueError:
+            d["origin"] = None
         return d
 
     @staticmethod
@@ -548,6 +553,17 @@ class TodoStore:
     def snooze(self, tid: str, minutes: int = 10) -> dict:
         with self._lock, self._conn() as c:
             c.execute("UPDATE todos SET snooze_until=? WHERE id=?", (time.time() + max(1, int(minutes)) * 60, tid))
+        got = self.get(tid)
+        if got is None:
+            raise KeyError(f"no to-do with id {tid}")
+        return got
+
+    def set_origin(self, tid: str, origin: dict) -> dict:
+        """Record where an item came from (an accepted email suggestion): account label, the quoted line, a link."""
+        keep = {k: str(v)[:300] for k, v in (origin or {}).items()
+                if k in ("kind", "account", "account_label", "evidence", "subject", "link", "suggestion") and v}
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE todos SET origin=? WHERE id=?", (json.dumps(keep) if keep else "", tid))
         got = self.get(tid)
         if got is None:
             raise KeyError(f"no to-do with id {tid}")

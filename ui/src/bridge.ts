@@ -5,6 +5,19 @@ import type { Todo, TodoSettings, TodoStep } from "./todo";
 import type { PhoneStatus, ReminderChannels } from "./reminders";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
+/** One connected inbox (Settings → Accounts). The address is only ever shown on this PC's screen. */
+export interface EmailAccount {
+  id: string; kind: "gmail" | "outlook"; label: string; address: string; connected: boolean; scan_todos: boolean;
+  scan?: { at?: string; checked?: number; new?: number; note?: string };
+}
+export type AccountsResult = { ok: boolean; error?: string; accounts: EmailAccount[]; has_client?: boolean; signing_in?: boolean };
+/** A to-do Monkey found in an email, waiting for the owner's Accept or Dismiss. */
+export interface TodoSuggestion {
+  id: string; account: string; account_label: string; kind: "gmail" | "outlook" | "outlook_task"; link: string;
+  text: string; due: string | null; evidence: string; subject: string; sender: string; signal: "flagged" | "task" | "ask";
+  status: string; created: number;
+}
+
 export interface AppState {
   settings: Record<string, any>;
   keys: Record<string, boolean>;
@@ -51,7 +64,9 @@ export interface Api {
   health_check(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
   google_client_file(): Promise<{ ok: boolean; error?: string }>;
   routing_benchmark(): Promise<{ ok: boolean; error?: string; started?: boolean }>;
-  google_sign_out(): Promise<void>;
+  google_sign_out(account?: string): Promise<AccountsResult | void>;
+  email_accounts(): Promise<AccountsResult>;
+  email_account_update(account: string, changes: { label?: string; scan_todos?: boolean }): Promise<AccountsResult>;
   test_outlook(): Promise<{ ok: boolean; error?: string }>;
   disconnect_outlook(): Promise<{ ok: boolean }>;
   learn_style(): Promise<{ ok: boolean; error?: string; preview?: string }>;
@@ -98,6 +113,11 @@ export interface Api {
   phone_setup(renew: boolean): Promise<ReminderChannels>;
   phone_test(): Promise<{ ok: boolean; error?: string; status?: PhoneStatus }>;
   phone_save_server(url: string): Promise<{ ok: boolean; error?: string; server?: string }>;
+  todo_suggestions(): Promise<{ ok: boolean; error?: string; items: TodoSuggestion[] }>;
+  todo_suggestion_accept(id: string, changes?: Partial<Todo>): Promise<TodoResult>;
+  todo_suggestion_dismiss(id: string): Promise<{ ok: boolean; error?: string }>;
+  todo_suggestion_open(id: string): Promise<{ ok: boolean; error?: string }>;
+  email_todo_scan_now(): Promise<{ ok: boolean; started?: boolean }>;
   get_health(day: string): Promise<{ ok: boolean; error?: string; health?: any }>;
   garmin_login(email: string, password: string): Promise<{ ok: boolean; status?: string; error?: string }>;
   garmin_mfa(code: string): Promise<{ ok: boolean; status?: string; error?: string }>;
@@ -234,6 +254,10 @@ function mockApi(): Api {
     memory_files: ["profile.md", "classes.md", "people.md", "preferences.md", "writing_style.md", "sites.md"],
     version: "demo",
   };
+  if (demoHasAccounts()) {        // ?demo&accounts: two Gmail inboxes and school Outlook, connected
+    Object.assign(state.connections, { gmail: true, google_calendar: true, outlook: true });
+    state.keys.google_client = true;
+  }
   const talk = (text: string) => {
     emit([["state", { state: "speaking" }]]);
     let i = 0;
@@ -344,7 +368,7 @@ function mockApi(): Api {
       const iv = setInterval(() => { i += 3; emit([["bench", i >= 14 ? { finished: true, ok: true, summary: "Rules: 28/28 correct on the 28 of 42 requests they handle; 14 go to the classifier. Classifier: 86% right, median 0.71 s (max 1.2 s), $0.0042 total. (demo)", misses: [{ text: "tell me a joke", task: "general", want: ["chat"] }] } : { done: i, total: 14 }]]); if (i >= 14) clearInterval(iv); }, 300);
       return { ok: true, started: true };
     },
-    async google_sign_out() {},
+    ...demoAccountsApi(),
     async test_outlook() { return { ok: false, error: "Demo mode" }; },
     async disconnect_outlook() { return { ok: true }; },
     async learn_style() { return { ok: false, error: "Demo mode" }; },
@@ -533,6 +557,62 @@ const demoTodos: Todo[] = [
     source: "typed", created: demoNow() - 2e5, done_at: demoNow() - 7e4 },
 ];
 const demoDeleted = new Map<string, Todo>();
+// Demo inboxes: shown with ?demo&accounts (plain ?demo keeps everything disconnected, as before).
+const demoHasAccounts = () => typeof location !== "undefined" && new URLSearchParams(location.search).has("accounts");
+const demoAccounts: EmailAccount[] = [
+  { id: "gmail", kind: "gmail", label: "Personal", address: "jordan.demo@example.com", connected: true, scan_todos: true,
+    scan: { at: "", checked: 6, new: 2, note: "" } },
+  { id: "gmail-2", kind: "gmail", label: "Club", address: "badger-club.demo@example.org", connected: true, scan_todos: false },
+  { id: "outlook", kind: "outlook", label: "School", address: "", connected: true, scan_todos: true,
+    scan: { at: "", checked: 4, new: 1, note: "" } },
+];
+const demoSuggestions: TodoSuggestion[] = [
+  { id: "s1", account: "outlook", account_label: "School", kind: "outlook", link: "", text: "Reply to Dana: Lab 5 makeup time",
+    due: localDue(1, "17:00"), evidence: "Can you let me know which makeup slot works for you by tomorrow 5pm?",
+    subject: "Lab 5 makeup time", sender: "Dana Lee", signal: "flagged", status: "pending", created: demoNow() - 3600 },
+  { id: "s2", account: "gmail", account_label: "Personal", kind: "gmail", link: "https://mail.google.com/mail/u/0/#all/demo2",
+    text: "Pay the intramural soccer fee", due: localDue(4), evidence: "Please pay the $20 team fee before Friday.",
+    subject: "Intramural soccer: team fee", sender: "Sam", signal: "ask", status: "pending", created: demoNow() - 7200 },
+  { id: "s3", account: "outlook", account_label: "School", kind: "outlook_task", link: "", text: "Submit study abroad application",
+    due: localDue(6), evidence: "Submit study abroad application", subject: "Submit study abroad application",
+    sender: "Outlook task", signal: "task", status: "pending", created: demoNow() - 9000 },
+];
+function demoAccountsApi() {
+  const list = () => (demoHasAccounts() ? demoAccounts.map((a) => ({ ...a })) : []);
+  return {
+    async google_sign_out(account?: string) {
+      const i = demoAccounts.findIndex((a) => a.id === account);
+      if (i >= 0) demoAccounts.splice(i, 1);
+      return { ok: true, accounts: list() };
+    },
+    async email_accounts() { return { ok: true, accounts: list(), has_client: demoHasAccounts(), signing_in: false }; },
+    async email_account_update(account: string, changes: { label?: string; scan_todos?: boolean }) {
+      const a = demoAccounts.find((x) => x.id === account);
+      if (!a) return { ok: false, error: "That account isn't connected.", accounts: list() };
+      if (changes.label !== undefined) a.label = changes.label.trim() || a.label;
+      if (changes.scan_todos !== undefined) a.scan_todos = !!changes.scan_todos;
+      return { ok: true, accounts: list() };
+    },
+    async todo_suggestions() { return { ok: true, items: demoHasAccounts() ? demoSuggestions.filter((s) => s.status === "pending") : [] }; },
+    async todo_suggestion_accept(id: string, ch?: Partial<Todo>) {
+      const sg = demoSuggestions.find((x) => x.id === id && x.status === "pending");
+      if (!sg) return { ok: false, error: "That suggestion is gone (already accepted or dismissed)." };
+      sg.status = "accepted";
+      const t: Todo = { id: "t" + Math.random().toString(16).slice(2, 8), text: ch?.text ?? sg.text, notes: "", due: ch?.due ?? sg.due,
+        priority: sg.signal === "ask" ? "normal" : "high", list: "", status: "open", steps: [], source: "email", created: demoNow(), done_at: null,
+        origin: { kind: "email", account: sg.account, account_label: sg.account_label, evidence: sg.evidence, subject: sg.subject, link: sg.link } };
+      demoTodos.push(t);
+      return { ok: true, item: { ...t } };
+    },
+    async todo_suggestion_dismiss(id: string) {
+      const sg = demoSuggestions.find((x) => x.id === id);
+      if (sg) sg.status = "dismissed";
+      return { ok: true };
+    },
+    async todo_suggestion_open(_id: string) { return { ok: false, error: "Demo mode" }; },
+    async email_todo_scan_now() { return { ok: true, started: true }; },
+  };
+}
 function demoTodoApi(_emit: (e: [string, any][]) => void, _later: (ms: number, fn: () => void) => void) {
   const find = (id: string) => demoTodos.find((t) => t.id === id);
   const copy = (t: Todo): Todo => ({ ...t, steps: t.steps.map((s) => ({ ...s })) });

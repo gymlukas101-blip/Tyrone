@@ -4,12 +4,14 @@ import type { Api } from "./bridge";
 import { burst, undoToast } from "./assignments";
 import { h, toast } from "./dom";
 import { dueDate, dueLabel, isOverdue, splitQuick } from "./todoparse";
+import { loadSuggestions, suggestionsSection } from "./todosuggest";
 
 export type Priority = "low" | "normal" | "high";
 export interface TodoStep { text: string; done: boolean }
 export interface Todo {
   id: string; text: string; notes: string; due: string | null; priority: Priority; list: string;
   status: "open" | "done"; steps: TodoStep[]; source: string; created: number; done_at: number | null;
+  origin?: { kind?: string; account?: string; account_label?: string; evidence?: string; subject?: string; link?: string } | null;
 }
 export interface TodoSettings { reminders: boolean; speak: boolean }
 interface Hooks { celebrate: () => void; ask: (text: string) => void; settings?: () => void }
@@ -140,7 +142,8 @@ function row(t: Todo, fresh: boolean) {
         t.list ? h("span", { class: "course" }, `#${t.list}`) : null,
         over ? h("span", { class: "flag" }, "OVERDUE") : null,
         t.steps.length ? h("span", { class: "course steps-count", title: "Steps done" }, `${stepsDone}/${t.steps.length} steps`) : null,
-        SOURCE_ICON[t.source] ? h("span", { class: "src", title: t.source === "voice" ? "Added by voice" : "Added by Monkey" }, SOURCE_ICON[t.source]) : null),
+        SOURCE_ICON[t.source] ? h("span", { class: "src", title: t.source === "voice" ? "Added by voice" : "Added by Monkey" }, SOURCE_ICON[t.source]) : null,
+        t.origin?.account_label ? h("span", { class: "src email", title: t.origin.evidence ? `From email: “${t.origin.evidence}”` : "From email" }, `✉ ${t.origin.account_label}`) : null),
       h("div", { class: "asg-why" }, why),
       done ? null : stepsList(t)),
     h("div", { class: "asg-side" },
@@ -277,6 +280,7 @@ function draw(freshId?: string) {
       h("div", { class: "asg-headline" }, headline),
       h("div", { class: "meta" }, "Monkey can add to this by voice and help you get things done. Ask him “help me with …”."))),
     keepAdd,
+    ...[tab === "open" ? suggestionsSection(cur.api, (t) => { cur!.items.push(t); draw(t.id); }, () => draw()) : null].filter((x): x is HTMLElement => !!x),
     h("div", { class: "todo-bar" },
       h("div", { class: "tabs", role: "group", "aria-label": "Show" },
         tabBtn("open", `Open (${v.open.length})`), tabBtn("overdue", `Overdue (${v.overdue.length})`), tabBtn("done", `Done (${v.done.length})`)),
@@ -311,6 +315,7 @@ export function renderTodos(card: HTMLElement, api: Api, data: { items: Todo[]; 
   cur = { root: card, api, hooks, items: data.items ?? [], settings: data.settings ?? { reminders: true, speak: false },
           tab, sort: cur?.sort ?? "due", editing: null, drawn: false };
   draw();
+  void loadSuggestions(api).then(() => { if (cur && !cur.editing) draw(); });   // "Suggested from email"
 }
 
 /** Monkey changed the list (voice): show it if the panel is open. */

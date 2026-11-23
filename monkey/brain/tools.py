@@ -61,20 +61,23 @@ LOCAL_TOOLS: list[dict] = [
           "For one specific day set `day` ('today', 'tomorrow', a weekday like 'friday', or YYYY-MM-DD) and the result is "
           "only that day. Otherwise it covers now through `days_ahead` days. Times are already in the user's local time; "
           "use the `when` field when you say them.", {"days_ahead": I, "day": S}),
-    _tool("get_emails", "List recent emails. account: 'all', 'gmail' or 'outlook'. "
-          "query: optional search text (sender, subject words); empty string for none.",
-          {"account": {"type": "string", "enum": ["all", "gmail", "outlook"]}, "unread_only": B,
-           "max_results": I, "query": S}),
-    _tool("read_email", "Read the full body of one email by id (from get_emails).",
-          {"account": {"type": "string", "enum": ["gmail", "outlook"]}, "email_id": S}),
+    _tool("get_emails", "List recent emails from every connected inbox, newest first; each email says which account "
+          "it's in (account id + account_label, e.g. 'Personal', 'School'). account: 'all' (default), 'gmail' (every "
+          "Gmail account), 'outlook', or one account's label or id. query: optional search text (sender, subject "
+          "words); empty string for none.",
+          {"account": S, "unread_only": B, "max_results": I, "query": S}),
+    _tool("read_email", "Read the full body of one email by id (from get_emails). account: that email's account id "
+          "or label from get_emails ('gmail' / 'outlook' work when there's only one).",
+          {"account": S, "email_id": S}),
     _tool("rank_items", "Rank upcoming events and recent emails by importance (critical/high/normal/low) and show "
           "the ranked list on screen. Use for 'what's my day look like', 'what's important', briefings.",
           {"days_ahead": I, "include_emails": B}),
-    _tool("draft_email", "Create an email DRAFT in the user's account and show it on screen for approval. You cannot "
-          "send email; the user approves sending. account: 'gmail' or 'outlook' (school wisc.edu email). "
+    _tool("draft_email", "Create an email DRAFT in one of the user's accounts and show it on screen for approval. You "
+          "cannot send email; the user approves sending, and it goes out from that account. account: the account's "
+          "label or id (from get_emails; for a reply, the account the email came in to), or 'gmail' / 'outlook' "
+          "(school wisc.edu email) when there's only one of that kind. If they have several and didn't say which, ask. "
           "reply_to_id: id of the email being replied to, or empty string.",
-          {"account": {"type": "string", "enum": ["gmail", "outlook"]}, "to": SA, "cc": SA, "subject": S,
-           "body": S, "reply_to_id": S}),
+          {"account": S, "to": SA, "cc": SA, "subject": S, "body": S, "reply_to_id": S}),
     _tool("get_assignments", "Canvas assignments ranked by priority (grade impact from points/weights, current course "
           "grade, missing status, time until due) and show the animated checklist on screen. Use for 'what should I "
           "work on', 'what's due', 'what am I missing'.", {"include_done": B}),
@@ -225,6 +228,7 @@ class Services:
     email_cache: dict[str, Email] = field(default_factory=dict)
     history: Any = None                                    # HistoryStore (cross-conversation search)
     todos: Any = None                                      # TodoStore (the user's to-do list in monkey.db)
+    suggestions: Any = None                                # SuggestionStore ("Suggested from email", owner accepts)
     skills: Any = None                                     # SkillLibrary (read-only playbooks)
 
 
@@ -399,6 +403,8 @@ class ToolRunner:
             out["list"] = t["list"]
         if t["notes"]:
             out["notes"] = t["notes"][:200]
+        if t.get("origin") and t["origin"].get("account_label"):
+            out["from_email_account"] = t["origin"]["account_label"]
         if t["steps"]:
             out["steps"] = [f"{i + 1}. {'[x]' if st['done'] else '[ ]'} {st['text']}" for i, st in enumerate(t["steps"])]
         return out
@@ -451,6 +457,13 @@ class ToolRunner:
             items = [t for t in items if t["id"] in ids]
         self.s.emit("todos", {"filter": f if f in ("overdue", "done") else "open"})
         counts = self.s.todos.counts(now)
+        if self.s.suggestions is not None:
+            try:
+                n = self.s.suggestions.count_pending()
+                if n:
+                    counts["suggested_from_email"] = n   # waiting in the panel for the user's Accept/Dismiss
+            except Exception:  # noqa: BLE001
+                pass
         if not items:
             return {"counts": counts, "items": [],
                     "note": f"Nothing{' matching' if query else ''} in '{f}'. The list is on screen."}
@@ -626,35 +639,87 @@ class ToolRunner:
         self.s.emit("events", {"events": [e.brief() for e in events], "label": label})
         return [e.brief() for e in events] or f"Nothing on the calendar for {label.lower() if win else 'that time'}."
 
-    def _emails(self, account: str, unread_only: bool, max_results: int, query: str) -> list[Email]:
-        out: list[Email] = []
-        for name, prov in self.s.mail.items():
-            if account not in ("all", name):
-                continue
+    # ------------------------------------------------------------ email (any number of Gmail accounts + Outlook)
+    @staticmethod
+    def _kind(acct: str, prov) -> str:
+        return getattr(prov, "kind", None) or ("outlook" if acct == "outlook" else "gmail")
+
+    @staticmethod
+    def _label(acct: str, prov) -> str:
+        try:
+            return str(getattr(prov, "label", "") or "") or ("Outlook" if acct == "outlook" else "Gmail")
+        except Exception:  # noqa: BLE001
+            return acct
+
+    def _connected(self) -> list[tuple[str, Any]]:
+        out = []
+        for acct, prov in list(self.s.mail.items()):
             try:
                 if prov.available():
-                    got = prov.list_recent(max_results=max(1, min(max_results or 15, 50)),
-                                           unread_only=unread_only, query=query or "")
-                    out.extend(got)
-            except Exception as exc:  # noqa: BLE001
-                self.s.emit("warning", {"message": f"{name} email: {exc}"})
+                    out.append((acct, prov))
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    def _resolve(self, spec: str, connected_only: bool = True) -> list[tuple[str, Any]]:
+        """'all' -> every inbox; 'gmail'/'outlook' -> every account of that kind; else an account id or label."""
+        pool = self._connected() if connected_only else list(self.s.mail.items())
+        want = " ".join((spec or "all").split()).lower()
+        if want in ("", "all", "any", "every", "both"):
+            return pool
+        if want in ("gmail", "google", "outlook"):      # a kind ("gmail" = every Gmail account), as before multi-account
+            kind = "outlook" if want == "outlook" else "gmail"
+            return [(a, p) for a, p in pool if self._kind(a, p) == kind]
+        exact = [(a, p) for a, p in pool if a.lower() == want or self._label(a, p).lower() == want]
+        if exact:
+            return exact
+        if want in ("school", "wisc", "wisc.edu"):
+            return [(a, p) for a, p in pool if self._kind(a, p) == "outlook"]
+        return [(a, p) for a, p in pool if want in self._label(a, p).lower()]
+
+    def _account_names(self) -> str:
+        return ", ".join(f"{self._label(a, p)} (id {a})" for a, p in self._connected()) or "none"
+
+    def _emails(self, account: str, unread_only: bool, max_results: int, query: str) -> list[Email]:
+        out: list[Email] = []
+        for name, prov in self._resolve(account):
+            try:
+                got = prov.list_recent(max_results=max(1, min(max_results or 15, 50)),
+                                       unread_only=unread_only, query=query or "")
+            except Exception as exc:  # noqa: BLE001 - one inbox failing never hides the others
+                self.s.emit("warning", {"message": f"{self._label(name, prov)} email: {exc}"})
+                continue
+            for e in got:                    # every email says which inbox it's in
+                e.account = name
+                e.account_label = e.account_label or self._label(name, prov)
+            out.extend(got)
         for e in out:
             self.s.email_cache[e.id] = e
         return sorted(out, key=lambda e: e.received, reverse=True)
 
     def t_get_emails(self, account: str = "all", unread_only: bool = False, max_results: int = 15, query: str = ""):
-        if not self.s.mail:
+        if not self._connected():
             return ("No email is connected yet. Say so in one sentence and call open_settings('accounts') so they can connect "
                     "Gmail (or school Outlook).")
+        if not self._resolve(account):
+            return f"No connected account matches {account!r}. Connected: {self._account_names()}."
         emails = self._emails(account, unread_only, max_results, query)
         self.s.emit("emails", {"emails": [e.brief() for e in emails]})
         return [e.brief() for e in emails] or "No matching emails."
 
     def t_read_email(self, account: str, email_id: str):
-        prov = self.s.mail.get(account)
-        if prov is None or not prov.available():
-            return f"{account} isn't connected."
+        cached = self.s.email_cache.get(email_id)
+        hits = self._resolve(account)
+        if cached is not None and (len(hits) != 1 or hits[0][0] != cached.account):
+            hits = [(a, p) for a, p in self._connected() if a == cached.account] or hits
+        if not hits:
+            return f"{account} isn't connected. Connected: {self._account_names()}."
+        if len(hits) > 1:
+            return (f"Which account is that email in? Connected: {self._account_names()}. Call again with its account "
+                    "id from get_emails.")
+        name, prov = hits[0]
         e = prov.get(email_id)
+        e.account, e.account_label = name, e.account_label or self._label(name, prov)
         self.s.email_cache[e.id] = e
         return {**e.brief(), "body": "<untrusted_email_body>\n" + e.body[:12000] + "\n</untrusted_email_body>"}
 
@@ -686,20 +751,30 @@ class ToolRunner:
         return {"summary": ranking.summary, "top": [r for r in rows if r["tier"] in ("critical", "high")][:8]}
 
     def t_draft_email(self, account: str, to: list[str], cc: list[str], subject: str, body: str, reply_to_id: str = ""):
-        prov = self.s.mail.get(account)
-        if prov is None or not prov.available():
-            return f"The {account} account isn't connected, so I can't create the draft there."
+        hits = self._resolve(account)
+        cached = self.s.email_cache.get(reply_to_id) if reply_to_id else None
+        if cached is not None and len(hits) > 1:      # a reply goes out from the inbox the email came in to
+            hits = [(a, p) for a, p in hits if a == cached.account] or hits
+        if not hits:
+            return (f"The {account} account isn't connected, so I can't create the draft there. "
+                    f"Connected: {self._account_names()}.")
+        if len(hits) > 1:
+            return (f"Which account should it go out from? Connected: {self._account_names()}. Ask the user, then call "
+                    "again with that account's label or id.")
+        account, prov = hits[0]
+        label = self._label(account, prov)
         bad = [a for a in [*to, *cc] if "@" not in a or " " in a.strip()]
         if bad or not to:
             return f"Need valid recipient email addresses (got: {to + cc}). Look them up or ask the user."
         res = prov.create_draft(to, cc, subject, body, reply_to_id=reply_to_id or "")
         pending = self.s.approval.register(PendingDraft(
             draft_id=uuid.uuid4().hex[:12], account=account, provider_draft_id=res.provider_draft_id,
-            to=to, cc=cc, subject=subject, body=body,
+            to=to, cc=cc, subject=subject, body=body, from_label=label,
         ))
         self.s.emit("draft", {**pending.public(), "web_link": res.web_link})
-        return ("Draft saved in the user's " + account + " Drafts folder and shown on screen for approval. "
-                "It has NOT been sent. Tell the user briefly and that they can click Send or say 'send it'.")
+        return (f"Draft saved in the Drafts folder of the user's {label} account ({account}) and shown on screen for "
+                f"approval. It has NOT been sent; it would go out from {label}. Tell the user briefly (say which "
+                "account) and that they can click Send or say 'send it'.")
 
     def t_get_assignments(self, include_done: bool = False):
         if self.s.assignments is None:

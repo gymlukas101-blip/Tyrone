@@ -176,10 +176,11 @@ def _listening_checks(app) -> list[Check]:
 
 def _google_checks(app) -> list[Check]:
     from . import keys
-    from .integrations.google import validate_client
+    from .integrations.google import account_ids, validate_client
 
     client = keys.get("google_client") or ""
-    if not client and not keys.get("google_token"):
+    ids = account_ids()                       # also moves a pre-multi-account sign-in into the account list
+    if not client and not ids:
         return [Check("Google", "Gmail + Calendar", SKIP, "not set up",
                       "Optional: Settings → Accounts → Set up Google (or use a calendar link for classes)")]
     out = []
@@ -188,16 +189,24 @@ def _google_checks(app) -> list[Check]:
         out.append(Check("Google", "Setup file", OK, "loaded"))
     except ValueError as exc:
         out.append(Check("Google", "Setup file", FAIL, "not loaded", "Settings → Accounts → Gmail + Google Calendar → Step 1"))
-    if not keys.get("google_token"):
+    if not ids:
         out.append(Check("Google", "Sign-in", FAIL, "not signed in",
                          "Google Cloud → Audience → Publish app (or add yourself as a test user), then Settings → Accounts → Sign in"))
         return out
-    try:
-        prof = app.google.service("gmail", "v1").users().getProfile(userId="me").execute()
-        out.append(Check("Google", "Gmail", OK, f"reads your inbox ({prof.get('messagesTotal', '?')} messages)"))
-    except Exception as exc:  # noqa: BLE001
-        out.append(Check("Google", "Gmail", FAIL, _scrub(exc),
-                         "Enable the Gmail API in Google Cloud, or Sign in again in Settings → Accounts"))
+    accounts = getattr(app, "accounts", None)
+    bad = 0
+    for i, acct in enumerate(ids):
+        # Named by the owner's label, never the address (this report gets pasted into chats).
+        name = "Gmail" if len(ids) == 1 else f"Gmail ({_scrub(accounts.label(acct)) if accounts else acct})"
+        try:
+            svc = app.google.service("gmail", "v1") if i == 0 else app.google.account(acct).service("gmail", "v1")
+            prof = svc.users().getProfile(userId="me").execute()
+            out.append(Check("Google", name, OK, f"reads your inbox ({prof.get('messagesTotal', '?')} messages)"))
+        except Exception as exc:  # noqa: BLE001
+            bad += 1
+            out.append(Check("Google", name, FAIL, _scrub(exc),
+                             "Enable the Gmail API in Google Cloud, or Sign in again in Settings → Accounts"))
+    if bad == len(ids):
         return out
     try:
         now = datetime.now().astimezone()

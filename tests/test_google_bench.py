@@ -62,11 +62,11 @@ def test_sign_in_opens_browser_once_without_touching_webbrowser(monkeypatch):
     real_get, real_open = webbrowser.get, webbrowser.open
     keys.set("google_client", DESKTOP)
     urls = []
-    G.GoogleAuth().sign_in(on_url=urls.append)                       # would raise/hang on recursion before
+    acct = G.GoogleAuth().sign_in(on_url=urls.append)                # would raise/hang on recursion before
     assert launched == ["https://accounts.google.com/o/oauth2/auth?x=1"] and urls == launched
     assert FakeFlow.calls[-1]["browser"] == G.SIGNIN_BROWSER and FakeFlow.calls[-1]["timeout_seconds"] == 300
     assert webbrowser.get is real_get and webbrowser.open is real_open
-    assert keys.get("google_token") == '{"token": "t"}'
+    assert acct == "gmail" and G.get_token("gmail") == '{"token": "t"}'   # one token per account (multi-account)
 
 
 def test_other_links_still_open_while_sign_in_waits(monkeypatch, tmp_path):
@@ -272,7 +272,7 @@ def test_expired_sign_in_is_cleared_with_a_clear_message(monkeypatch):
     with pytest.raises(RuntimeError) as e:
         G.GoogleAuth().credentials()
     assert "Sign in again" in str(e.value) and "Publish app" in str(e.value)
-    assert not keys.get("google_token")
+    assert not keys.get("google_token") and G.account_ids() == []     # moved to the account list, then cleared
 
 
 def test_access_blocked_message_points_to_publish():
