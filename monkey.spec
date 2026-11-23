@@ -29,6 +29,9 @@ for pkg in ("ctranslate2", "onnxruntime", "_sounddevice_data", "sherpa_onnx", "s
         binaries += collect_dynamic_libs(pkg)
     except Exception:
         pass
+# winrt-runtime ships an older msvcp140.dll in its package; if it loads before onnxruntime's needs are met, onnxruntime
+# crashes (CI run 93). Keep only the system runtime PyInstaller collects for every module (tools/drop_winrt_msvcp.py).
+binaries = [b for b in binaries if not ("winrt" in b[0].replace("\\", "/").lower() and "msvcp140" in b[0].lower())]
 
 hiddenimports = (
     collect_submodules("webview")
@@ -57,6 +60,8 @@ a = Analysis(
     excludes=["tkinter", "matplotlib", "IPython", "pytest"],
     noarchive=False,
 )
+a.binaries = [b for b in a.binaries
+              if not (b[0].replace("\\", "/").lower().startswith("winrt/") and "msvcp140" in b[0].lower())]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

@@ -61,6 +61,7 @@ jobs:
         run: |
           pip install --require-hashes -r requirements/windows-py312.lock
           pip install --no-deps .
+          python tools/drop_winrt_msvcp.py   # winrt's older msvcp140.dll crashes onnxruntime if it loads first
       - name: Bundle the "Hey Monkey" keyword-spotting model (sherpa-onnx, ~5 MB int8)
         shell: bash
         run: |
@@ -126,6 +127,7 @@ jobs:
         run: |
           pip install --require-hashes -r requirements/windows-py312.lock
           pip install --no-deps .
+          python tools/drop_winrt_msvcp.py   # winrt's older msvcp140.dll crashes onnxruntime if it loads first
 
       - name: Bundle the fallback wake word model (hey_jarvis) + feature models
         run: python -c "import openwakeword.utils as u; u.download_models(model_names=['hey_jarvis'])"

@@ -76,6 +76,16 @@ def unregister_aumid(aumid: str = AUMID) -> None:
         pass
 
 
+def _runtime_order() -> None:
+    """Load onnxruntime before winrt. winrt-runtime ships an older msvcp140.dll; Windows keeps the first one a process
+    loads, and onnxruntime (wake word, voice activity, speech-to-text) crashes on import after the older one. The
+    release build removes winrt's copy (tools/drop_winrt_msvcp.py, monkey.spec); this keeps dev runs safe too."""
+    try:
+        import onnxruntime  # noqa: F401
+    except Exception:  # noqa: BLE001 - not installed: then there's nothing to protect
+        pass
+
+
 class WinToastBackend:  # pragma: no cover - needs Windows; covered by the Windows CI job and the exe selftest
     """windows-toasts on Windows 10/11."""
 
@@ -85,6 +95,7 @@ class WinToastBackend:  # pragma: no cover - needs Windows; covered by the Windo
         self._aumid = aumid
         self._toasts: dict[str, object] = {}       # keep shown toasts (and their callbacks) alive while Monkey runs
         try:
+            _runtime_order()
             from windows_toasts import InteractableWindowsToaster
 
             register_aumid(aumid, APP_NAME, icon)

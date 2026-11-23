@@ -2579,6 +2579,11 @@ def selftest() -> int:
             problems.append(f"cleanup scan: {exc}")
 
         problems += _selftest_secrets(Path(tmp))
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            # winrt's own older msvcp140.dll must not be in the bundle: it crashes onnxruntime if it loads first.
+            bundled = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "winrt"
+            if list(bundled.glob("msvcp140*.dll")):
+                problems.append("windows notifications: winrt's msvcp140.dll is bundled (crashes onnxruntime)")
         if sys.platform == "win32":                     # Windows notifications: winrt bundled and the toaster loads
             from .notify.wintoast import WinToastBackend
 
