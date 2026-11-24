@@ -852,7 +852,7 @@ pass of five menus (their animations), idle is within run-to-run spread, and not
 **Evidence** (not in the repo): `python -m tools.playtest.menu_record --dist ui/dist --out <dir>` records the menus,
 slow, error and narrow scenarios with the DevTools screencast + system ffmpeg, plus filmstrips per step.
 
-**Tests:** `ui/test/menu-motion.test.ts` (16: GPU-only plans, readable within T.read, closing faster with no bounce,
+**Tests:** `ui/test/menu-motion.test.ts` (19: GPU-only plans, readable within T.read, closing faster with no bounce,
 min/calm, origin clamp, close-then-really-close, Escape twice, non-cancelable Escape, stuck-close timer, rapid toggling
 with reverse, Escape mid-open, focus return, reduced-motion close), `ui/test/loader.test.ts` (9: no flash for fast
 loads, 150 ms delay, 400 ms minimum, words over time, failures, delay 0 on retry), `tests/test_menu_motion_ui.py` (6:
