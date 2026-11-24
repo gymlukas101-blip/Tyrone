@@ -67,6 +67,15 @@ For every clip:
   - per-batch contact sheets: `clips_c3/b{1..4}_front.png` and `clips_c3/sheets_b*/`;
   - hand close-ups;
   - all 46 clips frozen mid-clip in the real app (`renders/clips_C3_app/sheet.png`, `threejs_clip_check.py`, 0 page errors).
+- C4 arm-contact fix (`fix_contacts.py` → `clips_c4/tripo_clips_C4`): the retargeted arms-crossed and hand-to-body clips pushed
+  the forearms and fists through the chest plates and fur. The script fits simple proxies (torso ellipsoid from the trunk fur and
+  chest/belly plates, head sphere, per-side arm capsules at the fur sleeve's radius), measures each frame's penetration *relative
+  to the idle rest pose* (the proxies already 'touch' an arm hanging at the side, which isn't clipping), smooths the push in time,
+  and bakes a 2-bone IK correction back into the clip (up to 3 passes). Head-contact clips (scratch head/belly, chestbeat) keep
+  contact instead of a gap; lying clips and the Phase C poses are skipped. Result: rest-pose clips untouched; worst cases
+  idle_impatient_tap 20→7 cm, idle_mini_chestbeat 26→3, idle_scratch_belly 25→3, talk_gest_fist_palm 13→3,
+  idle_knuckle_crack 15→3.5 (proxy estimate; the residual is fur-on-fur, see `clips_c4/crossed_close.png`). 46 clips, 0 page
+  errors in the app (`renders/clips_C4_app/`).
 - **Open:**
   - with the bigger fists, arms-crossed and hand-to-head clips (`idle_impatient_tap`, `idle_knuckle_crack`, `laugh`, `idle_scratch_head`) push fur into the chest and head;
   - no IK yet for contacts;
