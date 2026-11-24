@@ -16,6 +16,9 @@
 //   - Brow beats: while talking, a loud onset (a stressed syllable) lifts the brows briefly, alternating both /
 //     left outer / right inner so it reads as emphasis, not a tic (rate-limited). Uses the V2 per-side brow morphs
 //     where the model has them, else the shared browsUp.
+//   - Pupils (V2 E7 eyes: pupilDilate / pupilConstrict are one signed "net" size): moods set it (dilated when warm,
+//     sad or interested, pinpoint in a shock, tight when angry or focused) and a slow natural flutter (hippus) keeps
+//     the eyes alive when nothing else moves. Models without the morphs ignore them.
 //   - Easing is time-based (time constants in seconds), so it looks the same at 15, 30, 60 or 144 fps.
 // Everything is clamped to 0..1 and unknown morphs are ignored by the caller.
 
@@ -55,6 +58,8 @@ export class FaceMixer {
   tau = { visUp: 0.035, visDown: 0.07, jawUp: 0.045, jawDown: 0.09, mood: 0.16, moodTalk: 0.12 };
   /** Brow beats: slow loudness follower, current pulse (0..1), time since the last beat, beat counter. */
   beat = { slow: 0, pulse: 0, since: 9, n: 0, minGap: 0.7, onset: 0.16, decay: 0.32 };
+  /** Pupil flutter: amplitude (net pupil size) and running time. */
+  hippus = { amp: 0.07, t: 0 };
 
   update(i: FaceInput, dt: number): Record<string, number> {
     const out: Record<string, number> = {};
@@ -104,6 +109,13 @@ export class FaceMixer {
       else if (kind === 1) add("browOuterUp_L", p * 0.35);
       else add("browInnerUp_R", p * 0.35);
     }
+    // ---- pupils: one signed size (dilate − constrict) plus a slow, irregular flutter, split back into the two keys
+    this.hippus.t += dt;
+    const ht = this.hippus.t;
+    const flutter = this.hippus.amp * (0.6 * Math.sin(ht * 1.7) + 0.4 * Math.sin(ht * 1.03 + 1.3));
+    const net = Math.max(-1, Math.min(1, (out.pupilDilate ?? 0) - (out.pupilConstrict ?? 0) + flutter));
+    out.pupilDilate = clamp(net);
+    out.pupilConstrict = clamp(-net);
     // mouthO from a mood and the O viseme shouldn't stack past fully round
     if (out.mouthO !== undefined) out.mouthO = clamp(out.mouthO * (1 - (this.vis.viseme_O ?? 0) * 0.5));
     // ---- overrides (yawn, blink, sleep) win outright

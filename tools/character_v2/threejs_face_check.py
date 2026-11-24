@@ -52,7 +52,8 @@ STEPS = [  # (label, events, extra js, wait ms)
     # (no wink step: the app writes blink_L and blink_R together every frame, so it has no wink trigger yet)
 ]
 WATCH = ["viseme_aa", "viseme_PP", "viseme_O", "viseme_E", "viseme_FF", "jawOpen", "blink_L", "blink_R", "smile",
-         "squint", "browsAngry", "angryEyes", "browsSad", "sadEyes", "frown", "grimace", "mouthO", "wideEyes", "browsUp"]
+         "squint", "browsAngry", "angryEyes", "browsSad", "sadEyes", "frown", "grimace", "mouthO", "wideEyes", "browsUp",
+         "pupilDilate", "pupilConstrict", "irisSmall", "irisBig", "eyeSparkle", "squint_R"]   # E7 eyes
 
 
 def main(dist: Path, model: Path, out: Path) -> dict:

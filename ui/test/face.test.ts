@@ -61,7 +61,8 @@ describe("face mixer", () => {
 
   it("silence while idle leaves no jitter", () => {
     const out = run(new FaceMixer(), base, 1, 60);
-    for (const v of Object.values(out)) expect(v).toBe(0);
+    // the pupils' slow flutter (hippus) is deliberate life, not jitter; everything else must be still
+    for (const [k, v] of Object.entries(out)) if (!k.startsWith("pupil")) expect(v).toBe(0);
   });
 
   it("approach is exact at dt=0 and converges", () => {
@@ -136,5 +137,24 @@ describe("brows (V2 per-side morphs)", () => {
     for (let i = 0; i < 30; i++) s = d.update(1 / 60);
     expect(s.browInnerUp_L).toBeGreaterThan(0.4);
     expect(s.browSqueeze).toBeGreaterThan(0.3);
+  });
+});
+
+describe("pupils (E7 eyes)", () => {
+  const base = { talking: false, visemes: {}, level: 0, acting: {}, emote: {}, override: {} };
+  it("never dilates and constricts at once, and a shock wins over the flutter", () => {
+    const m = new FaceMixer();
+    for (let i = 0; i < 300; i++) {
+      const o = m.update({ ...base, emote: i < 150 ? {} : { pupilConstrict: 0.8 } }, 1 / 60);
+      expect(Math.min(o.pupilDilate, o.pupilConstrict)).toBe(0);
+    }
+    expect(m.out.pupilConstrict).toBeGreaterThan(0.6);
+  });
+  it("flutters gently when nothing else moves", () => {
+    const m = new FaceMixer();
+    const seen: number[] = [];
+    for (let i = 0; i < 600; i++) { const o = m.update(base, 1 / 60); seen.push(o.pupilDilate - o.pupilConstrict); }
+    expect(Math.max(...seen)).toBeGreaterThan(0.02);
+    expect(Math.max(...seen.map(Math.abs))).toBeLessThan(0.08);
   });
 });
