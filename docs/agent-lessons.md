@@ -66,6 +66,8 @@ How it's kept up to date:
 - **Fit an underlay under clumped fur from per-direction percentiles of the fur's own vertices, not ray casts.** Rays slip between clumps and hit the leg or nothing, so the sleeve pokes out. *Why:* C1's first sleeve showed as a dark slab behind the forearm.
 - **Evaluate deformation with a same-pose sheet against the previous candidate** (`phase_c_evidence.py` plays the same actions on both), and compare variants with `--quick` before choosing a parameter. *Why:* rigidity 0 / 0.35 / 1 look alike at rest and only differ under poses.
 - **In headless bpy, `import bpy` before `bmesh`.** *Why:* `ModuleNotFoundError: bmesh` on the first Phase C run.
+- **The Skin modifier leaves an internal disc wherever its graph branches:** a ring of edges with 3 faces each. To get a closed, manifold result, build simple non-branching chains that overlap where the branches would join. *Why:* C1's hand had 16 non-manifold edges, and cleanup passes couldn't remove them safely.
+- **Guard texture transfers against the source's painted shadows and edges:** fall back to a measured base tone for dark samples and for points far from the source surface. *Why:* C2's first bake copied the fur-coloured wrist band from Tripo's fist onto the palm, and the hand read as fingers only.
 - **Playwright screenshots under SwiftShader at deviceScaleFactor 2 can time out** (30 s). Use 1× for app checks, or raise the timeout. *Why:* the first `threejs_hand_check.py` run.
 
 ### Context and token use

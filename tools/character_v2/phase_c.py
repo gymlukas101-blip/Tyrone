@@ -52,6 +52,10 @@ INSET = float(__import__("os").environ.get("PHASEC_INSET", "0.93"))   # underlay
 RIGIDITY = float(__import__("os").environ.get("PHASEC_RIGIDITY", "1.0"))
 BODY = "tripo_part_0"
 FIST = "tripo_part_6"             # left fist (mitten)
+# Per side: the arm fur parts (outer clumps first: its texture dresses the underlay), the mitten, mirror sign.
+SIDES = {"L": {"sign": 1, "furs": ("tripo_part_2", "tripo_part_18"), "fist": "tripo_part_6"},
+         "R": {"sign": -1, "furs": ("tripo_part_1", "tripo_part_12"), "fist": "tripo_part_3"}}
+INSET_ELBOW = float(__import__("os").environ.get("PHASEC_INSET_ELBOW", "1.0"))  # fuller sleeve where tufts part most
 FUR_ROOT = (0.26, 0.085, 0.02)    # sRGB of the fur's dark roots (#431604), measured
 HAND_SRGB = (0.85, 0.60, 0.35)    # Tripo fist albedo, upper-middle tone (hero reads #d89950)
 
@@ -156,10 +160,10 @@ def brows(arm, rep):
 
 
 # ------------------------------------------------------------------------------------------------ 2+3. left arm
-def chain(arm):
+def chain(arm, s="L"):
     mw = arm.matrix_world
     b = arm.data.bones
-    return [mw @ b["upper_arm.L"].head_local, mw @ b["forearm.L"].head_local, mw @ b["hand.L"].head_local]
+    return [mw @ b[f"upper_arm.{s}"].head_local, mw @ b[f"forearm.{s}"].head_local, mw @ b[f"hand.{s}"].head_local]
 
 
 def project(p, c):
@@ -175,17 +179,17 @@ def project(p, c):
     return best
 
 
-def chain_weights(seg, u) -> dict:
+def chain_weights(seg, u, s="L") -> dict:
     """Smooth weights along shoulder -> elbow -> wrist (3-loop blends at each joint)."""
     w = {}
     if seg == 0:
         sh = 0.55 * (1 - smooth(u / 0.18))
         el = 0.5 * smooth((u - 0.82) / 0.18)
-        w = {"shoulder.L": sh, "forearm.L": el, "upper_arm.L": 1 - sh - el}
+        w = {f"shoulder.{s}": sh, f"forearm.{s}": el, f"upper_arm.{s}": 1 - sh - el}
     else:
         el = 0.5 * (1 - smooth(u / 0.18))
         wr = 0.5 * smooth((u - 0.86) / 0.14)
-        w = {"upper_arm.L": el, "hand.L": wr, "forearm.L": 1 - el - wr}
+        w = {f"upper_arm.{s}": el, f"hand.{s}": wr, f"forearm.{s}": 1 - el - wr}
     return {k: v for k, v in w.items() if v > 1e-3}
 
 
@@ -220,13 +224,15 @@ def islands(o):
     return out
 
 
-def left_arm(arm, rep, outdir):
-    c = chain(arm)
+def arm_side(arm, rep, outdir, s="L"):
+    cfg = SIDES[s]
+    sign, furs = cfg["sign"], cfg["furs"]
+    c = chain(arm, s)
     # fur vertices around the arm chain, for per-direction radii (rays slip through gaps between clumps):
     # the arm fur, plus body fur only at the shoulder (elsewhere the body is the torso/legs, not the arm)
-    near = [p for n in ARM_FURS for p in world_pts(bpy.data.objects[n]) if project(p, c)[2] < 0.2]
-    near += [p for p in world_pts(bpy.data.objects[BODY]) if p.x > 0.15 and (lambda s: s[0] == 0 and s[1] < 0.3
-                                                                                   and s[2] < 0.15)(project(p, c))]
+    near = [p for n in furs for p in world_pts(bpy.data.objects[n]) if project(p, c)[2] < 0.2]
+    near += [p for p in world_pts(bpy.data.objects[BODY]) if p.x * sign > 0.15 and (
+        lambda q: q[0] == 0 and q[1] < 0.3 and q[2] < 0.15)(project(p, c))]
     # ---- underlay sleeve: rings along the chain
     nseg, rings = 16, []
     stations = [(0, u) for u in (0.0, 0.12, 0.25, 0.4, 0.55, 0.7, 0.82, 0.92)] + \
@@ -253,7 +259,8 @@ def left_arm(arm, rep, outdir):
             dirs.append((t1 * math.cos(ph) + t2 * math.sin(ph)).normalized())
             sec = sorted(r for a, r in slab if abs((a - ph + math.pi) % (2 * math.pi) - math.pi) < math.pi / nseg * 1.5)
             # the fur's inner boundary in this direction: a low percentile of the clump radii, inset
-            found.append(sec[len(sec) // 6] * INSET if len(sec) >= 3 else None)
+            elbow = (seg == 0 and u >= 0.82) or (seg == 1 and u <= 0.18)
+            found.append(sec[len(sec) // 6] * (INSET_ELBOW if elbow else INSET) if len(sec) >= 3 else None)
         ok = sorted(r for r in found if r)
         lo = ok[0] if ok else 0.04
         med = ok[len(ok) // 2] if ok else 0.04
@@ -271,11 +278,11 @@ def left_arm(arm, rep, outdir):
         a, b = rings[r], rings[r + 1]
         for k in range(nseg):
             faces.append((a + k, a + (k + 1) % nseg, b + (k + 1) % nseg, b + k))
-    me = bpy.data.meshes.new("V2_ArmUnderlay_L")
+    me = bpy.data.meshes.new(f"V2_ArmUnderlay_{s}")
     me.from_pydata([tuple(v) for v in sv], [], faces)
     me.shade_smooth()
     me.validate()
-    und = bpy.data.objects.new("V2_ArmUnderlay_L", me)
+    und = bpy.data.objects.new(f"V2_ArmUnderlay_{s}", me)
     bpy.context.scene.collection.objects.link(und)
     for p in me.polygons:                                      # normals outward from the bone axis
         seg, u = meta[p.vertices[0]]
@@ -287,7 +294,7 @@ def left_arm(arm, rep, outdir):
     me.update()
     # dress it in the arm fur's own texture: UVs by Data Transfer (nearest face, interpolated) from the clumps
     me.uv_layers.new(name="UVMap")
-    src = bpy.data.objects[ARM_FUR]
+    src = bpy.data.objects[furs[0]]
     me.materials.clear()
     me.materials.append(src.data.materials[0])
     dt = und.modifiers.new("UVFromFur", "DATA_TRANSFER")
@@ -301,13 +308,13 @@ def left_arm(arm, rep, outdir):
     bpy.ops.object.modifier_apply(modifier=dt.name)
     skin_object(und, arm)
     for i, (seg, u) in enumerate(meta):
-        set_weights(und, i, chain_weights(seg, u))
+        set_weights(und, i, chain_weights(seg, u, s))
     # ---- rigid fur clumps: EVERY left arm fur clump, plus body clumps on the left arm (near the chain, or carrying
     # Tripo's forearm/hand/finger weights - those would follow the re-placed finger bones and tear)
-    lower = {"forearm.L", "hand.L"} | {f"{f}.0{j}.L" for f in ("f1", "f2", "f3", "f4", "thumb") for j in (1, 2, 3)}
-    fingers = lower - {"forearm.L", "hand.L"}
+    lower = {f"forearm.{s}", f"hand.{s}"} | {f"{f}.0{j}.{s}" for f in ("f1", "f2", "f3", "f4", "thumb") for j in (1, 2, 3)}
+    fingers = lower - {f"forearm.{s}", f"hand.{s}"}
     moved, remapped = {}, {}
-    for o in [bpy.data.objects[n] for n in ARM_FURS] + [bpy.data.objects[BODY]]:
+    for o in [bpy.data.objects[n] for n in furs] + [bpy.data.objects[BODY]]:
         P = world_pts(o)
         gn = {g.index: g.name for g in o.vertex_groups}
         lw = [max((g.weight for g in v.groups if gn.get(g.group) in lower), default=0.0) for v in o.data.vertices]
@@ -317,18 +324,18 @@ def left_arm(arm, rep, outdir):
             seg, u, d = project(ctr, c)
             if o.name == BODY:
                 carries = max(lw[i] for i in comp) > 0.05
-                near_arm = ctr.x > 0.12 and d < 0.1 and not (seg == 0 and u < 0.1)
+                near_arm = ctr.x * sign > 0.12 and d < 0.1 and not (seg == 0 and u < 0.1)
                 if len(comp) > 150 or not (carries or near_arm):
                     continue
             root = P[min(comp, key=lambda i: project(P[i], c)[2])]
             for i in comp:
                 rs, ru, _ = project(P[i].lerp(root, RIGIDITY), c)
-                set_weights(o, i, chain_weights(rs, ru))
+                set_weights(o, i, chain_weights(rs, ru, s))
             n += 1
         moved[o.name] = n
         # anything left on a finger bone (inside big body islands) goes to the hand bone
         k = 0
-        gh = o.vertex_groups.get("hand.L") or o.vertex_groups.new(name="hand.L")
+        gh = o.vertex_groups.get(f"hand.{s}") or o.vertex_groups.new(name=f"hand.{s}")
         for v in o.data.vertices:
             for g in list(v.groups):
                 if gn.get(g.group) in fingers and g.weight > 0:
@@ -336,7 +343,7 @@ def left_arm(arm, rep, outdir):
                     o.vertex_groups[gn[g.group]].remove([v.index])
                     k += 1
         remapped[o.name] = k
-    rep["left_arm"] = {"underlay_vertices": len(sv), "underlay_rings": len(stations), "reskinned_clumps": moved, "rigidity": RIGIDITY, "finger_weights_remapped_to_hand": remapped,
+    rep[f"arm_{s}"] = {"underlay_vertices": len(sv), "underlay_rings": len(stations), "reskinned_clumps": moved, "rigidity": RIGIDITY, "finger_weights_remapped_to_hand": remapped,
                        "chain": [[round(x, 4) for x in p] for p in c]}
 
 
@@ -356,29 +363,184 @@ WRIST = (0.370, -0.060, 0.120, 0.058)
 PALM = (0.350, -0.140, 0.105, 0.070)
 
 
-def build_hand(arm, rep):
-    verts, edges, radii = [Vector(WRIST[:3]), Vector(PALM[:3])], [(0, 1)], [WRIST[3], PALM[3]]
-    seg_bones = {(0, 1): "hand.L"}
+def hand_layout(s="L"):
+    """FINGERS / WRIST / PALM for a side (the right fist is Tripo's mirror image: box x -.455..-.244)."""
+    sign = SIDES[s]["sign"]
+    m = lambda t: (t[0] * sign, t[1], t[2], t[3])                     # noqa: E731
+    return {f: [m(p) for p in pts] for f, pts in FINGERS.items()}, m(WRIST), m(PALM)
+
+
+def hand_chains(fingers, wrist, palm):
+    """C1's approved fist as simple, non-branching tubes (the Skin modifier closes each one cleanly; at a branch it
+    leaves an internal disc = 16 non-manifold edges). The tubes overlap exactly where C1's branches joined:
+    wrist-palm, palm->index/middle knuckles, the knuckle bar, each finger from its knuckle, the thumb from the palm.
+    -> [(points [(x,y,z,r)], bone per edge (side-less))]"""
+    out = [([wrist, palm], ["hand"]),
+           ([palm, fingers["f2"][0]], ["hand"]),
+           ([palm, fingers["f3"][0]], ["hand"]),
+           ([fingers[f][0] for f in ("f1", "f2", "f3", "f4")], ["hand"] * 3)]
+    for f in ("f1", "f2", "f3", "f4"):
+        out.append((fingers[f], [f"{f}.01", f"{f}.02", f"{f}.03"]))
+    out.append(([palm] + fingers["thumb"], ["hand", "thumb.01", "thumb.02", "thumb.03"]))
+    return out
+
+
+def hand_tree(fingers, wrist, palm):
+    """C1's approved fist: palm block, knuckle bar via branches (f2/f3 off the palm, f1/f4 off their neighbours),
+    fingers and thumb as chains. -> verts, edges, radii, [(a, b, side-less bone)] per edge."""
+    verts, edges, radii, segs = [Vector(wrist[:3]), Vector(palm[:3])], [(0, 1)], [wrist[3], palm[3]], [(0, 1, "hand")]
     mcp = {"palm": 1}
-    for f, pts in FINGERS.items():
+    for f in ("f2", "f3", "f1", "f4", "thumb"):
         prev = mcp[KNUCKLE_PARENT[f]]
-        for j, (x, y, z, r) in enumerate(pts):
+        for j, (x, y, z, r) in enumerate(fingers[f]):
             verts.append(Vector((x, y, z)))
             radii.append(r)
             i = len(verts) - 1
             edges.append((prev, i))
-            seg_bones[(prev, i)] = "hand.L" if j == 0 else f"{f}.0{j}.L"
+            segs.append((prev, i, "hand" if j == 0 else f"{f}.0{j}"))
             if j == 0:
                 mcp[f] = i
             prev = i
-    me = bpy.data.meshes.new("V2_Hand_L")
+    return verts, edges, radii, segs
+
+
+def clean_manifold(o) -> int:
+    """The Skin modifier leaves a few junction artifacts where branches meet (edges shared by 3+ faces, duplicate
+    or zero-area faces). Merge doubles, dissolve degenerates, drop faces that duplicate another face's vertex set,
+    then fill any hole that leaves. -> remaining non-manifold edges."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-6)
+    seen, dup = {}, []
+    for f in bm.faces:
+        key = frozenset(v.index for v in f.verts)
+        if key in seen:
+            dup.append(f)
+        else:
+            seen[key] = f
+    if dup:
+        bmesh.ops.delete(bm, geom=dup, context="FACES")
+    for _ in range(3):
+        bad = [e for e in bm.edges if len(e.link_faces) > 2]
+        if not bad:
+            break
+        # a fin: a face whose edges are all on non-manifold or boundary edges sits inside the junction
+        fins = {f for e in bad for f in e.link_faces if all(len(x.link_faces) != 2 for x in f.edges)}
+        if not fins:
+            break
+        bmesh.ops.delete(bm, geom=list(fins), context="FACES")
+    holes = [e for e in bm.edges if e.is_boundary]
+    if holes:
+        bmesh.ops.holes_fill(bm, edges=holes, sides=0)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    left = sum(1 for e in bm.edges if not e.is_manifold)
+    bm.to_mesh(o.data)
+    bm.free()
+    o.data.update()
+    return left
+
+
+def bake_fist_texture(hand, fist, outdir: Path, s: str, size=512) -> float:
+    """Tripo's painted fist onto the new hand: smart-UV the hand, then for every texel take the nearest point on the
+    mitten and its texture colour (the F3 muzzle transfer method). Returns the share of texels filled directly."""
+    import numpy as np
+
+    import tripo_eyes as EY
+    import tripo_face_poc as PC
+
+    bpy.ops.object.select_all(action="DESELECT")
+    hand.select_set(True)
+    bpy.context.view_layer.objects.active = hand
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.02)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    src = PC.Muzzle(fist, PC.base_image(fist))                         # (generic: BVH + per-triangle UVs + image)
+    me = hand.data
+    uv = me.uv_layers.active.data
+    mw = hand.matrix_world
+    out = np.zeros((size, size, 3), np.float32)
+    ok = np.zeros((size, size), bool)
+    # the fist's skin tone (Tripo paints the wrist edge in fur colours, which must not land on the palm)
+    lum = lambda c: float(c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722)    # noqa: E731
+    probes = [PC.sample(src.img, *src.uv_at(src.verts[src.polys[i][0]], i)[:2]) for i in range(0, len(src.polys), 7)]
+    probes.sort(key=lum)
+    skin = np.array(probes[len(probes) * 3 // 4], np.float32)               # upper-quartile luminance: lit skin
+    skin_l = lum(skin)
+    for poly in me.polygons:
+        li = list(poly.loop_indices)
+        for t in range(1, len(li) - 1):                                # fan-triangulate
+            tri = (li[0], li[t], li[t + 1])
+            U = np.array([[uv[k].uv.x * size, uv[k].uv.y * size] for k in tri])
+            P = [mw @ me.vertices[me.loops[k].vertex_index].co for k in tri]
+            x0, y0 = np.floor(U.min(0)).astype(int)
+            x1, y1 = np.ceil(U.max(0)).astype(int)
+            den = (U[1, 1] - U[2, 1]) * (U[0, 0] - U[2, 0]) + (U[2, 0] - U[1, 0]) * (U[0, 1] - U[2, 1])
+            if abs(den) < 1e-12:
+                continue
+            for y in range(max(0, y0), min(size, y1 + 1)):
+                for x in range(max(0, x0), min(size, x1 + 1)):
+                    px, py = x + 0.5, y + 0.5
+                    w0 = ((U[1, 1] - U[2, 1]) * (px - U[2, 0]) + (U[2, 0] - U[1, 0]) * (py - U[2, 1])) / den
+                    w1 = ((U[2, 1] - U[0, 1]) * (px - U[2, 0]) + (U[0, 0] - U[2, 0]) * (py - U[2, 1])) / den
+                    w2 = 1 - w0 - w1
+                    if min(w0, w1, w2) < -0.01:
+                        continue
+                    q = P[0] * w0 + P[1] * w1 + P[2] * w2
+                    loc, _n, fi, dist = src.bvh.find_nearest(q)
+                    if loc is None:
+                        continue
+                    c = src.uv_at(loc, fi)
+                    col = np.asarray(PC.sample(src.img, c.x, c.y), np.float32)
+                    if lum(col) < 0.55 * skin_l:                       # fur-coloured paint: skin instead
+                        col = skin
+                    k = smooth((dist - 0.006) / 0.02)                    # far from Tripo's surface: plain skin
+                    out[y, x] = col * (1 - k) + skin * k
+                    ok[y, x] = True
+    known = ok.copy()
+    for _ in range(24):                                                # pad the islands (mip/bilinear bleed)
+        if known.all():
+            break
+        acc = np.zeros_like(out)
+        cnt = np.zeros(ok.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            k2 = np.roll(known, (dy, dx), (0, 1))
+            acc += np.roll(out, (dy, dx), (0, 1)) * k2[..., None]
+            cnt += k2
+        grow = (~known) & (cnt > 0)
+        out[grow] = acc[grow] / cnt[grow][:, None]
+        known |= grow
+    img = EY.image(f"V2_Hand_{s}_basecolor", out, outdir)
+    mat = hand.data.materials[0]
+    nt = mat.node_tree
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    nt.links.new(tex.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+    return float(ok.mean())
+
+
+def build_hand(arm, rep, outdir: Path, s="L"):
+    fingers, wrist, palm = hand_layout(s)
+    verts, edges, radii, roots, seg_bones = [], [], [], [], []
+    for pts, bones in hand_chains(fingers, wrist, palm):
+        base = len(verts)
+        roots.append(base)
+        for j, (x, y, z, r) in enumerate(pts):
+            verts.append(Vector((x, y, z)))
+            radii.append(r)
+            if j:
+                edges.append((base + j - 1, base + j))
+                seg_bones.append((Vector(pts[j - 1][:3]), Vector(pts[j][:3]), f"{bones[j - 1]}.{s}"))
+    me = bpy.data.meshes.new(f"V2_Hand_{s}")
     me.from_pydata([tuple(v) for v in verts], edges, [])
-    o = bpy.data.objects.new("V2_Hand_L", me)
+    o = bpy.data.objects.new(f"V2_Hand_{s}", me)
     bpy.context.scene.collection.objects.link(o)
     o.modifiers.new("Skin", "SKIN")
     for i, r in enumerate(radii):
         me.skin_vertices[0].data[i].radius = (r, r)
-    me.skin_vertices[0].data[0].use_root = True
+    for i in roots:
+        me.skin_vertices[0].data[i].use_root = True
     sub = o.modifiers.new("Subsurf", "SUBSURF")
     sub.levels = 2
     bpy.ops.object.select_all(action="DESELECT")
@@ -386,35 +548,32 @@ def build_hand(arm, rep):
     bpy.context.view_layer.objects.active = o
     bpy.ops.object.modifier_apply(modifier="Skin")
     bpy.ops.object.modifier_apply(modifier="Subsurf")
+    clean_manifold(o)
     o.data.shade_smooth()
     o.data.materials.clear()
-    o.data.materials.append(material("V2_Hand", HAND_SRGB, 0.6))
-    # bones: hand.L wrist -> palm; fingers along their chains (rest pose = the fist)
+    o.data.materials.append(material(f"V2_Hand_{s}", HAND_SRGB, 0.6))
+    # bones: hand wrist -> palm; fingers along their chains (rest pose = the fist)
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="EDIT")
     ainv = arm.matrix_world.inverted()
     eb = arm.data.edit_bones
-    eb["hand.L"].tail = ainv @ Vector(PALM[:3])
-    for f, pts in FINGERS.items():
-        chain_pts = [Vector(PALM[:3]) if f != "thumb" else Vector(WRIST[:3]) * 0.5 + Vector(PALM[:3]) * 0.5] + [Vector(p[:3]) for p in pts]
+    eb[f"hand.{s}"].tail = ainv @ Vector(palm[:3])
+    for f, pts in fingers.items():
+        chain_pts = [None] + [Vector(p[:3]) for p in pts]
         for j in range(1, 4):
-            b = eb[f"{f}.0{j}.L"]
+            b = eb.get(f"{f}.0{j}.{s}") or eb.new(f"{f}.0{j}.{s}")   # Tripo's rig lacks a few (f2.03.R)
+            b.use_deform = True
             b.use_connect = False
             b.head = ainv @ chain_pts[j]
             b.tail = ainv @ chain_pts[j + 1]
-            b.parent = eb["hand.L"] if j == 1 else eb[f"{f}.0{j - 1}.L"]
+            b.parent = eb[f"hand.{s}"] if j == 1 else eb[f"{f}.0{j - 1}.{s}"]
             b.align_roll(ainv.to_3x3() @ Vector((0, 0, 1)))
     bpy.ops.object.mode_set(mode="OBJECT")
     # weights: inverse-distance to the bone segments (sharp falloff, two strongest kept)
-    segs = []
-    for (i0, i1), name in seg_bones.items():
-        segs.append((Vector(verts[i0]), Vector(verts[i1]), name))
-    for f, pts in FINGERS.items():                             # the fingertip segment belongs to .03
-        segs.append((Vector(pts[2][:3]), Vector(pts[3][:3]), f"{f}.03.L"))
     for i, v in enumerate(o.data.vertices):
         p = v.co.copy()
         ds = []
-        for a, b, name in segs:
+        for a, b, name in seg_bones:
             ab = b - a
             u = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
             ds.append(((a + ab * u - p).length, name))
@@ -427,14 +586,21 @@ def build_hand(arm, rep):
         for name, x in top:
             g = o.vertex_groups.get(name) or o.vertex_groups.new(name=name)
             g.add([i], x / tot, "REPLACE")
+    fist = bpy.data.objects[SIDES[s]["fist"]]
+    filled = bake_fist_texture(o, fist, outdir, s)
     skin_object(o, arm)
-    fist = bpy.data.objects[FIST]
     fist.hide_render = True
     fist.hide_set(True)
     fist.hide_viewport = True
-    rep["left_hand"] = {"vertices": len(o.data.vertices), "faces": len(o.data.polygons),
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    nonman = sum(1 for e in bm.edges if not e.is_manifold)
+    bm.free()
+    rep.setdefault("bones_added", [])
+    rep[f"hand_{s}"] = {"vertices": len(o.data.vertices), "faces": len(o.data.polygons),
                         "quads": sum(1 for p in o.data.polygons if len(p.vertices) == 4),
-                        "replaces": FIST + " (hidden, kept)"}
+                        "non_manifold_edges": nonman, "texture_texels_direct": round(filled, 3),
+                        "replaces": SIDES[s]["fist"] + " (hidden, kept)"}
 
 
 # ------------------------------------------------------------------------------------------------ 5. poses + corrective
@@ -460,25 +626,27 @@ def rest_pose(arm):
     bpy.context.view_layer.update()
 
 
-def arm_dirs(arm):
+def arm_dirs(arm, s="L"):
     mw, b = arm.matrix_world, arm.data.bones
-    sh, el, wr = (mw @ b[n].head_local for n in ("upper_arm.L", "forearm.L", "hand.L"))
+    sh, el, wr = (mw @ b[n].head_local for n in (f"upper_arm.{s}", f"forearm.{s}", f"hand.{s}"))
     return (el - sh).normalized(), (wr - el).normalized()
 
 
-def elbow_dir(arm, deg):
+def elbow_dir(arm, deg, s="L"):
     """Forearm direction for an absolute elbow bend (0 = straight), in the rest bend plane."""
-    u, f = arm_dirs(arm)
+    u, f = arm_dirs(arm, s)
     n = u.cross(f).normalized()
     return Quaternion(n, math.radians(deg)) @ u
 
 
-def open_hand(arm, fingers=FINGER_SET):
-    wr = Vector(WRIST[:3])
+def open_hand(arm, fingers=FINGER_SET, s="L"):
+    lay, wrist, _palm = hand_layout(s)
+    wr = Vector(wrist[:3])
+    sign = SIDES[s]["sign"]
     for f in fingers:
-        d = Vector((-0.75, -0.55, -0.15)) if f == "thumb" else (Vector(FINGERS[f][0][:3]) - wr).normalized()
+        d = Vector((-0.75 * sign, -0.55, -0.15)) if f == "thumb" else (Vector(lay[f][0][:3]) - wr).normalized()
         for j in (1, 2, 3):
-            aim(arm, f"{f}.0{j}.L", d)
+            aim(arm, f"{f}.0{j}.{s}", d)
 
 
 POSES = {
@@ -528,6 +696,10 @@ def build_poses(arm, rep):
             open_q = {f"{f}.0{j}.L": arm.pose.bones[f"{f}.0{j}.L"].rotation_quaternion.copy() for f in FINGER_SET for j in (1, 2, 3)}
         key_pose(arm, name)
         made.append(name)
+    rest_pose(arm)                                                    # the right hand's open pose (for gestures)
+    open_hand(arm, s="R")
+    open_q.update({f"{f}.0{j}.R": arm.pose.bones[f"{f}.0{j}.R"].rotation_quaternion.copy()
+                   for f in FINGER_SET for j in (1, 2, 3)})
     rest_pose(arm)
     rep["poses"] = made
     return open_q
@@ -544,20 +716,21 @@ def chain_dist(p, pts):
     return best
 
 
-def elbow_corrective(arm, rep, deg=120):
+def elbow_corrective(arm, rep, deg=120, s="L"):
     """elbowBend_L, solved like Pose Shape Keys: pose the elbow, find where the inner crease loses volume (vertex
     closer to the posed bone chain than at rest), push it back out, and store that offset in rest space through the
     inverse of the vertex's blended bone rotation, so the armature adds it back at that pose."""
-    names = ["upper_arm.L", "forearm.L", "hand.L"]
+    names = [f"upper_arm.{s}", f"forearm.{s}", f"hand.{s}"]
+    furs = SIDES[s]["furs"]
     mw = arm.matrix_world
     rest_chain = [mw @ arm.data.bones[n].head_local for n in names]
     rest_pose(arm)
-    aim(arm, "forearm.L", elbow_dir(arm, deg))
+    aim(arm, f"forearm.{s}", elbow_dir(arm, deg, s))
     posed_chain = [mw @ arm.pose.bones[n].head for n in names]
     skin = {pb.name: (mw @ pb.matrix @ pb.bone.matrix_local.inverted() @ mw.inverted()).to_3x3() for pb in arm.pose.bones}
     dg = bpy.context.evaluated_depsgraph_get()
     out = {}
-    for oname in ("V2_ArmUnderlay_L",) + ARM_FURS:
+    for oname in (f"V2_ArmUnderlay_{s}",) + furs:
         o = bpy.data.objects[oname]
         ev = o.evaluated_get(dg)
         P_def = [ev.matrix_world @ v.co for v in ev.data.vertices]
@@ -565,7 +738,7 @@ def elbow_corrective(arm, rep, deg=120):
         gnames = {g.index: g.name for g in o.vertex_groups}
         offs = {}
         for i, v in enumerate(o.data.vertices):
-            ws = {gnames[g.group]: g.weight for g in v.groups if gnames.get(g.group) in ("upper_arm.L", "forearm.L")}
+            ws = {gnames[g.group]: g.weight for g in v.groups if gnames.get(g.group) in (f"upper_arm.{s}", f"forearm.{s}")}
             if not ws or (P_rest[i] - rest_chain[1]).length > 0.1:
                 continue                                              # only the elbow zone
             d_rest, _ = chain_dist(P_rest[i], rest_chain)
@@ -583,7 +756,7 @@ def elbow_corrective(arm, rep, deg=120):
                 continue
         if not offs:
             continue
-        if oname in ARM_FURS:                                         # clumps keep their shape: one offset per clump
+        if oname in furs:                                             # clumps keep their shape: one offset per clump
             for comp in islands(o):
                 hit = [offs[i] for i in comp if i in offs]
                 if hit:
@@ -592,19 +765,19 @@ def elbow_corrective(arm, rep, deg=120):
                         offs[i] = m
         if not o.data.shape_keys:
             o.shape_key_add(name="Basis", from_mix=False)
-        kb = o.shape_key_add(name="elbowBend_L", from_mix=False)
+        kb = o.shape_key_add(name=f"elbowBend_{s}", from_mix=False)
         inv = o.matrix_world.inverted().to_3x3()
         for i, off in offs.items():
             kb.data[i].co = kb.data[i].co + inv @ off
         kb.value = 0.0
         out[oname] = {"vertices": len(offs), "max_mm": round(max(x.length for x in offs.values()) * 1000, 1)}
     rest_pose(arm)
-    rep["corrective_elbowBend_L"] = {"solved_at_deg": deg, "objects": out,
+    rep[f"corrective_elbowBend_{s}"] = {"solved_at_deg": deg, "objects": out,
                                      "driver": "weight = smoothstep((bend_deg - 70) / 50), app: avatar3d.ts correctives()"}
 
 
 def gesture_fingers(arm, open_q, rep):
-    """talk_gest_open_palms opens the left hand (B2's retarget leaves the fingers still)."""
+    """talk_gest_open_palms opens both hands (B2's retarget leaves the fingers still)."""
     act = bpy.data.actions.get("talk_gest_open_palms")
     if act is None:
         return
@@ -635,10 +808,12 @@ def main(src: Path, outdir: Path, name: str) -> dict:
         arm.animation_data.action = None
     rep: dict = {"source": src.name}
     brows(arm, rep)
-    left_arm(arm, rep, outdir)
-    build_hand(arm, rep)
+    for s in ("L", "R"):
+        arm_side(arm, rep, outdir, s)
+        build_hand(arm, rep, outdir, s)
     open_q = build_poses(arm, rep)
-    elbow_corrective(arm, rep)
+    for s in ("L", "R"):
+        elbow_corrective(arm, rep, s=s)
     gesture_fingers(arm, open_q, rep)
     for o in bpy.data.objects:
         if o.type == "MESH" and o.data.shape_keys:
@@ -663,5 +838,5 @@ def main(src: Path, outdir: Path, name: str) -> dict:
 
 if __name__ == "__main__":
     a = sys.argv[sys.argv.index("--") + 1:]
-    r = main(Path(a[0]), Path(a[1]), a[a.index("--name") + 1] if "--name" in a else "tripo_phaseC_C1")
+    r = main(Path(a[0]), Path(a[1]), a[a.index("--name") + 1] if "--name" in a else "tripo_phaseC_C2")
     print(json.dumps(r, indent=1))

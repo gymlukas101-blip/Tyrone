@@ -114,3 +114,46 @@
 3. Widen the underlay at the outer elbow for straight-arm poses.
 
 Legs and hips are not worth rebuilding yet: their fidelity gap is pose and perspective, the same in Tripo's source.
+
+## C2 (2026-11-24): owner approved Phase C → the three fixes + the right arm
+Built by `phase_c.py` (same script, now per side). Output: `character_v2_workspace/phase_c2/tripo_phaseC_C2.{blend,glb}`.
+1. **Closed hands.** C1's fist kept its shape but is now built from simple, non-branching Skin tubes that overlap exactly where C1's branches joined: wrist–palm, palm→index/middle knuckles, the knuckle bar, each finger from its knuckle, and the thumb from the palm.
+   - At a branch the Skin modifier leaves an internal disc: C1's 16 edges with 3 faces each, in a ring around the palm–knuckle junction. Cleanup passes couldn't remove it safely.
+   - Result: 1,824 faces, 100% quads, **0 non-manifold edges**, closed.
+   - Tried and rejected: separate finger tubes without the palm links (fingers read as loose sausages; hero hand IoU fell from 0.90 to 0.83).
+2. **Tripo's fist texture on the hand.** Smart-UV, then a per-texel nearest-surface transfer from the mitten (the F3 muzzle method), 512².
+   - Tripo paints the top of the fist (where it meets the fur) in fur colours. Samples darker than 55% of the fist's lit-skin tone, or more than 6–26 mm from Tripo's surface, fall back to that skin tone, so the palm isn't painted brown.
+3. **Fuller sleeve at the elbow.** `PHASEC_INSET_ELBOW` is 1.0 (0.93 elsewhere) on the stations within 18% of the elbow, so parting tufts show sleeve, not gaps.
+4. **The right arm.**
+   - The same build mirrored: arm fur `tripo_part_1` plus `tripo_part_12` (182 clumps, rigid), right mitten `tripo_part_3` (hidden, kept), and the hand mirrored through x (Tripo's fists are mirror images).
+   - Tripo's rig lacks `f2.03.R`; the builder now creates any missing finger bone.
+   - `elbowBend_R` is solved the same way; the app's corrective driver already lists it.
+   - `talk_gest_open_palms` now opens **both** hands.
+
+**Results (hero B, locked camera; B2 → C1 → C2):**
+
+| | B2 | C1 | C2 |
+|---|---|---|---|
+| Overall | 0.886 | 0.889 | **0.891** |
+| Forearms | 0.788 | 0.836 | **0.881** |
+| Hands | 0.832 | 0.904 | 0.837 |
+| Upper arms | 0.937 | 0.931 | 0.933 |
+
+- Shoulders, torso and head are unchanged.
+- C2's hand score includes the right hand, now also articulated; C1 kept Tripo's right mitten.
+- Vs Tripo neutral: 0.980 / 0.966 / 0.978 (the differences are the hand shape).
+- App check (`threejs_hand_check.py`):
+  - open, point and grip pose the fingers;
+  - the gesture opens both hands mid-clip;
+  - `elbowBend_L` = 1.00 at 120°;
+  - 0 page errors.
+- Runtime vs B2:
+  - draw calls 43 → 45;
+  - vertices 28,049 → 33,348 (+19%);
+  - morph slots 111 → 123.
+
+**Open:**
+- The straight-elbow parting is smaller but still there.
+- Knuckle support needs IK for floor contact.
+- The hands are smoother and more "toy" than Tripo's sculpted mitten.
+- Clips beyond the 5 retargeted ones: the next stage is the clip batches in `STAGE3_PLAN.md`.

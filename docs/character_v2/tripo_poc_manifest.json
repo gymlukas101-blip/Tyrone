@@ -246,5 +246,38 @@
    "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
   },
   "durable_copy": "sent to the owner as session attachments (C1 glb, evidence sheets, app sheet, video)"
+ },
+ "phaseC_C2": {
+  "date": "2026-11-24",
+  "approved_by_owner": "Phase C approved 2026-11-24 (C1); C2 = the three fixes + right arm",
+  "builder": "bpy python tools/character_v2/phase_c.py -- character_v2_workspace/tripo_body/tripo_body_B2.blend character_v2_workspace/phase_c2 --name tripo_phaseC_C2",
+  "outputs": {
+   "tripo_phaseC_C2.blend": {
+    "sha256": "9c1c6fdf73bf3ef1c2cba822ef40408eea691eb0a306367b0b72a4d8edbf65c2",
+    "bytes": 7994369
+   },
+   "tripo_phaseC_C2.glb": {
+    "sha256": "42901690780ca1135e7231d175e2585c1fa86ee7ffa6e262cf3843818c102d16",
+    "bytes": 7760176,
+    "draw_calls": 45,
+    "vertices": 33348,
+    "morph_slots": 123
+   }
+  },
+  "fidelity_vs_hero_B": {
+   "overall": 0.8909,
+   "forearms": 0.881,
+   "hands": 0.837,
+   "upper_arms": 0.933
+  },
+  "hands": {
+   "non_manifold_edges": 0,
+   "faces": 1824,
+   "quads_pct": 100
+  },
+  "references_unchanged": {
+   "tripo_body_B2.blend": "9fdfe0228abba249fb3196f7bca1aa56d36d50c90d780480c6c2cf55a79c0c7d",
+   "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
+  }
  }
 }

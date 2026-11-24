@@ -104,8 +104,9 @@ def test_phase_c_names_match_the_app():
     for m in ("browInnerUp_L", "browInnerUp_R", "browOuterUp_L", "browOuterUp_R", "browDown_L", "browDown_R", "browSqueeze"):
         assert f'"{m}"' in pc, m                                   # built in Blender
         assert m in acting or m in face, m                         # used by the app's acting
-    assert '"elbowBend_L"' in pc and '"elbowBend_L"' in corr
+    assert 'f"elbowBend_{s}"' in pc and '"elbowBend_L"' in corr and '"elbowBend_R"' in corr   # both sides
     assert re.search(r'bones: \["upper_armL", "forearmL", "handL"\]', corr)   # GLTFLoader-sanitised V1 names
     assert 'f"brow.{n}"' in pc                                    # brow bones for clip animation
+    assert '"R": {"sign": -1' in pc and 'for s in ("L", "R")' in pc  # both arms are built (C2)
     from_deg, to_deg = map(float, re.search(r'"elbowBend_L".*?from: (\d+), to: (\d+)', corr).groups())
     assert from_deg < 120 <= to_deg + 1e-9                        # driven up to the bend it was solved at
