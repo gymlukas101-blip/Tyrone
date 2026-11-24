@@ -383,10 +383,12 @@ def test_app_goal_needs_per_app_data_and_times_out(tmp_path):
     assert svc.store.goal(g["id"])["status"] == "nodata"
 
 
-def test_late_phone_report_settles_next_morning(tmp_path):
+def test_late_phone_report_settles_next_morning(tmp_path, monkeypatch):
     svc, todos, *_ = _svc(tmp_path)
     g = svc.add_goal("total", "2h", now=NOW)
-    svc.store.upsert(stm.DaySummary("2026-11-23", 90, source="ntfy"))   # arrived on the day itself
+    with monkeypatch.context() as m:                                    # the PC's arrival stamp is the real clock:
+        m.setattr(stm.time, "time", lambda: datetime(2026, 11, 23, 21, 0).timestamp())   # pin it to that evening
+        svc.store.upsert(stm.DaySummary("2026-11-23", 90, source="ntfy"))   # arrived on the day itself
     svc.evaluate_goals(datetime(2026, 11, 24, 7, 0))
     assert svc.store.goal(g["id"])["status"] == "pending"                # waits for the final reading / mid-morning
     svc.evaluate_goals(datetime(2026, 11, 24, 10, 30))
