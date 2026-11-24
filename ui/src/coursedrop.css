@@ -56,3 +56,4 @@ dialog.cd-dlg { width: min(420px, 92vw); border-radius: 20px; border: 3px solid 
 .cd-none { font-size: 12px; }
 
 @media (prefers-reduced-motion: reduce) { .cd-menu, .cd-dlg { animation: none; } }
+.cd-menu[data-leaving] { pointer-events: none; }   /* a menu animating out never takes a click meant for the new one */

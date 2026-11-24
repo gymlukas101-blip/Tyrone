@@ -134,7 +134,7 @@ def test_keep_it_changes_nothing_and_escape_closes_menu(browser):
     assert more.get_attribute("aria-expanded") == "false"
     p.mouse.move(5, 5)                              # off the button: its hover lift isn't "stable" for a re-click
     more.click()
-    p.locator(".cd-menu [role=menuitem]").click()
+    p.locator(".cd-menu:not([data-leaving]) [role=menuitem]").click()
     p.locator("dialog.cd-dlg[open]").wait_for()
     p.locator("dialog.cd-dlg button.cd-keep").click()
     p.wait_for_function("() => !document.querySelector('dialog.cd-dlg').open")
@@ -146,7 +146,7 @@ def test_settings_lists_hidden_class_and_show_again(browser):
     p = _open(browser)
     card = _homework_by_class(p)
     card.locator("section.asg-course[data-key='code:mktg777'] button.cd-more").click()
-    p.locator(".cd-menu [role=menuitem]").click()
+    p.locator(".cd-menu:not([data-leaving]) [role=menuitem]").click()
     p.locator("dialog.cd-dlg[open] button.cd-hide").click()
     p.locator(".toast", has_text="Removed 3 MKTG 777").wait_for()
     p.wait_for_function("() => !document.querySelector('dialog.cd-dlg').open")
@@ -192,7 +192,7 @@ def test_narrow_window_menu_and_confirm_fit(browser):
     card.locator("section.asg-course[data-key='code:mktg777'] button.cd-more").click()
     box = p.locator(".cd-menu").bounding_box()
     assert box and box["x"] >= 0 and box["x"] + box["width"] <= 420
-    p.locator(".cd-menu [role=menuitem]").click()
+    p.locator(".cd-menu:not([data-leaving]) [role=menuitem]").click()
     p.locator("dialog.cd-dlg[open]").wait_for()
     p.wait_for_function("() => document.querySelector('dialog.cd-dlg').getAnimations({subtree: true}).every(a => a.playState !== 'running')")
     d = p.locator("dialog.cd-dlg").bounding_box()
