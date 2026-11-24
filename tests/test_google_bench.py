@@ -66,7 +66,9 @@ def test_sign_in_opens_browser_once_without_touching_webbrowser(monkeypatch):
     assert launched == ["https://accounts.google.com/o/oauth2/auth?x=1"] and urls == launched
     assert FakeFlow.calls[-1]["browser"] == G.SIGNIN_BROWSER and FakeFlow.calls[-1]["timeout_seconds"] == 300
     assert webbrowser.get is real_get and webbrowser.open is real_open
-    assert acct == "gmail" and G.get_token("gmail") == '{"token": "t"}'   # one token per account (multi-account)
+    tok = json.loads(G.get_token("gmail"))                               # one token per account (multi-account)
+    assert acct == "gmail" and tok["token"] == "t"
+    assert "https://www.googleapis.com/auth/gmail.readonly" in tok["granted_scopes"]  # what Google granted (refresh keeps it)
 
 
 def test_other_links_still_open_while_sign_in_waits(monkeypatch, tmp_path):
