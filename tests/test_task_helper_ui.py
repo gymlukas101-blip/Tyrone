@@ -168,7 +168,7 @@ def test_inbox_cleanup_plan_permission_approval_result_and_undo(browser):
         # Personal can't be tidied yet: the permission step, and the button counts only the other inboxes
         card = p.query_selector('#inboxDlg .ib-perm[data-acct="gmail"]')
         assert card is not None and "Never deletes, never sends" in card.inner_text()
-        assert p.inner_text("#inboxDlg .ib-go") == "Archive 17 emails"
+        assert p.inner_text("#inboxDlg .ib-go") == 'Archive 17 emails now (31 more after you allow "Personal")'
         _shot(p, "inbox-cleanup-plan.png", dlg)
         _shot(p, "inbox-cleanup-permission.png", card)
         p.click('#inboxDlg .ib-perm[data-acct="gmail"] button:has-text("Allow in Google")')

@@ -132,13 +132,16 @@ function planView(p: InboxPlan): (HTMLElement | string)[] {
   const labelLine = p.organize && p.labels.length ? h("p", { class: "meta ib-labels" }, "Labels: ",
     ...p.labels.map((l) => h("span", { class: "ib-label" }, `🏷 ${l.label} · ${l.count}`))) : "";
   const label = p.organize && p.label_total && !blocked.length ? ` and label ${p.label_total}` : "";
+  // the plan counts every inbox; the button only what can go now (inboxes still waiting for "Allow" are named)
+  const waiting = blocked.reduce((n, a) => n + (p.accounts.find((x) => x.id === a.id)?.archive ?? 0), 0);
+  const waitingNote = waiting ? ` now (${waiting} more after you allow ${blocked.map((a) => `"${a.label}"`).join(", ")})` : "";
   const approve = h("button", { type: "button", class: "primary ib-go", disabled: !canRun && !(p.organize && p.label_total && ready.length),
     onclick: async () => {
       approve.setAttribute("disabled", "");
       const r = await api.inbox_approve(p.id, p.token);
       if (!r.ok) { toast(`⚠ ${r.error}`); approve.removeAttribute("disabled"); return; }
       stage = "running"; prog = { done: 0, total: r.total ?? 0, undo: false }; draw();
-    } }, canRun ? `Archive ${plural(canRun, "email")}${label}` : blocked.length ? "Allow Monkey to tidy this inbox first" : "Nothing to archive");
+    } }, canRun ? `Archive ${plural(canRun, "email")}${label}${waitingNote}` : blocked.length ? "Allow Monkey to tidy this inbox first" : "Nothing to archive");
   return [
     h("p", { class: "ib-say", role: "status" }, p.say),
     ...Object.entries(p.errors ?? {}).map(([a, e]) => h("p", { class: "meta warn" }, `⚠ ${a}: ${e}`)),
