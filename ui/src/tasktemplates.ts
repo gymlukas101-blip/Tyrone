@@ -9,7 +9,7 @@ export interface TaskTemplate { id: string; title: string; blurb: string; exampl
 
 const FALLBACK: TaskTemplate[] = [
   { id: "generic", title: "Anything else", blurb: "Plans with Claude; reads freely, asks before anything that sends, submits, buys, deletes or changes an account.", example: "Download last month's statement PDF from my phone carrier's site", skill: "general", rules: {}, deterministic: false },
-  { id: "course", title: "Course modules (Canvas, trainings)", blurb: "Works through modules and lessons; questions and confirmations stay yours.", example: "Work through the 4 modules of the Title IX training on Canvas", skill: "course", rules: {}, deterministic: false },
+  { id: "course", title: "Course modules", blurb: "Canvas or another course site: works through modules and lessons; questions and confirmations stay yours.", example: "Work through the 4 modules of the Title IX training on Canvas", skill: "course", rules: {}, deterministic: false },
 ];
 let cache: TaskTemplate[] | null = null;
 

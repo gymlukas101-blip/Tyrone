@@ -738,3 +738,61 @@ calm, count-up frames, `leave`). The browser suites run with motion on (`?demo&s
   - Juice calm halves it; Minimal and reduced motion keep it still. The SVG fallback gets the same pop as a CSS animation.
   - While hearing is off, he's slightly desaturated and a "🙉 Hearing off · click to turn on" badge sits under him.
 - **Tests:** `tests/test_hearing_click.py` (toggle logic), `tests/test_hearing_click_ui.py` (3D and SVG, click and keyboard, badge), `ui/test/hearingpop.test.ts` (curves and hit test).
+
+## 2026-11-24: inbox cleanup, skip bank/Instagram senders, general-first Tasks menu (branch `feature/inbox-cleanup`)
+The owner decided: "yes archive mail (check first if it's not important) if I ask to clean up / organize my inbox as
+well", "skip bank and instagram senders", and "Tasks should be a general request, not defaulted to canvas work".
+Branched from `main` (v0.3.100). Design, rules and scopes: [`docs/automation/INBOX_CLEANUP.md`](automation/INBOX_CLEANUP.md).
+
+**Inbox cleanup (`monkey/inbox/`, new):**
+- `rules.py`: one verdict per email, first match wins (§2 of the design doc). It reuses email_todos' injection,
+  request and due-date signals and the shared sender limits.
+- `ops.py`: Gmail via `batchModify` and labels/filters; Outlook via COM moves to Archive and categories, attached only.
+- `store.py`: runs and items in `monkey.db` (ids only).
+- `service.py`: plan (read-only), one-time token (15 min), batches of 25, Stop, Undo, the permission step, and
+  `tidy_list` for "archive after unsubscribing".
+
+**Google (`integrations/google.py`):**
+- `GMAIL_MODIFY` and `GMAIL_FILTERS`; `granted_scopes()` / `can_tidy()` / `can_filter()`.
+- `GoogleAuth.upgrade()`: incremental consent with `include_granted_scopes`, `login_hint`, a same-account check and
+  "never lose a scope". The token stores its granted scopes.
+- **Fixed:** `credentials()` loaded every token with the base scope list, so a refresh would have dropped any extra
+  scope. It now uses the token's own granted scopes.
+
+**Mailing lists:**
+- `limits.sender_limit` (new shared constants) skips bank/financial and Instagram/Meta lists in the scan, the review,
+  `find`, `prepare` and `Unsubscriber.prepare`.
+- `Step.archive_old` / `filter_new` are bound into the approval, and the `after` hook runs the cleanup's `tidy_list`.
+- The e-stop and the Mailing lists Stop also stop a cleanup.
+
+**Brain:**
+- Tool `plan_inbox_cleanup` (untrusted; returns the plan's spoken summary; no approve tool).
+- `propose_computer_task` and `PANEL_TEMPLATES["inbox_cleanup"]` route cleanup goals there.
+- Router `task_helper` rule; persona sentence.
+- Internal policy task `inbox_cleanup` (Haiku low); `docs/MODEL-POLICY.md` regenerated.
+
+**UI:**
+- `inboxcleanup.ts` / `.css` (new): start, plan, permission card, approval, progress with Stop, result with Undo.
+- `computer.ts`: the general-first Tasks menu (`automation_route` decides panel, template or refusal). Course fields
+  are created only in the Course template, and the browser switch moved to the bottom.
+- Mailing lists: the skipped note and the archive/filter options with per-inbox "Allow in Google".
+- Toy-block icons for the chips (sheet version 6).
+- Template titles now match the menu. Demo-mode mocks are in `demo-taskhelper.ts`.
+
+**Tests:** `tests/test_inbox_cleanup.py` (new, 48 incl. 27 rule cases): rules and near-misses, plan → token →
+execute → Undo, stop mid-run, kill switch, no permission → nothing archived, sent mail unreadable → inbox skipped,
+two injection emails (kept, never sent to the model, nothing else archived), the model only within budget,
+scope-upgrade with a fake flow (same account, unticked box, lost scope, granted-scope refresh), the allow step's
+events, Outlook with a fake COM (never started, Archive folder, new EntryIDs, categories, Undo, missing folder),
+archive/filter after unsubscribing bound to the approval, bank/Instagram skipped in the scan, router near-misses and
+the brain tool. `tests/test_task_helper_ui.py` (4, built UI in `?demo`): the Tasks menu layout and Course-only fields,
+the cleanup plan → permission → approval → result → Undo, the Mailing lists review with the skipped note and the
+archive option, and the HUD.
+
+**Full suite** (cloud container, Python 3.12 with CI's Linux lock plus Playwright 1.65.2, so the browser tests ran):
+1061 passed, 23 skipped and 5 failed with `-n 4` at load average 10–16. The 5 were `test_recovery` speech timing,
+three `test_m6_ui` checks and one `test_automation_e2e` restart, all outside this change, and all 5 passed when re-run
+alone. UI: `tsc`, `vite build` and vitest (108) pass.
+
+**Open:** the Dell and a real inbox, Google's real consent screen (the owner adds `gmail.modify` under Data access
+first), and the Outlook Archive folder on the owner's Exchange account.

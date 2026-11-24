@@ -67,6 +67,9 @@ RULES: list[tuple[str, re.Pattern]] = [
     # isn't a draft.
     ("task_helper", re.compile(
         r"\b(?:unsubscribe|opt (?:me )?out of|mailing lists?|"
+        r"(?:clean (?:up|out)|organi[sz]e|tidy(?: up)?|declutter|sort out)\s+(?:up\s+)?(?:my |the |all (?:of )?my )?"
+        r"(?:e-?mails?|inbox(?:es)?|gmail|outlook)|archive (?:all )?(?:the |my |old |those |these )?(?:old )?"
+        r"(?:newsletters|promos?|promotions|e-?mails|notifications|junk mail)|inbox (?:cleanup|zero)|"
         r"stop (?:getting|receiving) (?:these |those |the |all |so many )?(?:e-?mails|newsletters|promos?|spam)|"
         r"(?:cancel|end) my .{0,40}(?:subscription|free trial|trial|membership)|"
         r"fill (?:in|out) (?:this|the|that|a|my) .{0,25}form|"

@@ -46,15 +46,19 @@ Generated with `python -m tools.model_policy.report`.
 | Make a picture (writing the image prompt) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Sonnet 5.5 · low ($0.0053) | $0.0003 | 1.9s | $0.010 |
 | Router (which task is this?) | Haiku 5.5 · low ($0.0001) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0001) | $0.0001 | 0.6s | $0.020 |
 | Find to-dos in email (background) | Haiku 5.5 · low ($0.0003) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0003) | $0.0003 | 0.6s | $0.030 |
+| Inbox cleanup: emails it isn't sure about (background) | Haiku 5.5 · low ($0.0004) | **Haiku 5.5 · low** | Haiku 5.5 · low ($0.0004) | $0.0004 | 0.6s | $0.0000 |
 | Learn my writing style (one time) | Sonnet 5.5 · high ($0.230) | **Opus 5.5 · medium** | Opus 5.5 · high ($0.460) | $0.400 | 28.1s | $0.0000 |
 | Computer task planner (background) | Sonnet 5.5 · medium ($0.0075) | **Sonnet 5.5 · medium** | Opus 5.5 · medium ($0.015) | $0.0075 | 1.0s | $1.12 |
 
 Monthly totals (heavy use): Auto **$24.47**, all Quick $15.56, all Important $54.21.
 
-The policy also has four internal tasks that don't show up as chat requests:
+The policy also has five internal tasks that don't show up as chat requests:
 - **Router:** classifies requests that no rule catches.
 - **Find to-dos in email:** the background inbox scan for "Suggested from email". It runs only on new mail that passed
   the local filter, at most once per scan, gets no tools, and is skipped at 90% of the monthly budget.
+- **Inbox cleanup (emails it isn't sure about):** local rules (`monkey/inbox/rules.py`) decide almost every email.
+  Only bulk mail that asks for something but names no date goes to the model: at most 20 per plan, subject + sender
+  name + Gmail's short preview, no tools, skipped at 90% of the budget. Anything it isn't sure about stays.
 - **Learn my writing style:** runs once.
 - **Computer task planner:** plans 1–4 steps of a general computer task per call (`computer/goal.py`, ClaudeGoalPlanner):
   `default` is the planner, `max` is the one stall escalation. Deterministic steps (the course skill, cached verified

@@ -7,7 +7,7 @@ import type { Clip } from "./anim";
 import { type BakeSpec, type Sheet, bakeSheet, bakeTile, webglInfo } from "./bake";
 import { play, reducedMotion, release, sheetVars } from "./sprite";
 
-const VERSION = 5;                    // bump when a recipe, clip, size or tile changes, so cached sheets are re-baked
+const VERSION = 6;                    // bump when a recipe, clip, size or tile changes, so cached sheets are re-baked
 /** 32-px icons: header buttons, composer, and the to-do panel. The check-off "pop" gets its own row so the other
  *  rows stay narrow (the sheet is as wide as its longest row). */
 const ICONS: BakeSpec[] = [
@@ -19,6 +19,9 @@ const ICONS: BakeSpec[] = [
   { id: "box", clips: ["hover", "press"] }, { id: "checked", clips: ["hover", "press"] }, { id: "checked", key: "checkedPop", clips: ["pop"] },
   { id: "add", clips: ["hover", "press"] }, { id: "edit", clips: ["hover", "press"] }, { id: "trash", clips: ["hover", "press"] },
   { id: "calendar", clips: ["hover"] }, { id: "alarm", clips: ["hover"] }, { id: "monkey", clips: ["hover"] },
+  // Tasks menu: what Monkey can do (gear and box are above)
+  { id: "broom", clips: ["hover", "press"] }, { id: "inbox", clips: ["hover", "press"] }, { id: "clipboard", clips: ["hover", "press"] },
+  { id: "search", clips: ["hover", "press"] }, { id: "backpack", clips: ["hover", "press"] },
 ];
 /** 72-px empty-state heroes for the to-do panel. */
 const HEROES: BakeSpec[] = [{ id: "banana", clips: ["hover"] }, { id: "lock", clips: ["hover"] }, { id: "box", clips: ["hover"] }];

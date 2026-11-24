@@ -230,6 +230,10 @@ class MonkeyApp:
 
         self.mailing = MailingService(self)                # mailing lists: read-only scans; unsubscribes need your OK
         self.services.mailing = self.mailing
+        from .inbox.service import InboxCleanup
+
+        self.inbox = InboxCleanup(self)                    # inbox cleanup: a plan, your one OK, archive (never delete)
+        self.services.inbox = self.inbox
 
     # ------------------------------------------------------------------ setup
     def _setup_logging(self) -> None:
@@ -2527,6 +2531,18 @@ class Api:
     def automation_templates(self):
         return self._app.automation.templates()
 
+    def automation_route(self, objective: str):
+        """The Tasks box ("What should Monkey do?"): a Monkey panel (inbox cleanup, mailing lists), the template a
+        browser task would use, or the hard-limit refusal. Nothing starts here."""
+        from .automation import templates as T
+        from .automation.limits import check_goal
+
+        text = str(objective or "")[:500]
+        refusal = check_goal(text)
+        if refusal is not None:
+            return {"ok": True, "panel": "", "template": "", "refusal": refusal.message}
+        return {"ok": True, "panel": T.panel_for(text), "template": T.pick(text).id, "refusal": ""}
+
     # ------------------------------------------------------------ mailing lists (monkey/mailing)
     def mailing_state(self):
         return {"ok": True, **self._app.mailing.state()}
@@ -2537,8 +2553,8 @@ class Api:
             return {"ok": False, "error": "Already checking your inboxes."}
         return m.scan_async()
 
-    def mailing_prepare(self, ids: list):
-        return self._app.mailing.prepare(list(ids or []))
+    def mailing_prepare(self, ids: list, archive: bool = False, filter_new: bool = False):
+        return self._app.mailing.prepare(list(ids or []), bool(archive), bool(filter_new))
 
     def mailing_run(self, batch_id: str, token: str):
         return self._app.mailing.run(str(batch_id), str(token or ""))
@@ -2553,6 +2569,36 @@ class Api:
         self._app.mailing.stop()
         self._app.automation.emergency_stop()
         return {"ok": True}
+
+    # ------------------------------------------------------------ inbox cleanup (monkey/inbox)
+    def inbox_state(self):
+        return self._app.inbox.state()
+
+    def inbox_plan(self, accounts: list | None = None, organize: bool = False):
+        """Read-only: build a cleanup plan in the background (the "inbox_plan" event brings it)."""
+        return self._app.inbox.plan_async([str(a) for a in accounts or []] or None, bool(organize))
+
+    def inbox_approve(self, plan_id: str, token: str):
+        """The owner's "Archive N emails" on exactly that plan (one-time token, 15 minutes)."""
+        return self._app.inbox.approve(str(plan_id), str(token or ""))
+
+    def inbox_cancel(self, plan_id: str):
+        return self._app.inbox.cancel(str(plan_id))
+
+    def inbox_stop(self):
+        self._app.inbox.stop()
+        return {"ok": True}
+
+    def inbox_undo(self, run_id: str = ""):
+        return self._app.inbox.undo(str(run_id or ""))
+
+    def inbox_allow(self, account: str, filters: bool = False):
+        """The owner's "Allow in Google" click for one Gmail inbox (incremental consent; archive + label, and
+        filters only if they ticked that)."""
+        return self._app.inbox.allow(str(account), bool(filters))
+
+    def inbox_allow_cancel(self):
+        return self._app.inbox.cancel_allow()
 
     def mailing_open(self, list_id: str):
         """The owner's own click on "Open page": the list's header unsubscribe page in their browser."""

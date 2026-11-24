@@ -504,6 +504,9 @@ class AutomationService:
         mailing = getattr(self.app, "mailing", None)
         if mailing is not None:
             mailing.stop()
+        inbox = getattr(self.app, "inbox", None)
+        if inbox is not None:
+            inbox.stop()                       # an inbox cleanup or undo starts no further batch
         if self._mgr is not None:
             self._mgr.emergency_stop()
         self.app.ui.emit("automation_stopped", {})

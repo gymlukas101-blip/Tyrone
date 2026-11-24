@@ -77,6 +77,10 @@ The first time you talk to him, Monkey downloads the local speech-recognition mo
    - Then click **Publish app**, so it's *In production*. Unverified is fine for personal use; in Testing mode Google logs you out every 7 days.
 4. Go to Credentials → Create credentials → OAuth client ID → **Desktop app**, and download the JSON.
 5. In Monkey, go to Settings → Accounts, paste the JSON, click **Sign in**, and approve in the browser.
+6. Optional, for **inbox cleanup** (archive and label, never delete): Google Auth Platform → **Data access** → Add or
+   remove scopes → add `https://www.googleapis.com/auth/gmail.modify` (and `.../auth/gmail.settings.basic` for
+   "skip the inbox" filters after unsubscribing) → Save. Monkey asks for it per inbox, the first time you clean one up
+   (Google's incremental consent: the screen lists only the new permission). Read-only accounts keep working without it.
 
 ### Why classic Outlook for wisc.edu?
 UW–Madison's Microsoft 365 requires IT admin approval for third-party apps that read your mail through Microsoft's API. Monkey works through the Outlook desktop app on your PC instead. It's already signed in, and nothing leaves your machine except what Claude needs to answer you. "New Outlook" doesn't support this, so use classic Outlook.

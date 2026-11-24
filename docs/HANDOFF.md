@@ -1,6 +1,6 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-23. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
+Last updated 2026-11-24. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
 
 **Not yet tried on the Dell:** Voice 2.0 (early commit, fast voice routing, soft ack; setting `early_commit` = false restores the old endpointing), hybrid computer use (needs a live model run, `docs/research/COMPUTER-USE-QUALITY.md` §7), the new face and lip sync, and the sounds.
 
@@ -35,6 +35,25 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - Spending, sending, submitting, deleting and account changes stop for the owner's OK on that exact step.
 - 📭 **Mailing lists:** reads list headers in every inbox and suggests lists the owner never opens. It unsubscribes only what the owner approves, per list: one-click, an email the owner sends from the draft card, or the list's own page. It then checks for 7 days that the mail stopped.
 - Design, audit and open decisions (archive/filter needs a broader Gmail scope; it's off): [`docs/automation/GENERAL_TASKS.md`](automation/GENERAL_TASKS.md). Not tried on the Dell, with a live planner, or with real inboxes.
+
+## Inbox cleanup + general-first Tasks (branch `feature/inbox-cleanup`, waiting for review)
+- 🧹 **Inbox cleanup:** "clean up / organize my inbox" (one inbox or all) → a plan → one approval → archive in batches
+  of 25 with Stop → Undo.
+  - The plan says what goes (counts and example subjects per group) and what stays and why.
+  - Archive only, never delete. Optional labels: Newsletters, Receipts, School, Notifications.
+  - Conservative check: starred/important, banks, Instagram, to-dos, people the owner writes to, school, recent
+    receipts and security codes, upcoming deadlines and real people always stay. The cheap model only sees emails the
+    rules can't settle.
+- 🔑 **Permission:** per Gmail inbox, the first time, with incremental consent for `gmail.modify` ("Allow Monkey to tidy
+  this inbox"). `gmail.settings.basic` is asked for only if the owner ticks "filter new mail" after unsubscribing.
+  Same DPAPI secret; read-only inboxes keep working. Outlook: archived to its Archive folder, only while it's open.
+- 📭 **Mailing lists:** bank/financial and Instagram/Meta lists are skipped entirely ("Skipped N lists from
+  banks/Instagram"). "Also archive their old emails" / "filter new ones" now work once an inbox may be tidied.
+- 🖐 **Tasks menu, general-first:** "What should Monkey do?" + Go, then the seven things Monkey can do, the can/can't
+  line, the task form (Course fields only inside Course modules) and Recent tasks.
+- Design, rules and scopes: [`docs/automation/INBOX_CLEANUP.md`](automation/INBOX_CLEANUP.md).
+- **Not tried on the Dell, with a real inbox, or with Google's real consent screen.** The owner first adds the scope in
+  Google Cloud (Data access → `gmail.modify`; see "Waiting on the owner").
 
 ## UI motion (branch `feature/ui-motion`, waiting for review)
 - Expressive, readable motion for every UI event and interaction: `ui/src/motion.ts` + `ui/src/motion.css`, inventory and rules in `docs/ui/MOTION.md`, notes and perf numbers in `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, UI motion).
@@ -87,6 +106,10 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 3. Import the private context pack: Settings → Memory → Import context files. It never goes in this repo.
 4. Confirm the class schedule (Morning brief → Detect), or paste a calendar link, then turn the morning brief on.
 5. Run the routing benchmark (Settings → Brain → Run benchmark) and share the result, so the router rules and policy can be tuned.
+6. Inbox cleanup (once `feature/inbox-cleanup` ships): in Google Cloud → Google Auth Platform → **Data access** → Add or
+   remove scopes, add `https://www.googleapis.com/auth/gmail.modify` (and `.../auth/gmail.settings.basic` for "skip the
+   inbox" filters) → Save. Keep the app In production; the unverified-app warning is expected (Advanced → Go to Monkey).
+   Then 🖐 Tasks → Clean up my inbox → Allow in Google.
 
 ## Next up for development
 - Tune the router from the benchmark results.

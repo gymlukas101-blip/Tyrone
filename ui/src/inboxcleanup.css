@@ -1,0 +1,70 @@
+/* Inbox cleanup panel (inboxcleanup.ts) and the general-first Tasks menu (computer.ts, tk-*). Prefixed class names
+   (ib-, tk-) so nothing here picks up other panels' styles. Motion comes from motion.ts/motion.css; toy-block icons
+   own their own hover animation (blocky/skin.ts), so nothing here animates an icon. */
+.tasksdlg.ibdlg { width: min(760px, 96vw); }
+.ibdlg h4 { margin: 4px 0; }
+.ibdlg .ib-accts { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.ibdlg .ib-accts .on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.ibdlg .ib-rules { font-size: 13px; border-left: 3px solid var(--ok); padding: 2px 0 2px 10px; margin: 8px 0; }
+.ibdlg .ib-say { font-size: 15px; font-weight: 600; margin: 8px 0; }
+.ibdlg .ib-scan { font-size: 15px; }
+.ibdlg .ib-plan { margin-top: 8px; }
+.ibdlg .ib-groups { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.ibdlg .ib-group { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--panel2); }
+.ibdlg .ib-ghead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ibdlg .ib-gicon { font-size: 18px; }
+.ibdlg .ib-count { font-size: 20px; font-family: var(--font-display, inherit); }
+.ibdlg .ib-label { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.ibdlg .ib-ex { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12px; display: grid; gap: 2px; }
+.ibdlg .ib-ex q { font-style: italic; overflow-wrap: anywhere; }
+.ibdlg .ib-ex small { color: var(--muted); }
+.ibdlg .ib-kept { border: 1px dashed var(--ok); border-radius: 12px; padding: 8px 12px; margin-top: 10px; }
+.ibdlg .ib-kept ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.ibdlg .ib-kept li b { margin: 0 3px; }
+.ibdlg .ib-labels { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ibdlg .ib-foot { margin-top: 8px; gap: 10px; }
+.ibdlg .ib-perm { border: 2px solid var(--accent); border-radius: 14px; padding: 10px 12px; margin: 8px 0;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.ibdlg .ib-can { list-style: none; padding: 0; margin: 4px 0 8px; font-size: 13px; display: grid; gap: 3px; }
+.ibdlg .ib-can .ok { color: var(--ok); }
+.ibdlg .ib-can .no { color: var(--bad); }
+.ibdlg .ib-ok { color: var(--ok); font-weight: 700; }
+.ibdlg .bad, .ibdlg .warn { color: var(--warn); }
+.ibdlg .ib-progress { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; margin: 12px 0;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); }
+.ibdlg .ib-bar { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.ibdlg .ib-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; }
+.ibdlg .ib-result { font-size: 16px; font-weight: 700; }
+.ibdlg .ib-result.ok { color: var(--ok); }
+.ibdlg .ib-result.warn { color: var(--warn); }
+.ibdlg .ib-tiles { display: flex; gap: 10px; margin: 8px 0; }
+.ibdlg .ib-tile { border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; text-align: center; background: var(--panel2); }
+.ibdlg .ib-tile b { display: block; font-size: 24px; font-family: var(--font-display, inherit); }
+.ibdlg .ib-tile small { color: var(--muted); }
+.ibdlg .ib-last { margin-top: 10px; }
+
+/* ---- Tasks menu, general-first (computer.ts) ---- */
+.tasksdlg.tkdlg { width: min(720px, 96vw); }
+.tkdlg .tk-ask { display: grid; gap: 6px; margin-top: 6px; }
+.tkdlg .tk-ask label > span { font-family: var(--font-display, inherit); font-size: 17px; }
+.tkdlg .tk-ask textarea { font-size: 15px; }
+.tkdlg .tk-examples { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
+.tkdlg .tk-examples .tk-ex { font-size: 12px; border-radius: 999px; padding: 1px 9px; width: auto; margin: 0; }
+.tkdlg .tk-askrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tkdlg .tk-caps { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 6px; margin: 4px 0; }
+.tkdlg .tk-cap { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr; gap: 2px 8px;
+  align-items: start; align-content: start; text-align: left; padding: 8px 10px; border-radius: 12px; width: auto;
+  margin: 0; min-height: 52px; }
+.tkdlg .tk-ask .keynote:empty { display: none; }
+.tkdlg .tk-cap .tk-ico { grid-row: 1 / span 2; align-self: center; font-size: 20px; line-height: 1; width: 32px; height: 32px; display: grid; place-items: center; }
+.tkdlg .tk-cap b { font-family: var(--display, inherit); font-weight: 400; font-size: 14px; line-height: 1.15; }
+.tkdlg .tk-cap small { font-family: var(--text-font, inherit); font-weight: 700; font-size: 12px; line-height: 1.25; color: var(--muted); }
+.tkdlg [hidden], .ibdlg [hidden] { display: none !important; }
+.tkdlg .tk-cap.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.tkdlg .tk-limits { font-size: 12px; color: var(--muted); border-left: 3px solid var(--warn); padding-left: 8px; margin: 6px 0; }
+.tkdlg .tk-form { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.tkdlg .tk-form h4 { margin: 0; }
+.tkdlg .tk-course { border-left: 3px solid var(--accent); padding-left: 10px; display: grid; gap: 8px; }
+.tkdlg .tk-recent ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 13px; }
+.tkdlg .tk-off { font-size: 13px; }
+html.blocky .tkdlg .tk-cap > .bi.tk-bi { --s: 32px; grid-row: 1 / span 2; align-self: center; }

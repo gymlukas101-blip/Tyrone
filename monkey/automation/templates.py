@@ -115,8 +115,8 @@ _R = lambda rx: re.compile(rx, re.I)  # noqa: E731
 
 TEMPLATES: dict[str, Template] = {t.id: t for t in [
     Template(
-        "course", "Course modules (Canvas, trainings)",
-        "Works through modules and lessons; questions and confirmations stay yours.",
+        "course", "Course modules",
+        "Canvas or another course site: works through modules and lessons; questions and confirmations stay yours.",
         "Work through the 4 modules of the Title IX training on Canvas",
         match=_R(r"\b(canvas|modules?|lessons?|training|course(?:work)?|compliance|title ix)\b"), skill="course"),
     Template(
@@ -129,7 +129,7 @@ TEMPLATES: dict[str, Template] = {t.id: t for t in [
         fallback="I couldn't find an obvious unsubscribe button on that page, so I didn't press anything. Can you "
                  "take a look?"),
     Template(
-        "form_fill", "Fill in a form (you review it)",
+        "form_fill", "Fill in a form (you review)",
         "Fills the fields you give him; he asks before pressing Submit, and you can review first.",
         "Fill in the club sign-up form at example.org with my name and email, let me review",
         match=_R(r"\b(fill (?:in|out)|complete (?:the|this|a) (?:form|application)|form)\b"),
@@ -147,8 +147,8 @@ TEMPLATES: dict[str, Template] = {t.id: t for t in [
                  "(the executor refuses those). Finish with report_status done, quoting the answer on screen.",
     ),
     Template(
-        "account_settings", "Settings or a subscription on a site",
-        "Changes a setting, notification or subscription; every change asks you first.",
+        "account_settings", "Change a setting on a site (asks every step)",
+        "A setting, notification, subscription or trial; every change asks you first.",
         "Turn off promotional notifications in my Spotify account settings",
         match=_R(r"\b(settings?|notifications?|preferences|cancel (?:my )?.{0,30}(?:subscription|trial|membership|"
                  r"plan|reminder)|free trial|turn (?:on|off)|privacy)\b"),
@@ -157,7 +157,7 @@ TEMPLATES: dict[str, Template] = {t.id: t for t in [
                  "executor asks). Never touch passwords, two-factor or security settings (refused).",
     ),
     Template(
-        "shopping", "Shopping or booking (stops before paying)",
+        "shopping", "Shopping (stops before paying)",
         "Gets things into the cart or booking page; stops before the final purchase.",
         "Put a 2-pack of AA batteries in my Target cart",
         match=_R(r"\b(buy|order|purchase|cart|book (?:a|the|my)|reserve|checkout|check out)\b"),
@@ -175,6 +175,11 @@ TEMPLATES: dict[str, Template] = {t.id: t for t in [
 
 # Goals that go to a Monkey panel instead of a browser task.
 PANEL_TEMPLATES: dict[str, re.Pattern] = {
+    # First: "archive the newsletters" is a cleanup, not an unsubscribe.
+    "inbox_cleanup": _R(r"\b(?:(?:clean (?:up|out)|organi[sz]e|tidy(?: up)?|declutter|sort(?: out)?)\s+(?:up\s+)?"
+                        r"(?:my |the |all (?:of )?my )?(?:e-?mails?|inbox(?:es)?|gmail|outlook|mail)\b|"
+                        r"archive (?:all )?(?:the |my |old |those |these )?(?:old )?(?:newsletters|promos?|"
+                        r"promotions|e-?mails|notifications|mail|junk)|inbox (?:cleanup|zero))\b"),
     "mailing_lists": _R(r"\b(unsubscribe|opt (?:me )?out|mailing lists?|newsletters?|marketing e-?mails?|"
                         r"stop (?:getting|receiving) (?:these |those |the |all )?(?:e-?mails|newsletters|promos?))\b"),
 }

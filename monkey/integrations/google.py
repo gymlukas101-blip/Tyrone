@@ -26,6 +26,16 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
+# Asked for later, per account, only when the owner first uses inbox cleanup or "archive after unsubscribing"
+# (incremental consent: Google's screen lists just the new permission and keeps the earlier ones). Read-only accounts
+# keep working without them.
+#   gmail.modify          archive (remove the INBOX label) and add/remove labels. It cannot delete mail permanently;
+#                         Monkey never trashes or sends with it either (only users.messages.batchModify and labels).
+#   gmail.settings.basic  create a filter ("new mail from this list skips the inbox"); only if the owner ticks that.
+GMAIL_MODIFY = "https://www.googleapis.com/auth/gmail.modify"
+GMAIL_FILTERS = "https://www.googleapis.com/auth/gmail.settings.basic"
+TIDY_SCOPES = (GMAIL_MODIFY,)
+FILTER_SCOPES = (GMAIL_FILTERS,)
 
 
 def validate_client(text: str) -> dict:
@@ -181,6 +191,81 @@ def delete_token(acct_id: str) -> None:
             _save_tokens(tokens)
 
 
+def granted_scopes(acct_id: str) -> set[str]:
+    """The scopes this account's token was actually granted. Our own "granted_scopes" key (Google may grant fewer
+    than asked when a box is unticked), else the token's "scopes", else the base set (tokens from before this)."""
+    tok = get_token(acct_id)
+    if not tok:
+        return set()
+    try:
+        info = json.loads(tok)
+    except ValueError:
+        return set(SCOPES)
+    got = info.get("granted_scopes") or info.get("scopes") or SCOPES
+    if isinstance(got, str):
+        got = got.split()
+    return {str(x) for x in got}
+
+
+def can_tidy(acct_id: str) -> bool:
+    return GMAIL_MODIFY in granted_scopes(acct_id)
+
+
+def can_filter(acct_id: str) -> bool:
+    return GMAIL_FILTERS in granted_scopes(acct_id)
+
+
+def _token_json(creds, granted) -> str:
+    """The token as JSON, plus the scopes Google really granted (to_json() keeps only the requested ones)."""
+    data = json.loads(creds.to_json())
+    data["granted_scopes"] = sorted({str(x) for x in granted})
+    return json.dumps(data)
+
+
+def _granted_of(creds, asked) -> set[str]:
+    got = getattr(creds, "granted_scopes", None)
+    if isinstance(got, str):
+        got = got.split()
+    return {str(x) for x in (got or asked)}
+
+
+class WrongAccount(RuntimeError):
+    """The browser finished the permission step with a different Google account than the one being upgraded."""
+
+
+class ScopeNotGranted(RuntimeError):
+    """Google came back without the new permission (the box was unticked, or the consent screen lacks the scope)."""
+
+
+def _run_flow(auth: "GoogleAuth", flow, on_url, timeout_s: int, success: str, **params):
+    """Run an InstalledAppFlow with Monkey's own named browser controller (see sign_in for why)."""
+    from ..links import launch_url
+
+    class _SignInBrowser(webbrowser.BaseBrowser):
+        def open(self, url, new=0, autoraise=True):
+            auth._auth_url = url
+            if on_url is not None:
+                on_url(url)
+            return launch_url(url)          # never webbrowser.open(): no way to loop back here
+
+    webbrowser.register(SIGNIN_BROWSER, None, _SignInBrowser(SIGNIN_BROWSER))
+    auth._cancelled, auth._auth_url = False, ""
+    try:
+        creds = flow.run_local_server(port=0, open_browser=True, browser=SIGNIN_BROWSER, timeout_seconds=timeout_s,
+                                      authorization_prompt_message="", success_message=success, **params)
+    except Exception as exc:  # noqa: BLE001
+        if auth._cancelled:
+            raise SignInCancelled("Sign-in cancelled.") from exc
+        raise RuntimeError(explain_sign_in_error(exc)) from exc
+    finally:
+        auth._auth_url = ""
+    if auth._cancelled:
+        raise SignInCancelled("Sign-in cancelled.")
+    if creds is None or not getattr(creds, "token", None):
+        raise RuntimeError("Sign-in timed out (5 minutes). Click the button again and finish it in the browser.")
+    return creds
+
+
 def _profile_address(creds) -> str:
     from googleapiclient.discovery import build
 
@@ -226,40 +311,11 @@ class GoogleAuth:
         The library opens the browser via webbrowser.get(<name>).open(url); we register our own named controller
         for that instead of patching webbrowser globally (patching made webbrowser.open recurse into itself, so
         nothing opened, including every other link in the app while the sign-in was waiting)."""
-        import webbrowser
-
         from google_auth_oauthlib.flow import InstalledAppFlow
-
-        from ..links import launch_url
 
         info = validate_client(keys.get("google_client") or "")
         flow = InstalledAppFlow.from_client_config(info, SCOPES)
-
-        auth = self
-        self._cancelled, self._auth_url = False, ""
-
-        class _SignInBrowser(webbrowser.BaseBrowser):
-            def open(self, url, new=0, autoraise=True):
-                auth._auth_url = url
-                if on_url is not None:
-                    on_url(url)
-                return launch_url(url)          # never webbrowser.open(): no way to loop back here
-
-        webbrowser.register(SIGNIN_BROWSER, None, _SignInBrowser(SIGNIN_BROWSER))
-        try:
-            creds = flow.run_local_server(port=0, open_browser=True, browser=SIGNIN_BROWSER, timeout_seconds=timeout_s,
-                                          authorization_prompt_message="",
-                                          success_message="Monkey is connected to Google. You can close this tab.")
-        except Exception as exc:  # noqa: BLE001
-            if self._cancelled:
-                raise SignInCancelled("Sign-in cancelled.") from exc
-            raise RuntimeError(explain_sign_in_error(exc)) from exc
-        finally:
-            self._auth_url = ""
-        if self._cancelled:
-            raise SignInCancelled("Sign-in cancelled.")
-        if creds is None or not getattr(creds, "token", None):
-            raise RuntimeError("Sign-in timed out (5 minutes). Click Sign in again and finish it in the browser.")
+        creds = _run_flow(self, flow, on_url, timeout_s, "Monkey is connected to Google. You can close this tab.")
         address = ""
         try:
             if address_of is None:
@@ -272,13 +328,65 @@ class GoogleAuth:
         except Exception:  # noqa: BLE001 - the token is still good; Settings just can't say which address it is
             address = ""
         acct = self.account_id or self._owner(address) or new_account_id()
-        set_token(acct, creds.to_json())
+        set_token(acct, _token_json(creds, _granted_of(creds, SCOPES)))
         self.last_account_id, self.last_address = acct, address
         if self.account_id is None:
             self.account(acct)._creds = creds
         else:
             self._creds = creds
         return acct
+
+    def upgrade(self, acct_id: str, extra: tuple[str, ...] | list[str], expected_address: str = "", on_url=None,
+                timeout_s: int = 300, flow_factory: Callable | None = None,
+                address_of: Callable | None = None) -> set[str]:
+        """Incremental consent: ask Google for `extra` scopes on one connected account, keeping the ones it has.
+
+        Google's screen names only the new permission (include_granted_scopes). The new token replaces the old one in
+        the same DPAPI-encrypted secret, and only if it is the same Google account (expected_address) and nothing it
+        had before is lost. Returns the granted scopes. Raises WrongAccount / ScopeNotGranted / SignInCancelled /
+        RuntimeError (with a plain next step); on any of them the old token is untouched."""
+        import os
+
+        have = granted_scopes(acct_id)
+        if not have:
+            raise RuntimeError("That Gmail account isn't connected. Sign in from Settings → Accounts first.")
+        info = validate_client(keys.get("google_client") or "")
+        want = sorted(set(SCOPES) | have | set(extra))
+        if flow_factory is None:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+
+            flow_factory = InstalledAppFlow.from_client_config
+        # Google answers with every scope the account granted (include_granted_scopes), which oauthlib would otherwise
+        # treat as an error ("Scope has changed"); what was granted is checked below instead.
+        os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+        params = {"include_granted_scopes": "true"}
+        if expected_address:
+            params["login_hint"] = expected_address
+        flow = flow_factory(info, want)
+        creds = _run_flow(self, flow, on_url, timeout_s,
+                          "Monkey can now tidy this inbox (archive and label, never delete or send). You can close "
+                          "this tab.", **params)
+        if expected_address:
+            try:
+                got = str((address_of or _profile_address)(creds) or "")
+            except Exception:  # noqa: BLE001 - can't tell which account it is: don't risk replacing the token
+                got = ""
+            if got.lower() != expected_address.lower():
+                raise WrongAccount("You picked a different Google account in the browser. Try again and choose the "
+                                   "one this inbox belongs to.")
+        granted = _granted_of(creds, want)
+        if not have <= granted:
+            raise ScopeNotGranted("Google left out a permission Monkey already had, so nothing was changed. Try again "
+                                  "and keep every box ticked.")
+        if not set(extra) <= granted:
+            raise ScopeNotGranted("Google didn't give the new permission, so nothing changed. Either the box was "
+                                  "unticked, or your Google Cloud project doesn't list it yet: Google Cloud → Google "
+                                  "Auth Platform → Data access → Add or remove scopes → add gmail.modify (and "
+                                  "gmail.settings.basic for filters) → Save, then try again.")
+        set_token(acct_id, _token_json(creds, granted))
+        child = self.account(acct_id) if self.account_id is None else self
+        child._creds = None                       # reload with the new scopes on the next call
+        return granted
 
     @staticmethod
     def _owner(address: str) -> str | None:
@@ -339,7 +447,10 @@ class GoogleAuth:
                 tok = get_token(self.account_id)
                 if not tok:
                     raise RuntimeError("Google isn't connected. Sign in from Settings.")
-                self._creds = Credentials.from_authorized_user_info(json.loads(tok), SCOPES)
+                # The token's own granted scopes: a refresh that asked for more than was granted would fail (and the
+                # token be dropped); one that asked for less would lose the tidy permission.
+                self._creds = Credentials.from_authorized_user_info(json.loads(tok),
+                                                                    sorted(granted_scopes(self.account_id)))
             if not self._creds.valid and self._creds.refresh_token:
                 from google.auth.exceptions import RefreshError
 
@@ -349,7 +460,7 @@ class GoogleAuth:
                     delete_token(self.account_id)
                     self._creds = None
                     raise RuntimeError(EXPIRED_HELP) from exc
-                set_token(self.account_id, self._creds.to_json())
+                set_token(self.account_id, _token_json(self._creds, granted_scopes(self.account_id)))
             return self._creds
 
     def service(self, name: str, version: str):

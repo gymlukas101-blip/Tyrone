@@ -43,18 +43,64 @@ MESSAGES = {
 
 # Registrable domains (and their subdomains) the browser never opens for a task. Banking, payments and brokerages
 # common in the US, plus Instagram/Snapchat. Not exhaustive: the goal check and SENSITIVE_FIELD/SENSITIVE_WINDOW in
-# permissions.py are the other layers.
-BLOCKED_DOMAINS: dict[str, str] = {
-    **{d: "banking" for d in (
-        "chase.com", "bankofamerica.com", "wellsfargo.com", "citi.com", "citibank.com", "usbank.com", "capitalone.com",
-        "pnc.com", "tdbank.com", "ally.com", "discover.com", "americanexpress.com", "schwab.com", "fidelity.com",
-        "vanguard.com", "robinhood.com", "etrade.com", "sofi.com", "chime.com", "navyfederal.org", "uwcu.org",
-        "summitcreditunion.com", "associatedbank.com", "bmo.com", "huntington.com", "regions.com", "truist.com",
-        "paypal.com", "venmo.com", "zellepay.com", "cash.app", "squareup.com", "wise.com", "coinbase.com",
-        "binance.com", "kraken.com", "stripe.com", "klarna.com", "affirm.com", "afterpay.com", "studentaid.gov",
-        "irs.gov")},
-    **{d: "social" for d in ("instagram.com", "cdninstagram.com", "snapchat.com", "snap.com")},
-}
+# permissions.py are the other layers. Shared constants: the mailing-list review and the inbox cleanup use the same
+# lists for *senders* (sender_limit below), so "banks and Instagram" means one thing everywhere.
+BANKING_DOMAINS: tuple[str, ...] = (
+    "chase.com", "bankofamerica.com", "wellsfargo.com", "citi.com", "citibank.com", "usbank.com", "capitalone.com",
+    "pnc.com", "tdbank.com", "ally.com", "discover.com", "americanexpress.com", "schwab.com", "fidelity.com",
+    "vanguard.com", "robinhood.com", "etrade.com", "sofi.com", "chime.com", "navyfederal.org", "uwcu.org",
+    "summitcreditunion.com", "associatedbank.com", "bmo.com", "huntington.com", "regions.com", "truist.com",
+    "paypal.com", "venmo.com", "zellepay.com", "cash.app", "squareup.com", "wise.com", "coinbase.com",
+    "binance.com", "kraken.com", "stripe.com", "klarna.com", "affirm.com", "afterpay.com", "studentaid.gov",
+    "irs.gov")
+SOCIAL_DOMAINS: tuple[str, ...] = ("instagram.com", "cdninstagram.com", "snapchat.com", "snap.com")
+BLOCKED_DOMAINS: dict[str, str] = {**{d: "banking" for d in BANKING_DOMAINS}, **{d: "social" for d in SOCIAL_DOMAINS}}
+
+# Senders, not sites: mail from these is never unsubscribed from or archived by Monkey (the owner: "skip bank and
+# instagram senders"; banks count as important mail). Banking sites above, plus card networks, lenders, credit bureaus
+# and tax mail that only ever arrive as email.
+FINANCIAL_MAIL_DOMAINS: tuple[str, ...] = BANKING_DOMAINS + (
+    "mastercard.com", "visa.com", "synchrony.com", "syf.com", "salliemae.com", "nelnet.com", "mohela.com",
+    "aidvantage.com", "experian.com", "equifax.com", "transunion.com", "creditkarma.com", "goldmansachs.com",
+    "marcus.com", "applecard.apple.com", "barclaycardus.com", "barclays.com", "citizensbank.com", "53.com",
+    "key.com", "mtb.com", "firstrepublic.com", "lendingclub.com", "upstart.com", "acorns.com", "stash.com",
+    "betterment.com", "wealthfront.com", "webull.com", "turbotax.intuit.com", "hrblock.com", "ssa.gov")
+# Instagram and the Meta mail it sends from (notifications, security mail, marketing).
+INSTAGRAM_MAIL_DOMAINS: tuple[str, ...] = ("instagram.com", "mail.instagram.com", "cdninstagram.com",
+                                           "facebookmail.com", "meta.com", "metamail.com")
+_FINANCIAL_NAME = re.compile(r"\b(?:bank(?!\s+holidays?\b)|banking|credit union|card ?member services|card services|"
+                             r"federal savings|brokerage|student loans?)\b", re.I)
+# A registrable name that *ends* in bank / creditunion / fcu ("usbank.com", "firstbank.com", "summitfcu.org"). Not
+# "bankrate.com" or a university ending in "cu" (scu.edu).
+_FINANCIAL_LABEL = re.compile(r"(?:^|\.)[a-z0-9-]*(?:bank|creditunion|fcu)\.(?:com|org|net|us|co|bank|coop)$")
+_INSTAGRAM_NAME = re.compile(r"\binstagram\b", re.I)
+
+
+def _under(host: str, domains) -> bool:
+    h = (host or "").lower().rstrip(".")
+    return any(h == d or h.endswith("." + d) for d in domains)
+
+
+def sender_limit(sender_email: str, sender_name: str = "", list_id: str = "") -> str:
+    """'banking' or 'instagram' when mail from this sender (or list) is the owner's to handle, else ''.
+
+    Matched on the sender's address domain, its List-Id, and (for Instagram and bank names) the display name.
+    Conservative on purpose: "Bankrate" or a credit union's newsletter counts as banking too."""
+    dom = (sender_email or "").rsplit("@", 1)[-1].lower().strip(" >") if "@" in (sender_email or "") else ""
+    lid = (list_id or "").lower()
+    if _under(dom, INSTAGRAM_MAIL_DOMAINS) or _under(lid, INSTAGRAM_MAIL_DOMAINS) or _INSTAGRAM_NAME.search(
+            sender_name or ""):
+        return "instagram"
+    if _under(dom, FINANCIAL_MAIL_DOMAINS) or _under(lid, FINANCIAL_MAIL_DOMAINS):
+        return "banking"
+    if dom and _FINANCIAL_LABEL.search(dom):
+        return "banking"
+    if _FINANCIAL_NAME.search(sender_name or ""):
+        return "banking"
+    return ""
+
+
+SENDER_SKIP_NOTE = "Skipped {n} from banks/Instagram (handle those yourself)."
 
 _W = lambda *ws: re.compile(r"\b(?:" + "|".join(ws) + r")\b", re.I)  # noqa: E731
 

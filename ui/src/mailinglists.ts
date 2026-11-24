@@ -17,14 +17,17 @@ export interface MailingState {
   ok?: boolean; lists: MailingList[]; suggestions: MailingSuggestion[]; scanning: boolean;
   last_scan: { ts?: number; lists?: number; messages?: number; errors?: Record<string, string> };
   computer_tasks: boolean; archive_available: boolean; running: string;
+  filter_available?: boolean;
+  tidy?: Record<string, { kind: string; label: string; archive: boolean; filter: boolean; why: string }>;
+  skipped?: { count: number; by?: Record<string, number>; note: string };
 }
 export interface MailingStep { list_id: string; account: string; account_label: string; sender: string; method: string;
-  method_label: string; target: string; what: string }
+  method_label: string; target: string; what: string; archive_old?: boolean; filter_new?: boolean }
 export interface MailingBatch { id: string; status: string; token?: string; items: MailingStep[] }
 export interface MailingApi {
   mailing_state(): Promise<MailingState>;
   mailing_scan(): Promise<{ ok: boolean; started?: boolean; error?: string }>;
-  mailing_prepare(ids: string[]): Promise<{ ok: boolean; error?: string } & Partial<MailingBatch>>;
+  mailing_prepare(ids: string[], archive?: boolean, filterNew?: boolean): Promise<{ ok: boolean; error?: string } & Partial<MailingBatch>>;
   mailing_run(batchId: string, token: string): Promise<{ ok: boolean; error?: string; batch?: MailingBatch }>;
   mailing_cancel(batchId: string): Promise<{ ok: boolean }>;
   mailing_keep(id: string, keep: boolean): Promise<{ ok: boolean; error?: string; item?: MailingList }>;
@@ -50,6 +53,9 @@ let acctFilter = "";
 let review: MailingBatch | null = null;
 let progress = "";
 let dlg: HTMLDialogElement | null = null;
+let wantArchive = false;
+let wantFilter = false;
+const allowing: Record<string, string> = {};          // account -> "opening" | "error: …" while the permission step runs
 
 export function initMailing(a: Api) { api = a as Api & MailingApi; }
 
@@ -100,6 +106,43 @@ function row(l: MailingList): HTMLElement {
     h("td", {}, l.status === "active" || l.status === "kept" ? keep : ""));
 }
 
+/** "Also archive their old emails" / "filter new ones": bound into the same approval (the plan is re-made when ticked).
+ *  Available per inbox once the owner allowed Monkey to tidy it (one incremental Google consent; Outlook: while open). */
+function tidyOptions(b: MailingBatch): HTMLElement {
+  const tidy = st?.tidy ?? {};
+  const accts = [...new Map(b.items.map((s) => [s.account, s.account_label])).entries()];
+  const anyArchive = accts.some(([a]) => tidy[a]?.archive);
+  const gmailAccts = accts.filter(([a]) => (tidy[a]?.kind ?? (a === "outlook" ? "outlook" : "gmail")) === "gmail");
+  const remake = async () => {
+    await api.mailing_cancel(b.id);
+    const r = await api.mailing_prepare(b.items.map((s) => s.list_id), wantArchive, wantFilter);
+    if (!r.ok || !r.items) { toast(`⚠ ${r.error ?? "Couldn't prepare that"}`); return; }
+    review = r as MailingBatch; draw();
+  };
+  const arch = h("input", { type: "checkbox", checked: wantArchive }) as HTMLInputElement;
+  arch.addEventListener("change", () => { wantArchive = arch.checked; void remake(); });
+  const filt = h("input", { type: "checkbox", checked: wantFilter, disabled: !gmailAccts.length }) as HTMLInputElement;
+  filt.addEventListener("change", () => { wantFilter = filt.checked; void remake(); });
+  const need = accts.filter(([a]) => (wantArchive && !tidy[a]?.archive) || (wantFilter && tidy[a]?.kind === "gmail" && !tidy[a]?.filter)
+    || (wantFilter && !tidy[a] && a !== "outlook"));
+  const allowRows = need.filter(([a]) => a !== "outlook").map(([a, label]) => h("div", { class: "row ml-allow", "data-acct": a },
+    h("span", { class: "meta" }, `✉ ${label}: ${tidy[a]?.archive ? "allow filters" : "allow Monkey to tidy this inbox"} first (archive${wantFilter ? ", label and filter" : " and label"}; never delete or send).`),
+    allowing[a] === "opening" ? h("span", { class: "meta" }, "Finish it in the browser…")
+      : h("button", { type: "button", class: "ghost mini", onclick: async () => {
+        const r = await (api as any).inbox_allow(a, wantFilter);
+        allowing[a] = r.ok ? (r.already ? "" : "opening") : `error: ${r.error}`;
+        if (r.already) await remake(); else draw();
+      } }, "Allow in Google"),
+    allowing[a]?.startsWith("error") ? h("span", { class: "warn" }, `⚠ ${allowing[a].slice(7)}`) : ""));
+  return h("div", { class: "ml-tidy" },
+    h("label", { class: `field toggle${anyArchive ? "" : " off"}`, title: "Archive only: they stay searchable in All Mail. Monkey checks each email first (starred, important, receipts and the like stay)." },
+      arch, h("span", {}, "Also archive their old emails ", h("small", {}, anyArchive ? "(Monkey checks each first; never deletes)"
+        : "(allow Monkey to tidy the inbox first: one Google step)"))),
+    h("label", { class: `field toggle${gmailAccts.length ? "" : " off"}` },
+      filt, h("span", {}, "Filter new mail from them so it skips the inbox ", h("small", {}, "(Gmail only; asks Google for the filter permission if you tick it)"))),
+    ...allowRows);
+}
+
 function reviewView(b: MailingBatch): HTMLElement {
   const n = b.items.length;
   const go = h("button", { type: "button", class: "primary", onclick: async () => {
@@ -117,9 +160,7 @@ function reviewView(b: MailingBatch): HTMLElement {
       h("div", {}, h("b", {}, s.sender), " ", h("span", { class: `ml-method m-${s.method}` }, METHOD[s.method]?.[0] ?? s.method_label),
         h("small", { class: "ml-acct" }, ` ✉ ${s.account_label}`)),
       h("p", { class: "meta" }, s.what)))),
-    h("label", { class: "field toggle off", title: "Needs a broader Gmail permission than Monkey has; off until you decide" },
-      h("input", { type: "checkbox", disabled: true }),
-      h("span", {}, "Also archive their old emails and filter new ones ", h("small", {}, "(not available: it would need extra Gmail permission to change your account)"))),
+    tidyOptions(b),
     h("div", { class: "row" }, go,
       h("button", { type: "button", class: "ghost", onclick: async () => { await api.mailing_cancel(b.id); review = null; draw(); } }, "Back")));
 }
@@ -144,6 +185,7 @@ function draw() {
           onclick: () => { acctFilter = id; draw(); } }, label))),
       scanBtn),
     ...errs.map(([a, e]) => h("p", { class: "meta warn" }, `⚠ ${a}: ${e}`)),
+    st.skipped?.count ? h("p", { class: "meta ml-skip", title: "Banks and other money senders, and Instagram/Meta: never suggested or unsubscribed from by Monkey" }, `🏦 ${st.skipped.note}`) : "",
   ];
   if (st.running || progress) body.push(h("div", { class: "ml-progress", role: "status" }, h("span", {}, progress || "Unsubscribing…"),
     h("button", { type: "button", class: "ghost mini danger", onclick: async () => { await api.mailing_stop(); toast("Stopped: nothing else will be unsubscribed."); } }, "■ Stop")));
@@ -159,7 +201,7 @@ function draw() {
       : h("p", { class: "meta" }, st.scanning ? "Reading list headers…" : "No mailing lists found yet. Connect an inbox in Settings → Accounts, then Check inboxes."));
     const n = [...picked].filter((id) => st!.lists.some((l) => l.id === id)).length;
     const next = h("button", { type: "button", class: "primary", disabled: !n || !!st.running, onclick: async () => {
-      const r = await api.mailing_prepare([...picked]);
+      const r = await api.mailing_prepare([...picked], wantArchive, wantFilter);
       if (!r.ok || !r.items) { toast(`⚠ ${r.error ?? "Couldn't prepare that"}`); return; }
       review = r as MailingBatch; draw();
     } }, n ? `Review & unsubscribe (${n})` : "Pick lists to unsubscribe from");
@@ -188,6 +230,17 @@ export async function openMailing(select: string[] = []) {
 export function mailingEvent(name: string, p: any) {
   switch (name) {
     case "mailing_lists": st = p as MailingState; break;
+    case "inbox_permission": {
+      allowing[p.account] = p.stage === "opening" ? "opening" : p.stage === "error" ? `error: ${p.message ?? ""}` : "";
+      if (p.stage === "done" && review) {
+        const b = review;
+        void (async () => { await refresh(); await api.mailing_cancel(b.id);
+          const r = await api.mailing_prepare(b.items.map((s) => s.list_id), wantArchive, wantFilter);
+          if (r.ok && r.items) { review = r as MailingBatch; draw(); } })();
+        return;
+      }
+      break;
+    }
     case "mailing_review": void openMailing(p.ids ?? []); return;
     case "mailing_scan": if (st) st.scanning = p.stage !== "done"; if (p.stage === "reading") progress = ""; break;
     case "mailing_progress": progress = `Unsubscribing: ${p.index} of ${p.total} done · now ${p.sender}…`; if (st) st.running = p.batch; break;

@@ -138,9 +138,15 @@ needs you, didn't work, kept. URLs stay local; they are never logged, sent to Cl
 the 2-day grace period RFC 8058 allows marks the list ⚠ **Still arriving**. After 7 quiet days it becomes ✓ **Quiet**.
 A daily background check re-reads only the inboxes with a verification due, and does nothing otherwise.
 
-**Archive / filter afterwards: not built, off.** It would change the owner's Gmail account and needs a broader scope
-(`gmail.modify` to archive or label, `gmail.settings.basic` for filters) than the `gmail.readonly` + `gmail.compose`
-Monkey has. The review screen shows the option disabled with that reason. No OAuth scope was widened. See §8.
+**Archive / filter afterwards: built** (`feature/inbox-cleanup`, see [INBOX_CLEANUP.md](INBOX_CLEANUP.md)). The
+owner approved it on 2026-11-24. "Also archive their old emails" and "Filter new mail from them so it skips the inbox"
+become available per inbox once the owner allows Monkey to tidy it. That's one incremental Google consent for
+`gmail.modify`, plus `gmail.settings.basic` only if the filter box is ticked. Both are bound into the same one-time
+approval. Archiving applies the inbox cleanup's importance check. Archive only, never delete.
+
+**Banks and Instagram are skipped** (the owner, 2026-11-24): lists from banking or financial senders and from
+Instagram/Meta are never listed, suggested or unsubscribed from (`limits.sender_limit`). The review says how many were
+skipped.
 
 ## 6. Brain and cost
 
@@ -174,13 +180,13 @@ All without network or real accounts.
 
 ## 8. Open decisions for the owner
 
-1. **Archive / filter after unsubscribing.** Turning it on means asking Google for `gmail.modify` (archive/label) and
-   possibly `gmail.settings.basic` (filters) on every Gmail account: a new consent screen, and for an unverified app a
-   broader-scope warning. It is off and unbuilt until you decide.
-2. **Senders on forbidden sites.** One-click and `mailto` unsubscribes work for any sender, including a bank's
-   marketing list or Instagram's emails. They are email, not automating those sites. A web unsubscribe page on a
-   forbidden site is never opened ("Needs you"). Say if you want those senders skipped entirely.
+1. ~~Archive / filter after unsubscribing.~~ **Decided 2026-11-24: yes**, with a check first. Built on
+   `feature/inbox-cleanup` ([INBOX_CLEANUP.md](INBOX_CLEANUP.md)): incremental consent per inbox, archive only.
+2. ~~Senders on forbidden sites.~~ **Decided 2026-11-24: skip bank and Instagram senders entirely.** Built on
+   `feature/inbox-cleanup`.
 3. **Verification window:** 7 days (`store.VERIFY_DAYS`).
-4. **Default kind of task in the Tasks form:** now "Anything else" (it was Course modules).
+4. ~~Default kind of task in the Tasks form.~~ **Decided 2026-11-24: general-first.** The Tasks menu starts with
+   "What should Monkey do?" and the capabilities. Course modules is one of seven, and its fields appear only inside it
+   (`feature/inbox-cleanup`).
 5. **Bench:** add the five new fixtures to the Windows computer-use bench (`tools/computer_bench/scripts.py`) so its
    numbers include them? They run in the Linux browser CI job today.

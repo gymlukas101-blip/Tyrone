@@ -25,6 +25,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable
 from urllib.parse import urlsplit
 
+from ..automation.limits import sender_limit
 from .headers import ONE_CLICK_BODY, Resolver, check_https_url, check_mailto, default_resolve
 
 METHOD_LABEL = {"one_click": "One-click", "mailto": "Email", "web": "Web page", "manual": "Do it yourself"}
@@ -97,6 +98,8 @@ class Step:
     target: str                     # host (one_click/web) or address (mailto): what the owner sees
     what: str                       # one sentence: exactly what will happen
     url: str = field(default="", repr=False)    # never sent to the UI or the model
+    archive_old: bool = False       # then archive this list's older inbox mail (the inbox cleanup's rules apply)
+    filter_new: bool = False        # then a Gmail filter: new mail from this list skips the inbox
 
     def public(self) -> dict:
         d = asdict(self)
@@ -164,11 +167,13 @@ class Unsubscriber:
                  draft: Callable[[Step], str] | None = None, start_web: Callable[[Step], str] | None = None,
                  web_result: Callable[[str, Callable[[], bool]], tuple[str, str, str]] | None = None,
                  web_enabled: Callable[[], bool] = lambda: False, owner_address: Callable[[str], str] = lambda a: "",
-                 emit: Callable[[str, dict], None] = lambda n, p: None):
+                 emit: Callable[[str, dict], None] = lambda n, p: None,
+                 after: Callable[[Step, str], str] | None = None):
         self.store = store
         self.resolve, self.connect = resolve, connect
         self.draft, self.start_web, self.web_result = draft, start_web, web_result
         self.web_enabled, self.owner_address, self.emit = web_enabled, owner_address, emit
+        self.after = after               # archive old mail / add a filter, for steps the owner approved with that
         self._batches: dict[str, Batch] = {}
         self._lock = threading.Lock()
         self.stop_flag = threading.Event()
@@ -181,6 +186,8 @@ class Unsubscriber:
             row = self.store.get(rid)
             if row is None or row["status"] in ("done", "kept", "waiting_send"):
                 continue
+            if sender_limit(row.get("sender_email", ""), row.get("sender", ""), row.get("list_id", "")):
+                continue                                            # banks / Instagram: the owner's own call
             steps.append(plan_step(row, self.resolve, web_ok=self.web_enabled() and self.start_web is not None,
                                    owner_address=self.owner_address(row["account"])))
         if not steps:
@@ -229,6 +236,13 @@ class Unsubscriber:
                 self.emit("mailing_progress", {"batch": b.id, "index": i, "total": len(b.steps), "sender": s.sender,
                                                "method": s.method})
                 status, detail, extra = self._one(s)
+                if (s.archive_old or s.filter_new) and self.after is not None and not self.stop_flag.is_set():
+                    try:
+                        more = self.after(s, status)
+                    except Exception as exc:  # noqa: BLE001 - the unsubscribe result stands
+                        more = f"archiving didn't work ({type(exc).__name__})"
+                    if more:
+                        detail = f"{detail}; {more}" if detail else more
                 row = self.store.record(s.list_id, status, s.method, detail, **extra)
                 results.append(row)
                 self.emit("mailing_item", {"batch": b.id, "item": row})

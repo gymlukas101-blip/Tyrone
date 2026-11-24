@@ -33,6 +33,13 @@ export function demoGeneralTask(t: AutoTask, template: string, st: AutoState, em
   return { ok: true, task: t };
 }
 
+/** The per-inbox "tidy" permission in demo mode, shared by the inbox cleanup and the Mailing lists review. */
+const DEMO_PERMS: Record<string, any> = {
+  gmail: { kind: "gmail", label: "Personal", archive: false, filter: false, why: "needs_permission" },
+  "gmail-2": { kind: "gmail", label: "Gaming", archive: true, filter: false, why: "" },
+  outlook: { kind: "outlook", label: "School", archive: true, filter: false, why: "", note: "Only while Outlook is open." },
+};
+
 export function demoMailingApi(emit: (e: [string, any][]) => void, later: (ms: number, fn: () => void) => void) {
   const now = Date.now() / 1000;
   const L = (id: string, sender: string, email: string, list: string, subject: string, count: number, unread: number,
@@ -52,7 +59,9 @@ export function demoMailingApi(emit: (e: [string, any][]) => void, later: (ms: n
         verify_after: now + 5 * 86400, verify_status: "waiting" }),
   ];
   const st: MailingState = {
-    lists, scanning: false, running: "", computer_tasks: true, archive_available: false,
+    lists, scanning: false, running: "", computer_tasks: true, archive_available: true, filter_available: false,
+    tidy: DEMO_PERMS,
+    skipped: { count: 2, by: { banking: 1, instagram: 1 }, note: "Skipped 2 lists from banks/Instagram (handle those yourself)." },
     last_scan: { ts: now - 600, lists: lists.length, messages: 202, errors: {} },
     suggestions: [
       { id: "ml_daily", sender: "The Daily Byte", per_month: 29, unread_pct: 98, say: "You get about 29 emails a month from The Daily Byte and never open them." },
@@ -74,11 +83,15 @@ export function demoMailingApi(emit: (e: [string, any][]) => void, later: (ms: n
       later(900, () => { st.scanning = false; emit([["mailing_lists", { ...st }]]); });
       return { ok: true, started: true };
     },
-    async mailing_prepare(ids: string[]) {
+    async mailing_prepare(ids: string[], archive = false, filterNew = false) {
       const items: MailingStep[] = ids.map((id) => st.lists.find((l) => l.id === id)).filter((l): l is MailingList => !!l && l.status !== "done")
         .map((l) => { const [method, target, w] = what[l.methods[0] ?? "manual"](l);
+          const t = st.tidy?.[l.account];
+          const archiveOld = !!(archive && t?.archive), filt = !!(filterNew && t?.filter && l.account !== "outlook");
           return { list_id: l.id, account: l.account, account_label: l.account_label, sender: l.sender, method,
-            method_label: method, target, what: w }; });
+            method_label: method, target, archive_old: archiveOld, filter_new: filt,
+            what: w + (archiveOld ? " Then Monkey archives their older emails in this inbox (never deletes; starred, important, receipts and anything else he'd keep stay put)." : "")
+              + (filt ? " New mail from this list will skip your inbox (a Gmail filter)." : "") }; });
       if (!items.length) return { ok: false, error: "Nothing to unsubscribe from in that selection." };
       batch = { id: "ub_demo", status: "pending", token: "demo-token", items };
       return { ok: true, ...batch };
@@ -110,8 +123,113 @@ export function demoMailingApi(emit: (e: [string, any][]) => void, later: (ms: n
 export const DEMO_TEMPLATES = [
   { id: "generic", title: "Anything else", blurb: "Plans with Claude; reads freely, asks before anything that sends, submits, buys, deletes or changes an account.", example: "Download last month's statement PDF from my phone carrier's site", skill: "general", rules: {}, deterministic: false },
   { id: "look_only", title: "Look something up (just show me)", blurb: "Searches and reads; never books, buys, sends or submits anything.", example: "Find the cheapest flight from Madison to Denver on Dec 18, just show me", skill: "general", rules: { read_only: true }, deterministic: false },
-  { id: "form_fill", title: "Fill in a form (you review it)", blurb: "Fills the fields you give him; he asks before pressing Submit, and you can review first.", example: "Fill in the club sign-up form at example.org with my name and email, let me review", skill: "general", rules: {}, deterministic: false },
-  { id: "account_settings", title: "Settings or a subscription on a site", blurb: "Changes a setting, notification or subscription; every change asks you first.", example: "Turn off promotional notifications in my Spotify account settings", skill: "general", rules: { confirm_medium: true }, deterministic: false },
-  { id: "shopping", title: "Shopping or booking (stops before paying)", blurb: "Gets things into the cart or booking page; stops before the final purchase.", example: "Put a 2-pack of AA batteries in my Target cart", skill: "general", rules: { confirm_medium: true }, deterministic: false },
-  { id: "course", title: "Course modules (Canvas, trainings)", blurb: "Works through modules and lessons; questions and confirmations stay yours.", example: "Work through the 4 modules of the Title IX training on Canvas", skill: "course", rules: {}, deterministic: false },
+  { id: "form_fill", title: "Fill in a form (you review)", blurb: "Fills the fields you give him; he asks before pressing Submit, and you can review first.", example: "Fill in the club sign-up form at example.org with my name and email, let me review", skill: "general", rules: {}, deterministic: false },
+  { id: "account_settings", title: "Change a setting on a site (asks every step)", blurb: "A setting, notification, subscription or trial; every change asks you first.", example: "Turn off promotional notifications in my Spotify account settings", skill: "general", rules: { confirm_medium: true }, deterministic: false },
+  { id: "shopping", title: "Shopping (stops before paying)", blurb: "Gets things into the cart or booking page; stops before the final purchase.", example: "Put a 2-pack of AA batteries in my Target cart", skill: "general", rules: { confirm_medium: true }, deterministic: false },
+  { id: "course", title: "Course modules", blurb: "Canvas or another course site: works through modules and lessons; questions and confirmations stay yours.", example: "Work through the 4 modules of the Title IX training on Canvas", skill: "course", rules: {}, deterministic: false },
 ];
+
+/** What a goal in the Tasks box becomes (mirrors automation/templates.py panel_for + pick, for the demo only). */
+export function demoRoute(objective: string) {
+  const t = objective || "";
+  if (/\b(instagram|snapchat)\b/i.test(t) && !/unsubscribe|emails? from/i.test(t)) return { ok: true, refusal: "I don't automate Instagram or Snapchat (they don't allow it, and it can get your account locked).", panel: "", template: "" };
+  if (/\b(?:(?:clean (?:up|out)|organi[sz]e|tidy(?: up)?|declutter)\s+(?:up\s+)?(?:my |the )?(?:e-?mails?|inbox|gmail|outlook|mail)|archive (?:the |my |old )?(?:newsletters|promos?|promotions|e-?mails|notifications))\b/i.test(t)) return { ok: true, panel: "inbox_cleanup", template: "", refusal: "" };
+  if (/\b(unsubscribe|opt (?:me )?out|mailing lists?|newsletters?)\b/i.test(t)) return { ok: true, panel: "mailing_lists", template: "", refusal: "" };
+  const pick = /just show me|look up|cheapest|compare/i.test(t) ? "look_only" : /fill (?:in|out)|\bform\b/i.test(t) ? "form_fill"
+    : /\b(buy|order|cart|checkout|book (?:a|the|my))\b/i.test(t) ? "shopping"
+    : /settings?|notifications?|cancel .{0,30}(?:subscription|trial|membership)|turn (?:on|off)/i.test(t) ? "account_settings" : "generic";
+  return { ok: true, panel: "", template: pick, refusal: "" };
+}
+
+/** Inbox cleanup in demo mode: three made-up inboxes, one still needing the tidy permission. Nothing real is touched. */
+export function demoInboxApi(emit: (e: [string, any][]) => void, later: (ms: number, fn: () => void) => void) {
+  const perms = DEMO_PERMS;
+  let undoRun: any = null;
+  let stopped = false;
+  let current: any = null;
+  const plan = (accounts: string[], organize: boolean) => {
+    const use = (id: string) => !accounts.length || accounts.includes(id);
+    const rows = [
+      { id: "gmail", label: "Personal", kind: "gmail", scanned: 214, archive: 31, keep: 14 },
+      { id: "gmail-2", label: "Gaming", kind: "gmail", scanned: 96, archive: 12, keep: 3 },
+      { id: "outlook", label: "School", kind: "outlook", scanned: 120, archive: 5, keep: 11 },
+    ].filter((r) => use(r.id)).map((r) => ({ ...r, ready: perms[r.id].archive, why: perms[r.id].why,
+      message: perms[r.id].archive ? "" : "Monkey can read this inbox but not tidy it yet. Allow it once (archive and label only, never delete or send)." }));
+    const total = rows.reduce((n, r) => n + r.archive, 0);
+    const keep = rows.reduce((n, r) => n + r.keep, 0);
+    const promo = Math.round(total * 0.5), news = Math.round(total * 0.25), unsub = Math.min(3, total - promo - news);
+    const notif = total - promo - news - unsub;
+    const ex = (s: string, f: string, a = "Personal") => ({ subject: s, sender: f, account_label: a });
+    const people = Math.round(keep * 0.35), school = Math.round(keep * 0.2), receipts = Math.max(0, keep - people - school - 7);
+    return {
+      ok: true, id: "ic_demo", token: "demo-plan", organize, kind: "cleanup", archive_total: total, keep_total: keep,
+      label_total: organize ? total + school : 0, scanned: rows.reduce((n, r) => n + r.scanned, 0),
+      groups: [
+        { group: "promotions", title: "promotions and ads", count: promo, label: organize ? "Newsletters" : "",
+          examples: [ex("🔥 48 hours only: 30% off", "SnackBox Deals"), ex("Your cart misses you", "Jungle Gear Outlet"), ex("New drops for your wishlist", "PixelPlay Store", "Gaming")] },
+        { group: "newsletters", title: "newsletters and mailing lists", count: news, label: organize ? "Newsletters" : "",
+          examples: [ex("5 stories you missed this week", "The Daily Byte"), ex("3 ways to beat finals stress", "Study Buddy Tips")] },
+        { group: "notifications", title: "old notifications", count: notif, label: organize ? "Notifications" : "",
+          examples: [ex("[club-site] build passed", "GitHub"), ex("Your weekly activity summary", "FitTrack")] },
+        { group: "unsubscribed", title: "from lists you unsubscribed from", count: unsub, label: organize ? "Newsletters" : "",
+          examples: [ex("Hockey tickets on sale", "Badger Ticket Alerts")] },
+      ].filter((g) => g.count > 0),
+      kept: [
+        { reason: "contact", title: "from people you talk to", count: people },
+        { reason: "school", title: "school mail", count: school },
+        { reason: "bank", title: "from your bank or other money senders", count: 3 },
+        { reason: "deadline", title: "upcoming deadlines or requests", count: 2 },
+        { reason: "starred", title: "starred or flagged", count: 2 },
+        { reason: "receipt", title: "recent receipts, orders or travel", count: receipts },
+      ].filter((k) => k.count > 0),
+      labels: organize ? [{ label: "Newsletters", count: promo + news + unsub, archived: promo + news + unsub },
+                          { label: "Notifications", count: notif, archived: notif }, { label: "School", count: school, archived: 0 }] : [],
+      accounts: rows, needs: rows.filter((r) => !r.ready), errors: {},
+      say: `I can archive ${total} emails: ${promo} promotions, ${news} newsletters and ${notif} old notifications. I'm keeping ${keep}: ${people} from people you talk to, ${school} school emails and 3 from your bank.${rows.some((r) => !r.ready) ? " First, allow me to tidy that inbox (archive and label only)." : ""} Check the plan on screen and press Archive if it looks right.`,
+    };
+  };
+  return {
+    async inbox_state() { return { ok: true, permissions: perms, planning: false, running: "", last_run: undoRun, undo_run: undoRun, permission_waiting: "" }; },
+    async inbox_plan(accounts: string[], organize: boolean) {
+      emit([["inbox_plan", { stage: "scanning" }]]);
+      later(700, () => { current = plan(accounts ?? [], !!organize); emit([["inbox_plan", { stage: "ready", ...current }]]); });
+      return { ok: true, started: true };
+    },
+    async inbox_approve(id: string, token: string) {
+      if (!current || id !== current.id || token !== current.token) return { ok: false, error: "That approval isn't valid any more. Make a new plan." };
+      const total = current.accounts.filter((a: any) => perms[a.id].archive).reduce((n: number, a: any) => n + a.archive, 0);
+      current = null; stopped = false;
+      let done = 0;
+      const step = () => {
+        if (stopped || done >= total) {
+          undoRun = { id: "run_demo", kind: "cleanup", status: stopped ? "stopped" : "done", created: Date.now() / 1000, summary: { archived: done, labeled: 0, say: `Archived ${done} emails.` } };
+          emit([["inbox_done", { run: "run_demo", status: stopped ? "stopped" : "done", archived: done, labeled: 0, total, failed: {}, undo: done > 0,
+            say: stopped ? `Stopped. I archived ${done} before you said stop; Undo puts them back.` : `Done: archived ${done} emails. Undo is on screen if you want them back.` }]]);
+          return;
+        }
+        done = Math.min(total, done + 25);
+        emit([["inbox_progress", { run: "run_demo", done, total, archived: done }]]);
+        later(450, step);
+      };
+      later(300, step);
+      return { ok: true, run: "run_demo", total };
+    },
+    async inbox_cancel() { current = null; return { ok: true }; },
+    async inbox_stop() { stopped = true; return { ok: true }; },
+    async inbox_undo() {
+      if (!undoRun) return { ok: false, error: "There's no cleanup to undo." };
+      const n = undoRun.summary.archived; undoRun = null;
+      later(300, () => emit([["inbox_progress", { run: "run_demo", undo: true, done: n, total: n }]]));
+      later(700, () => emit([["inbox_undone", { run: "run_demo", restored: n, unlabeled: 0, problems: {}, say: `Put ${n} emails back in your inbox.` }]]));
+      return { ok: true, run: "run_demo" };
+    },
+    async inbox_allow(account: string, filters = false) {
+      if (perms[account]?.archive && (!filters || perms[account]?.filter)) return { ok: true, already: true };
+      later(200, () => emit([["inbox_permission", { account, stage: "opening", url: "https://accounts.google.com/o/oauth2/auth?demo" }]]));
+      later(1200, () => { perms[account] = { ...perms[account], archive: true, filter: perms[account].filter || filters, why: "" }; emit([["inbox_permission", { account, stage: "done", permissions: perms }]]); });
+      return { ok: true, started: true };
+    },
+    async inbox_allow_cancel() { return { ok: true }; },
+    async automation_route(objective: string) { return demoRoute(objective); },
+  };
+}

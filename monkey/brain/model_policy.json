@@ -571,6 +571,32 @@
       },
       "why": "Only for new unread or flagged mail that passed the local filter, at most once per scan; one short structured answer, no tools."
     },
+    "inbox_cleanup": {
+      "label": "Inbox cleanup: emails it isn't sure about (background)",
+      "min": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "default": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "max": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "internal": true,
+      "est": {
+        "rounds": 1,
+        "new_in": 2500,
+        "out": 300,
+        "think": 0,
+        "searches": 0,
+        "per_month": 8,
+        "no_prefix": true
+      },
+      "why": "Only for bulk mail the rules can't settle (it asks for something but names no date), at most 20 per plan, one structured answer, no tools. Everything else is decided by local rules; anything it isn't sure about stays in the inbox."
+    },
     "style_learning": {
       "label": "Learn my writing style (one time)",
       "min": [

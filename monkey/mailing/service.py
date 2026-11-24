@@ -4,9 +4,14 @@ Nothing here sends, posts or opens anything on its own: a scan only reads header
 batch the owner approved in Monkey's "Mailing lists" panel (one-time token, exactly the listed steps). The brain can
 look (find_mailing_lists) and pre-select (propose_unsubscribe), never approve.
 
-Optional "archive / filter future mail" after unsubscribing is NOT implemented: it changes the owner's Gmail account
-and needs a broader scope (gmail.modify to archive, gmail.settings.basic for filters) than the read-only + compose
-scopes Monkey has. It stays off until the owner decides (docs/automation/GENERAL_TASKS.md).
+Lists from banks and other financial senders, and from Instagram/Meta, are skipped entirely (the owner: "skip bank and
+instagram senders"; automation/limits.sender_limit): never suggested, listed or unsubscribed from. The review shows
+how many were skipped.
+
+"Also archive their old emails" (and "filter new ones") after unsubscribing runs through the inbox cleanup
+(monkey/inbox): it needs the per-inbox "tidy" permission (gmail.modify; filters also gmail.settings.basic), asked for
+once with Google's incremental consent, and it applies the same importance check (starred, important, receipts,
+banks... stay). Archive only, never delete.
 """
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from ..automation.limits import SENDER_SKIP_NOTE, sender_limit
 from .scan import DAYS, group, scan_gmail, scan_outlook
 from .store import MailingListStore, suggest
 from .unsubscribe import Step, Unsubscriber
@@ -36,7 +42,8 @@ class MailingService:
         if connect is not None:
             kw["connect"] = connect
         self.unsub = Unsubscriber(self.store, draft=self._draft, start_web=self._start_web, web_result=self._web_result,
-                                  web_enabled=self._web_enabled, owner_address=self._address, emit=self._emit, **kw)
+                                  web_enabled=self._web_enabled, owner_address=self._address, emit=self._emit,
+                                  after=self._after_unsub, **kw)
         self._scan_lock = threading.Lock()
         self.scanning = False
         self.last_scan: dict = {}
@@ -86,9 +93,18 @@ class MailingService:
                 except Exception as exc:  # noqa: BLE001 - one inbox failing (Outlook closed, token expired)
                     errors[acct] = _plain(exc)
             groups = group(got, labels)
-            self.store.upsert(groups)
+            skipped: dict[str, int] = {}
+            keep = []
+            for g in groups:
+                why = sender_limit(g.sender_email, g.sender, g.list_id)
+                if why:
+                    skipped[why] = skipped.get(why, 0) + 1
+                else:
+                    keep.append(g)
+            self.store.upsert(keep)
             self.store.finish_verification()
-            self.last_scan = {"ts": time.time(), "lists": len(groups), "messages": len(got), "errors": errors}
+            self.last_scan = {"ts": time.time(), "lists": len(keep), "messages": len(got), "errors": errors,
+                              "skipped": skipped}
         finally:
             self.scanning = False
             self._scan_lock.release()
@@ -112,12 +128,39 @@ class MailingService:
         return [r["id"] for r in due]
 
     # ---- the review list ---------------------------------------------------------------------------------------------
+    def rows(self) -> list[dict]:
+        """The review list without bank/Instagram senders (rows stored before that rule are hidden too)."""
+        return [r for r in self.store.all() if not skip_reason(r)]
+
     def state(self) -> dict:
         self._refresh_sent()
-        rows = self.store.all()
+        all_rows = self.store.all()
+        rows = [r for r in all_rows if not skip_reason(r)]
+        skipped = dict(self.last_scan.get("skipped") or {})
+        if not skipped:                                 # no scan this session: count the stored rows it hides
+            for r in all_rows:
+                if why := skip_reason(r):
+                    skipped[why] = skipped.get(why, 0) + 1
+        n = sum(skipped.values())
+        tidy = self._tidy_state()
         return {"lists": rows, "suggestions": suggest(rows), "scanning": self.scanning,
                 "last_scan": self.last_scan, "computer_tasks": self._web_enabled(),
-                "archive_available": False, "running": self.unsub.running}
+                "skipped": {"count": n, "by": skipped, "note": SENDER_SKIP_NOTE.format(
+                    n=f"{n} list" + ("" if n == 1 else "s")) if n else ""},
+                "archive_available": tidy["archive"], "filter_available": tidy["filter"], "tidy": tidy["accounts"],
+                "running": self.unsub.running}
+
+    def _tidy_state(self) -> dict:
+        """Which inboxes may archive (and filter) after unsubscribing: the inbox cleanup's permission state."""
+        cl = getattr(self.app, "inbox", None)
+        if cl is None:
+            return {"archive": False, "filter": False, "accounts": {}}
+        try:
+            acc = cl.permissions()
+        except Exception:  # noqa: BLE001
+            return {"archive": False, "filter": False, "accounts": {}}
+        return {"archive": any(a.get("archive") for a in acc.values()),
+                "filter": any(a.get("filter") for a in acc.values()), "accounts": acc}
 
     def _refresh_sent(self) -> None:
         """mailto unsubscribes: done once the owner sent the draft from the card; back to active if they cancelled."""
@@ -142,7 +185,7 @@ class MailingService:
 
     def find(self, names: list[str]) -> list[dict]:
         """Lists matching what the owner named ("Medium", "the DoorDash promos"), by sender, address or list id."""
-        rows = [r for r in self.store.all() if r["status"] not in ("kept",)]
+        rows = [r for r in self.rows() if r["status"] not in ("kept",)]
         out = []
         for n in names or []:
             q = " ".join(str(n).lower().replace("newsletter", "").replace("emails", "").split())
@@ -155,11 +198,24 @@ class MailingService:
         return out
 
     # ---- approved unsubscribes ---------------------------------------------------------------------------------------
-    def prepare(self, ids: list[str]) -> dict:
+    def prepare(self, ids: list[str], archive: bool = False, filter_new: bool = False) -> dict:
+        """The plan for the picked lists. archive / filter_new ("Also archive their old emails" / "filter new ones")
+        are bound into the same one-time approval, and only for inboxes that already have the tidy permission."""
+        allowed = [str(i) for i in ids or [] if (r := self.store.get(str(i))) is not None and not skip_reason(r)]
         try:
-            b = self.unsub.prepare([str(i) for i in ids or []])
+            b = self.unsub.prepare(allowed)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        tidy = self._tidy_state()["accounts"]
+        for st in b.steps:
+            perm = tidy.get(st.account) or {}
+            st.archive_old = bool(archive and perm.get("archive"))
+            st.filter_new = bool(filter_new and perm.get("filter") and st.account != "outlook")
+            if st.archive_old:
+                st.what += (" Then Monkey archives their older emails in this inbox (never deletes; starred, "
+                            "important, receipts and anything else he'd keep stay put).")
+            if st.filter_new:
+                st.what += " New mail from this list will skip your inbox (a Gmail filter)."
         return {"ok": True, **b.public()}
 
     def run(self, batch_id: str, token: str) -> dict:
@@ -169,6 +225,9 @@ class MailingService:
             return {"ok": False, "error": str(exc)}
         for s in b.steps:
             self.store.record(s.list_id, "queued", s.method, "")
+        inbox = getattr(self.app, "inbox", None)
+        if inbox is not None and any(s.archive_old or s.filter_new for s in b.steps):
+            inbox.stop_flag.clear()            # a fresh, approved batch: an earlier Stop doesn't carry over
         threading.Thread(target=self.unsub.run, args=(b,), name="mailing-unsub", daemon=True).start()
         return {"ok": True, "batch": b.public(with_token=False)}
 
@@ -178,6 +237,18 @@ class MailingService:
 
     def stop(self) -> None:
         self.unsub.stop()
+        inbox = getattr(self.app, "inbox", None)
+        if inbox is not None:
+            inbox.stop()
+
+    def _after_unsub(self, s: Step, status: str) -> str:
+        """For a step the owner approved with "Also archive their old emails" / "filter new ones"."""
+        inbox = getattr(self.app, "inbox", None)
+        row = self.store.get(s.list_id) or {}
+        if inbox is None or not row:
+            return ""
+        return inbox.tidy_list(s.account, row.get("sender_email", ""), row.get("list_id", ""),
+                               archive=s.archive_old, filter_new=s.filter_new)
 
     def _draft(self, s: Step) -> str:
         """mailto: a real draft in the account the list writes to, registered with the email approval gate."""
@@ -206,6 +277,11 @@ class MailingService:
 
     def _web_result(self, task_id: str, stopped: Callable[[], bool], timeout_s: float = 180.0) -> tuple[str, str, str]:
         return self.app.automation.wait_unsubscribe(task_id, stopped, timeout_s)
+
+
+def skip_reason(row: dict) -> str:
+    """'banking' / 'instagram' for a list the owner handles themselves (automation/limits.sender_limit)."""
+    return sender_limit(row.get("sender_email", ""), row.get("sender", ""), row.get("list_id", ""))
 
 
 def _with_deadline(fn: Callable[[], list], timeout_s: float) -> list:

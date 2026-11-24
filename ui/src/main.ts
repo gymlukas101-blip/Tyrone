@@ -23,6 +23,7 @@ import { initToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, computerEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import { initMailing, mailingEvent } from "./mailinglists";
+import { inboxEvent, initInbox } from "./inboxcleanup";
 import * as motion from "./motion";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
@@ -706,6 +707,9 @@ function onEvent(name: string, p: any) {
     case "mailing_review": mailingEvent(name, p); notifySound(); break;      // Monkey pre-selected lists: your OK
     case "mailing_lists": case "mailing_scan": case "mailing_progress": case "mailing_item": case "mailing_done":
       mailingEvent(name, p); break;
+    case "inbox_cleanup_open": inboxEvent(name, p); notifySound(); break;   // Monkey made a cleanup plan: your OK
+    case "inbox_permission": inboxEvent(name, p); mailingEvent(name, p); break;
+    case "inbox_plan": case "inbox_progress": case "inbox_done": case "inbox_undone": inboxEvent(name, p); break;
     case "wake": addMsg("sys", "👂 Hey Monkey"); break;
     case "heard": if (!p.text) { addMsg("sys", "Didn't catch that."); pop("❓ Didn't catch that"); } break;
     case "error": addMsg("sys", "⚠ " + p.message).classList.add("m-alert"); setState("idle"); flash("bad"); shake($("#stateLabel")); break;
@@ -1369,7 +1373,8 @@ function googleSetupGuide() {
       h("li", {}, a("https://console.cloud.google.com/apis/credentials/consent", "OAuth consent screen"), ": External → fill the app name and your email."),
       h("li", {}, a("https://console.cloud.google.com/auth/audience", "Audience"), " → Publish app → Confirm. Monkey is only for you, so Google doesn't need to review it, and this keeps you signed in (in Testing mode Google signs you out every 7 days). Prefer Testing? Add your Gmail under Test users instead, or Google shows “Access blocked”."),
       h("li", {}, a("https://console.cloud.google.com/apis/credentials", "Credentials"), " → Create credentials → OAuth client ID → Application type: Desktop app → Create → Download JSON."),
-      h("li", {}, "Back here: Step 1 → Choose file… (the client_secret_….json you just downloaded), then Sign in with Google. On “Google hasn't verified this app”, click Advanced → Go to Monkey (it's your own app), then allow Gmail and Calendar.")),
+      h("li", {}, "Back here: Step 1 → Choose file… (the client_secret_….json you just downloaded), then Sign in with Google. On “Google hasn't verified this app”, click Advanced → Go to Monkey (it's your own app), then allow Gmail and Calendar."),
+      h("li", {}, "Only for inbox cleanup (optional, later): ", a("https://console.cloud.google.com/auth/scopes", "Data access"), " → Add or remove scopes → tick …/auth/gmail.modify (and …/auth/gmail.settings.basic if you want “skip the inbox” filters) → Update → Save. Monkey asks you to allow it per inbox the first time you clean one up; it only archives and labels, never deletes or sends.")),
     h("p", { class: "help" }, "Only need your class schedule? Skip all this and use the Calendar link above."));
 }
 
@@ -1861,6 +1866,7 @@ async function bootOverlay() {
   await restoreTranscript();
   initComputer(api);
   initMailing(api);
+  initInbox(api);
   $("#stage").append(controlBanner());
   $("#tasksBtn").addEventListener("click", () => void openTasks());
   initToday(api, $("#side"), $("#cards"));

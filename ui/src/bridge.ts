@@ -5,8 +5,9 @@ import type { Todo, TodoSettings, TodoStep } from "./todo";
 import type { PhoneStatus, ReminderChannels } from "./reminders";
 import { demoScreenTimeApi, type ScreenTimeApi } from "./screentime";
 import type { MailingApi } from "./mailinglists";
+import type { InboxApi } from "./inboxcleanup";
 import type { TaskTemplate } from "./tasktemplates";
-import { demoGeneralTask, demoMailingApi } from "./demo-taskhelper";
+import { demoGeneralTask, demoInboxApi, demoMailingApi } from "./demo-taskhelper";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
 /** One connected inbox (Settings → Accounts). The address is only ever shown on this PC's screen. */
@@ -182,6 +183,17 @@ export interface Api extends ScreenTimeApi {
   mailing_keep: MailingApi["mailing_keep"];
   mailing_stop: MailingApi["mailing_stop"];
   mailing_open: MailingApi["mailing_open"];
+  // inbox cleanup (monkey/inbox): see InboxApi in inboxcleanup.ts
+  inbox_state: InboxApi["inbox_state"];
+  inbox_plan: InboxApi["inbox_plan"];
+  inbox_approve: InboxApi["inbox_approve"];
+  inbox_cancel: InboxApi["inbox_cancel"];
+  inbox_stop: InboxApi["inbox_stop"];
+  inbox_undo: InboxApi["inbox_undo"];
+  inbox_allow: InboxApi["inbox_allow"];
+  inbox_allow_cancel: InboxApi["inbox_allow_cancel"];
+  /** What a goal typed in the Tasks box becomes: a Monkey panel, a template, or a refusal (hard limits). */
+  automation_route?(objective: string): Promise<{ ok: boolean; panel: string; template: string; refusal: string }>;
 }
 
 export interface AutoTask {
@@ -415,6 +427,7 @@ function mockApi(): Api {
     async open_memory_folder() {},
     ...demoAutomation(emit, later),
     ...demoMailingApi(emit, later),
+    ...demoInboxApi(emit, later),
     async memory_search(q: string) {
       return { ok: true, hits: q ? [
         { kind: "fact", ref: "f1a2b3c4", text: "Comet Quest ranked mode ships before survival (demo)", date: "2026-11-18", source: "projects.md", status: "current", score: -2, sensitive: false },
