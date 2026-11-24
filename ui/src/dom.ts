@@ -41,7 +41,8 @@ export function setToastSound(fn: typeof toastSound) { toastSound = fn; }
 export function toast(text: string, ms?: number) {
   if (text.startsWith("⚠")) toastSound?.("ui_error", 0.7);
   else if (text.startsWith("✓")) toastSound?.("check", 0.8);
-  const t = h("div", { class: "toast" }, text);
+  // "⚠" problems appear at once (no entrance) and then wobble, like every other error (docs/ui/MOTION.md)
+  const t = h("div", { class: text.startsWith("⚠") ? "toast m-now" : "toast" }, text);
   // A modal <dialog> (Settings) sits on the browser's top layer, above everything in <body>. Put the toast inside
   // the open dialog so messages shown while Settings is open are actually visible.
   const host = (Array.from(document.querySelectorAll("dialog[open]:not([data-m-closing])")).pop() as HTMLElement | undefined) ?? document.body;

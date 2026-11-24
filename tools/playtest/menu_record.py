@@ -4,10 +4,11 @@ Drives the built UI in demo mode through scripted scenarios and records it with 
 Playwright video, which needs its own ffmpeg build); the system `ffmpeg` turns the frames into an MP4 and Pillow
 makes a filmstrip per step (frames at fixed times after the click, labelled in ms).
 
-    python -m tools.playtest.menu_record --dist ui/dist --out /tmp/menu-rec/after [--scenario menus|slow|error|narrow|all]
+    python -m tools.playtest.menu_record --dist ui/dist --out /tmp/menu-rec/after [--scenario menus|pops|slow|error|narrow|all]
 
 Scenarios: `menus` (Settings with a section jump and Escape, Tasks → Mailing lists hand-over, Today with a tab switch,
-To-do and Homework cards), `slow` (`&slow=1600`: the same menus loading slowly, plus Check everything), `error`
+To-do and Homework cards), `pops` (toasts stacking and leaving, an error toast, chat bubbles, a card, to-do rows added
+and deleted, a button hover and press), `slow` (`&slow=1600`: the same menus loading slowly, plus Check everything), `error`
 (`&failonce=todo_list`: the error state and Try again), `narrow` (420×760, the stacked layout). Software-rendered
 Chromium draws a few frames a second, so the recordings show the sequence, not the real smoothness.
 """
@@ -22,7 +23,7 @@ from pathlib import Path
 
 from tools.playtest.motion_perf import ROOT, _serve
 
-OFFSETS_MS = [0, 50, 100, 150, 220, 320, 480, 700]
+OFFSETS_MS = [0, 60, 120, 200, 300, 400, 550, 750]
 
 
 class Recorder:
@@ -120,6 +121,38 @@ def scenario_menus(page, rec: Recorder) -> None:
     _step(rec, page, "homework-open", lambda: page.click("#asgBtn", timeout=4000), 1000)
 
 
+def _ev(page, *events) -> None:
+    page.evaluate("evs => window.__monkeyEvents(evs)", [list(e) for e in events])
+
+
+def scenario_pops(page, rec: Recorder) -> None:
+    """The small things: toasts, chat bubbles, a card, list rows in and out, a button hover and press."""
+    _step(rec, page, "toast-in", lambda: _ev(page, ["todo_changed", {"action": "added", "item": {"id": "rt1", "text": "Buy bananas"}}]), 900)
+    _step(rec, page, "toast-stack", lambda: _ev(page, ["todo_changed", {"action": "added", "item": {"id": "rt2", "text": "Call the dentist"}}]), 900)
+    _step(rec, page, "error-at-once", lambda: _ev(page, ["error", {"message": "The jungle Wi-Fi dropped"}]), 900)
+    _step(rec, page, "chat-bubbles", lambda: _ev(page, ["user", {"text": "What's on today?"}], ["delta", {"text": "Two classes and a banana break."}],
+                                                ["done", {}]), 900)
+    _step(rec, page, "card-in", lambda: _ev(page, ["panel", {"title": "Jungle facts", "markdown": "- Monkeys love bananas\n- Vines are strong"}]), 1000)
+    _step(rec, page, "todo-open", lambda: page.click("#todoBtn", timeout=4000), 1100)
+
+    def add() -> None:
+        page.fill("#todoNew", "Water the banana tree tomorrow")
+        page.press("#todoNew", "Enter")
+    _step(rec, page, "list-add", add, 1000)
+    _step(rec, page, "list-remove", lambda: page.click(".card.todo button[aria-label^='Delete']", timeout=4000), 1000)
+
+    def press() -> None:
+        box = page.locator(".card.todo .tabs button").first.bounding_box()
+        if box:
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(350)
+            page.mouse.down()
+            page.wait_for_timeout(160)
+            page.mouse.up()
+    _step(rec, page, "button-hover-press", press, 900)
+    _step(rec, page, "toasts-leave", lambda: page.wait_for_timeout(1500), 1200)
+
+
 def scenario_slow(page, rec: Recorder) -> None:
     _step(rec, page, "slow-todo", lambda: page.click("#todoBtn", timeout=4000), 2600)
     _step(rec, page, "slow-today", lambda: page.click("#todayBtn", timeout=4000), 2600)
@@ -137,6 +170,7 @@ def scenario_error(page, rec: Recorder) -> None:
 
 SCENARIOS = {
     "menus": ("", scenario_menus, (1280, 800)),
+    "pops": ("", scenario_pops, (1280, 800)),
     "slow": ("&slow=1600&slowonly=todo_list,dashboard,get_state,health_check,automation_state,reminder_channels,screentime_state,email_accounts,update_state,brief_status,history_stats",
              scenario_slow, (1280, 800)),
     "error": ("&slow=700&slowonly=todo_list&failonce=todo_list", scenario_error, (1280, 800)),

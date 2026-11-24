@@ -1,10 +1,11 @@
 # UI motion
 
 Every UI event and interaction, what it showed before, and the motion it has now. Code: `ui/src/motion.ts`
-(helpers, levels, FLIP lists, toasts, confetti, count-up) and `ui/src/motion.css` (tokens, entrances that need no code,
-voice-state glows, button springs, level overrides); menus and loading UIs in `ui/src/menu-motion.ts`,
+(helpers, levels, FLIP lists, toasts, confetti, count-up, button jelly) and `ui/src/motion.css` (tokens, entrances that
+need no code, voice-state glows, level overrides); the cartoon springs and their tokens in `ui/src/spring.ts`
+([Cartoon springs](#cartoon-springs)); menus and loading UIs in `ui/src/menu-motion.ts`,
 `ui/src/loader.ts` and `ui/src/menu-motion.css` ([Menus](#menus), [Loading](#loading)). Tests: `ui/test/motion.test.ts`,
-`ui/test/menu-motion.test.ts`, `ui/test/loader.test.ts`, `tests/test_menu_motion_ui.py`. Perf check:
+`ui/test/spring.test.ts`, `ui/test/menu-motion.test.ts`, `ui/test/loader.test.ts`, `tests/test_menu_motion_ui.py`. Perf check:
 `python -m tools.playtest.motion_perf` (below).
 
 ## Rules
@@ -12,9 +13,12 @@ voice-state glows, button springs, level overrides); menus and loading UIs in `u
 - **Only compositor properties move:** opacity and the individual `translate` / `scale` / `rotate` properties (never
   `transform`, so motion stacks on an element's own transform: a toast's centring, a button's hover lift). Glows are
   pseudo-elements that fade with opacity.
-- **Readability first.** Text is fully opaque within **110 ms** (`--m-read`); the bounce settles after that. A
-  list cascade never delays its last item by more than 120 ms. **Errors, approvals and reminders appear at once**
-  (no fade), then wobble once.
+- **Readability first.** Text is fully opaque within **110 ms** (`--m-read`), so the wind-up is seen; the bounce
+  settles after that. At the *full* level (the owner relaxed it for the cartoon pass) a menu, card or row only has to
+  be **readable by ~0.4 s** (every scale axis within ±12 %, travel under 10 px; `ui/test/spring.test.ts`) and may keep
+  wobbling until ~0.65 s; pointer events are on from the first frame (only a *closing* menu stops taking clicks). A
+  list cascade never delays its last item by more than 180 ms (full) / 120 ms (calm). **Errors, approvals and
+  reminders appear at once** (no entrance; "⚠" toasts too), then wobble once.
 - **Nothing loops at idle** beyond what already did (vines, leaf rustle, the critical-tier shine, the conversation
   chip pulse). New loops only run during a state: the label breathes while *thinking*, a busy button breathes while
   it waits.
@@ -30,8 +34,8 @@ voice-state glows, button springs, level overrides); menus and loading UIs in `u
 
 | Level | When | What moves |
 |---|---|---|
-| `full` | Juice *Full*, or *Auto* without OS reduce-motion | everything below |
-| `calm` | Juice *Calm* | half the travel, no overshoot, half the confetti, smaller shakes |
+| `full` | Juice *Full*, or *Auto* without OS reduce-motion | cartoon springs ([below](#cartoon-springs)): wind-up, big overshoot, squash-and-stretch, tilt and wobble; exits hop then suck back; jelly buttons. Bounciness slider scales it |
+| `calm` | Juice *Calm* | half the travel, the springs scaled way down (≤ 1 % overshoot, no squash/tilt/wind-up), shorter, half the confetti, smaller shakes; no jelly buttons |
 | `min` | Juice *Minimal*, or the OS "reduce motion" setting (any Juice) | 90 ms opacity fades only: no travel, punches, shakes, wobbles, loops or confetti |
 
 `?motion=full|calm|min` in the URL overrides it (recordings, tests). `html[data-motion]` carries the level for CSS.
@@ -53,18 +57,83 @@ voice-state glows, button springs, level overrides); menus and loading UIs in `u
 | `--m-ease-snap` | `cubic-bezier(.2,1.4,.4,1)` | FLIP moves |
 | `--m-ease-out` / `--m-ease-in` | `(.2,.8,.2,1)` / `(.5,0,.75,0)` | settles / exits |
 
+## Cartoon springs
+
+The owner asked for in and out transitions that are "much more poppy/bouncy and cartoony", then for longer, more
+dramatic ones. At the *full* level every entrance, exit, list move, punch and button press is now a damped spring
+baked into multi-keyframe animations (no single cubic-bezier): `ui/src/spring.ts` solves the spring
+(x(t) = e^(−ζωt)(cos ω_d t + ζω/ω_d sin ω_d t)) and samples it every 1/60 s, drops samples a straight line already
+draws (≤ 45 keyframes), and emits WAAPI keyframes (motion.ts, menu-motion.ts) and CSS `@keyframes ms-*` (a
+`<style id="m-spring">` that motion.css's `--m-a-*` tokens point to at the full level; calm and min keep the gentle
+keyframes in motion.css). Each spring entrance:
+
+1. **Wind-up** (90 ms menus, 60 ms rows): it squashes where it starts (wider, shorter): anticipation.
+2. **Pop:** the spring lets go: it shoots out stretching taller (squash-and-stretch from the spring's velocity), passes
+   full size (menus ~1.17, rows ~1.13–1.15) and squashes as it turns round.
+3. **Wobble home:** a few damped wobbles; cards and toasts also land tilted (−7°) and rock upright; a short taper lands
+   it exactly at rest.
+
+Exits are a squat, a little hop that grows it ~5 %, then a suck-back (small, dropping, squashing, fading from 42 %):
+320 ms rows/toasts, 340 ms menus (back into the button). Buttons squash on press (wider, shorter, anchored at the bottom
+edge), jelly back past their shape on release, and bob once on hover. Only `scale` (per axis), `translate`, `rotate`
+and `opacity` move.
+
+**Tokens** (`SPRING` in `ui/src/spring.ts`, the one place to ask for "more" or "less"):
+
+| Token | Value | Meaning |
+|---|---|---|
+| `bounciness` | 85 | Settings → Look & feel → **Bounciness** default (0–100, saved as `bounciness`) |
+| `pop` | stiffness 250, damping 0.30 | dialogs, panels, cards |
+| `item` | stiffness 300, damping 0.32 | list rows, chips, chat bubbles, menu contents, tab slides |
+| `toast` | stiffness 230, damping 0.27 | toasts bouncing in from the bottom edge (from +90 px, −7°) |
+| `jelly` | stiffness 520, damping 0.20 | button release, badge / count punch |
+| `move` | stiffness 320, damping 0.42 | FLIP moves (rows gliding to a new place) |
+| `peak` | 1.18 | no scale axis ever passes this (a soft limit above 1.09, not a clip) |
+| `squash` / `windup` / `tilt` | 0.2 / 0.13 / 7° | squash-and-stretch, anticipation squash, landing tilt |
+| `exitGrow` / `press` / `punch` | 0.06 / 0.1 / 0.2 | exit pre-bounce, button press squash, punch size |
+| `ms` | pop 560 + wind-up 90, item 460 + 60, toast 560 + 60, jelly 480, move 420, exit 320, close 340 | lengths at the default Bounciness |
+| `calm` | bounce 0.1, length × 0.6 | Juice calm: the same springs scaled way down |
+
+Stiffness is k with mass 1 (ω = √k); damping is the ratio ζ at Bounciness 100; the first overshoot is
+e^(−πζ/√(1−ζ²)) of the travel. **The Bounciness slider** (full level only) scales the overshoot linearly (100 = the
+token's damping, 0 = critically damped: no overshoot, no wobble), and with it the squash, wind-up, tilt, exit hop,
+press squash and punch; it also stretches the length a little (0 = ×0.75, 85 = ×1, 100 = ×1.04). It takes effect at
+once (`setBounciness` rebuilds the CSS springs and drops the cached plans) and is saved on release. Bounciness 0 is a
+smooth ease-out; calm and min ignore the slider.
+
+| At Bounciness 85 (full) | Before | Now |
+|---|---|---|
+| Dialog / panel open | .5 → 1.035 → 1, 380 ms | wind-up squash at .45, pop to ~1.17 stretching, wobble, ~650 ms; readable by 0.4 s |
+| Dialog / panel close | → .62, 140 ms ease-in | squat, hop (+6 %), suck back to .2 into the button, 340 ms; backdrop fades over 300 ms |
+| Today pane | rise 18 px, 340 ms | rise 40 px with a springy overshoot, translate only (no scale on the whole pane); sinks 60 px after a hop |
+| Menu hand-over | 56 px slide, snap | 64 px spring slide with a tilt; the old one hops and flies out 90 px |
+| Cards | pop .84 → 1, 440 ms | ms-card: wind-up, pop from .55 with a −7° tilt that rocks upright, ~650 ms |
+| List rows, chips, details, empty states | rise 10 px, 320 ms | ms-rise / ms-chip / ms-drop: wind-up, pop from .7 (.4 chips), ~520 ms; 45 ms stagger, cap 180 |
+| Chat bubbles | slide 18 px | ms-left / ms-right: from 30 px and .75 with a slight tilt, squash on landing |
+| Toasts | rise 18 px, .8 | ms-toast: from below the bottom edge (+90 px, .6, −7°), overshoot up, wobble; leave with the hop-and-drop from their place in the stack |
+| Exits (rows, cards, toasts) | 160 ms fade + 10 px drop | 320 ms squat → hop → suck back and drop |
+| FLIP moves | 300 ms snap ease | `move` spring with a small overshoot, 420 ms |
+| Punch (counts, tabs, chosen pill) | 1 → 1.14 → .96 → 1, 300 ms | jelly: ~1.16 and back below 1, stretching, 480 ms |
+| Buttons | 70 ms press, 260 ms ease-pop release | press squash (1.085 × .915), jelly release with overshoot, a hover bob (one, 440 ms) |
+| Menu contents / header icon | from 35 % opacity, 12 px; icon .4 → 1.25 | each block pops from .82 + 14 px, 40 ms apart (cap 160); icon spins in from .3 to 1.32 × 1.2 |
+| Loaders | rows rise | rows use the ms-rise spring; the loader character + words pop in (ms-chip); the banana hop squashes harder |
+| Errors, approvals, reminders, "⚠" toasts | at once, then wobble | unchanged: at once, then wobble ("⚠" toasts used to fade in: now at once too) |
+
 ## Helpers (`motion.ts`)
 
 `enter(el, kind)`, `stagger(els)`, `leave(el)`, `removeSmoothly(el)` (ghost exit + neighbours glide), `flip(root, sel, key)`
 (lists: moves, new items, ghost exits, progress bars), `pop(el)`, `shake(el)`, `attention(el)`, `swapText(el)`,
 `countUp(el, from, to, fmt)`, `confetti(at)`, `progress(bar, from, to)`, `busy(el, on)`, `voice(state)`,
-`toastShown(t)` / `toastGone(t)` / `restack()`. Each plan is a pure function (`enterPlan`, `exitPlan`, `popPlan`, …)
-so the levels are unit-tested without a browser.
+`toastShown(t)` / `toastGone(t)` / `restack()`. Each plan is a pure function (`enterPlan`, `exitPlan`, `popPlan`,
+`movePlan`, `pressPlan`, `releasePlan`, `hoverPlan`, …) so the levels are unit-tested without a browser. The jelly
+buttons are one set of capture listeners on `document` (`installJelly`: pointerdown / up / cancel / over, keyboard
+clicks), full level only, skipping buttons with a toy-block icon.
 
 ## Inventory
 
 **93 items** (54 backend events/states, 39 user interactions and UI states), plus the menu and loading items 94–121
-[below](#menus-and-loading-inventory). "Before" is what `main` showed;
+[below](#menus-and-loading-inventory). The durations in these tables are the pre-cartoon ones; at the *full* level the
+springs in [Cartoon springs](#cartoon-springs) replace them (calm and min are as listed). "Before" is what `main` showed;
 "min" is the Juice-minimal / reduce-motion fallback.
 
 ### Backend events (Python `_emit` → `window.__monkeyEvents` → `onEvent` in `main.ts`)
@@ -187,6 +256,8 @@ so the levels are unit-tested without a browser.
 `ui/src/menu-motion.ts`. `installDialogMotion()` (once, at start-up in `main.ts`) routes every dialog's `showModal()`,
 `close()` and Escape through one helper, so all of them, including ones added later, behave the same:
 
+- (Full level since the cartoon pass: wind-up, pop to ~1.17, wobble, ~650 ms; close = hop then suck back, 340 ms. See
+  [Cartoon springs](#cartoon-springs); the numbers in the next two bullets are the calm-era originals.)
 - **Opening** grows out of the element that was just pressed (a capture listener notes the last pressed button; the
   focused button is the fallback): `transform-origin` = that button's centre relative to the dialog, clamped to its
   edges. Opacity 0→1 in 100 ms, scale .5 → 1.035 → 1 over 380 ms with an ease-out that passes full size at ~140 ms,

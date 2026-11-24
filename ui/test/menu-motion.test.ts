@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EASE, setJuice, T, type Level, type Step } from "../src/motion";
 import {
-  closeDialog, closePlan, contentPlan, finishClose, iconPlan, isClosing, isOpen, MT, noteTrigger, onCancel, onClose, openDialog,
+  closeDialog, closeMs, closePlan, contentPlan, finishClose, iconPlan, isClosing, isOpen, MT, noteTrigger, onCancel, onClose, openDialog,
   openPlan, originFor,
 } from "../src/menu-motion";
 
@@ -58,17 +58,27 @@ describe("menu plans", () => {
       expect(Number(op.opts.duration)).toBeLessThanOrEqual(T.read);
     }
     for (const s of contentPlan(lv, 9)) {
-      expect(Number(s.frames[0].opacity)).toBeGreaterThan(0.3);
+      if ("opacity" in s.frames[0]) expect(Number(s.frames[0].opacity)).toBeGreaterThan(0.3);
       expect(Number(s.opts.delay)).toBeLessThanOrEqual(MT.contentCap);
     }
   });
-  it("closing is the opening reversed and faster, with no bounce", () => {
+  it("closing is faster than opening; full hops first, then sucks back into its button", () => {
     for (const lv of LEVELS) {
       expect(longest(closePlan(lv))).toBeLessThan(longest(openPlan(lv)) + 1);
-      expect(longest(closePlan(lv))).toBeLessThanOrEqual(MT.close);
-      for (const s of closePlan(lv)) expect(s.opts.easing).toBe(EASE.in);
+      expect(longest(closePlan(lv))).toBeLessThanOrEqual(closeMs(lv));
     }
-    expect(closePlan("full")[1].frames[1].scale).toBe(".62");     // back into the button it came from
+    for (const lv of ["calm", "min"] as const) for (const s of closePlan(lv)) expect(s.opts.easing).toBe(EASE.in);
+    expect(closeMs("full")).toBe(MT.close);                         // at the default Bounciness
+    expect(closeMs("full")).toBeGreaterThanOrEqual(300);            // ~0.3–0.4 s: dramatic
+    expect(closeMs("full")).toBeLessThanOrEqual(400);
+    expect(closeMs("calm")).toBeLessThan(closeMs("full"));
+    const move = closePlan("full")[1].frames;
+    const sc = (f: Keyframe) => String(f.scale).split(" ").map(Number);
+    expect(Math.max(...move.slice(0, -1).flatMap(sc))).toBeGreaterThan(1.03);   // the pre-bounce
+    expect(Math.max(...sc(move.at(-1)!))).toBeLessThan(0.3);                    // back into the button
+    // Today (below): translate only, never a scale on the whole pane
+    expect(closePlan("full", "below").every((s) => s.frames.every((f) => f.scale == null))).toBe(true);
+    expect(openPlan("full", "below").every((s) => s.frames.every((f) => f.scale == null))).toBe(true);
   });
   it("reduced motion / Juice minimal: short fades only, no travel, scale or bounce", () => {
     for (const p of [openPlan("min"), closePlan("min"), openPlan("min", "right")]) {
@@ -78,9 +88,10 @@ describe("menu plans", () => {
     expect(contentPlan("min", 2)).toEqual([]);
     expect(iconPlan("min")).toEqual([]);
   });
-  it("calm: no overshoot", () => {
-    const scales = openPlan("calm").flatMap((s) => s.frames.map((f) => Number(f.scale ?? 1)));
-    expect(Math.max(...scales)).toBe(1);
+  it("calm: (almost) no overshoot, and shorter than full", () => {
+    const scales = openPlan("calm").flatMap((s) => s.frames.flatMap((f) => String(f.scale ?? 1).split(" ").map(Number)));
+    expect(Math.max(...scales)).toBeLessThanOrEqual(1.01);
+    expect(longest(openPlan("calm"))).toBeLessThan(longest(openPlan("full")) * 0.7);
   });
   it("grows out of the opener, clamped to the box", () => {
     const box = { left: 100, top: 100, width: 400, height: 300 };

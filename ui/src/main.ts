@@ -26,6 +26,7 @@ import { automationEvent, computerEvent, controlBanner, initComputer, initOverla
 import { initMailing, mailingEvent } from "./mailinglists";
 import { inboxEvent, initInbox } from "./inboxcleanup";
 import * as motion from "./motion";
+import { setBounciness, SPRING } from "./spring";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./game.css";
@@ -332,6 +333,7 @@ function applyChrome(st: AppState) {
 
 function applyLook(s: Record<string, any>) {
   motion.setJuice(s.juice_level);
+  setBounciness(s.bounciness);                         // the UI's springs (full Juice level); default when unset
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const juice = s.juice_level && s.juice_level !== "auto" ? s.juice_level : reduce ? "calm" : "full";
   document.documentElement.dataset.juice = juice;      // the to-do panel's icon animations follow it too
@@ -1277,7 +1279,8 @@ async function openSettings(section?: string) {
         })(), " Keep what I ask in local traces (on this PC only; lets Claude check routing on your own requests)"))),
       h("section", {}, h("h4", {}, "Look & feel"),
         h("p", { class: "help" }, "How much Monkey animates and makes noise. Auto follows Windows' “Animation effects” setting. " +
-          "Calm keeps the fun but quieter and with fewer effects; Minimal turns off idle antics and sound effects."),
+          "Calm keeps the fun but quieter and with fewer effects; Minimal turns off idle antics and sound effects. " +
+          "Bounciness sets how much menus, cards, toasts and buttons boing on Full."),
         h("div", { class: "field" }, h("span", {}, "Juice level"), (() => {
           const sel = h("select", {},
             h("option", { value: "auto" }, "Auto (follow Windows)"),
@@ -1287,6 +1290,19 @@ async function openSettings(section?: string) {
           sel.value = s.juice_level ?? "auto";
           sel.addEventListener("change", async () => { appState = await api.save_settings({ juice_level: sel.value }); applyLook(appState.settings); toast("Saved"); });
           return sel;
+        })()),
+        h("div", { class: "field", id: "bouncinessRow" }, h("span", {}, "Bounciness"), (() => {
+          // How much menus, cards, toasts and buttons overshoot and wobble (Juice Full; Calm and Minimal stay gentle)
+          const r = h("input", { type: "range", id: "bounciness", min: "0", max: "100", step: "5", value: String(s.bounciness ?? SPRING.bounciness),
+            "aria-label": "Bounciness", title: "How much menus, cards, toasts and buttons bounce (Juice: Full)" }) as HTMLInputElement;
+          const pct = h("span", { class: "meta" }, `${r.value}`);
+          r.addEventListener("input", () => { pct.textContent = r.value; setBounciness(Number(r.value)); });
+          r.addEventListener("change", async () => {
+            appState = await api.save_settings({ bounciness: Number(r.value) });
+            applyLook(appState.settings);
+            motion.pop(pct, 1.4);                              // a preview of the new bounce
+          });
+          return h("span", { class: "rangewrap" }, r, pct);
         })()),
         h("div", { class: "field", id: "voiceVolume" }, h("span", {}, "Monkey's voice volume"), (() => {
           const r = h("input", { type: "range", min: "25", max: "200", step: "5", value: String(s.voice_volume ?? 100),

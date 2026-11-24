@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   attentionPlan, confettiCount, countFrames, countUp, EASE, enter, enterPlan, exitPlan, leave, level, pop, popPlan,
-  resolveLevel, setJuice, shake, shakePlan, stagger, staggerDelay, T, type Level, type Step,
+  resolveLevel, setJuice, shake, shakePlan, stagger, staggerDelay, STAGGER_FULL, T, type Level, type Step,
 } from "../src/motion";
+
+/** Every scale axis a plan reaches ("1.1 0.9" → 1.1, 0.9). */
+const axes = (steps: Step[]) => steps.flatMap((s) => s.frames.flatMap((f) => (f.scale == null ? [] : String(f.scale).split(" ").map(Number))));
 
 const props = (steps: Step[]) => new Set(steps.flatMap((s) => s.frames.flatMap((f) => Object.keys(f).filter((k) => k !== "offset" && k !== "easing"))));
 const longest = (steps: Step[]) => Math.max(0, ...steps.map((s) => Number(s.opts.duration ?? 0) + Number(s.opts.delay ?? 0)));
@@ -64,9 +67,12 @@ describe("readability", () => {
       expect(fade.frames.at(-1)!.opacity).toBe(1);
     }
   });
-  it("a cascade never delays the last item by more than T.staggerCap", () => {
+  it("a cascade never delays the last item by more than its cap (full: the last one still readable by 0.4 s)", () => {
     expect(staggerDelay(0, "full")).toBe(0);
-    expect(staggerDelay(100, "full")).toBe(T.staggerCap);
+    expect(staggerDelay(1, "full")).toBe(STAGGER_FULL.step);
+    expect(staggerDelay(100, "full")).toBe(STAGGER_FULL.cap);
+    expect(STAGGER_FULL.cap + T.read).toBeLessThanOrEqual(400);
+    expect(staggerDelay(100, "calm")).toBe(T.staggerCap);
     expect(T.staggerCap + T.read).toBeLessThanOrEqual(250);
   });
 });
@@ -113,28 +119,52 @@ describe("Juice minimal / reduced motion: quick fades only", () => {
 });
 
 describe("calm", () => {
-  it("travels half as far and never overshoots", () => {
+  it("travels half as far, barely overshoots, doesn't squash or tilt, and is shorter than full", () => {
     const full = enterPlan("rise", "full")[1].frames[0].translate as string;
     const calm = enterPlan("rise", "calm")[1].frames[0].translate as string;
     expect(parseFloat(calm.split(" ")[1])).toBe(parseFloat(full.split(" ")[1]) / 2);
-    expect(enterPlan("pop", "calm")[1].opts.easing).toBe(EASE.out);
-    const peak = Math.max(...popPlan("calm")[0].frames.map((f) => Number(f.scale)));
+    for (const k of ["pop", "rise", "drop", "left", "right"] as const) {
+      const p = enterPlan(k, "calm");
+      expect(Math.max(...axes(p))).toBeLessThanOrEqual(1.01);
+      for (const f of p[1].frames) { const [x, y] = String(f.scale).split(" ").map(Number); expect(Math.abs(x - y)).toBeLessThan(1e-3); }
+      expect(p[1].frames.every((f) => f.rotate == null || parseFloat(String(f.rotate)) === 0)).toBe(true);
+      expect(longest(p)).toBeLessThan(longest(enterPlan(k, "full")));
+    }
+    const peak = Math.max(...axes(popPlan("calm")));
     expect(peak).toBeLessThan(1.1);
+    expect(longest(exitPlan("drop", "calm"))).toBeLessThan(longest(exitPlan("drop", "full")));
     expect(confettiCount("calm", 16)).toBe(8);
   });
 });
 
 describe("full", () => {
-  it("entrances overshoot, exits are faster than entrances and don't bounce", () => {
-    expect(enterPlan("pop", "full")[1].opts.easing).toBe(EASE.pop);
+  it("entrances overshoot (a baked spring, not one cubic-bezier) and land exactly at rest", () => {
+    const p = enterPlan("pop", "full");
+    expect(p[1].opts.easing).toBe(EASE.linear);                    // the spring is in the keyframes
+    expect(p[1].frames.length).toBeGreaterThan(8);
+    expect(Math.max(...axes(p))).toBeGreaterThan(1.1);
+    expect(p[1].frames.at(-1)).toMatchObject({ offset: 1, scale: "1 1", translate: "0px 0px" });
+  });
+  it("exits hop first (grow), then suck back small, faster than the entrance", () => {
     const exit = exitPlan("drop", "full");
     expect(longest(exit)).toBeLessThan(longest(enterPlan("pop", "full")));
-    expect(exit.every((s) => s.opts.easing === EASE.in)).toBe(true);
+    expect(longest(exit)).toBeGreaterThanOrEqual(280);             // dramatic, not a blink
+    const move = exit.find((s) => s.frames.some((f) => f.scale))!;
+    const first = move.frames.slice(0, -1).flatMap((f) => String(f.scale).split(" ").map(Number));
+    expect(Math.max(...first)).toBeGreaterThan(1.03);              // the pre-bounce
+    expect(Math.max(...String(move.frames.at(-1)!.scale).split(" ").map(Number))).toBeLessThan(0.6);
+    expect(exit.find((s) => s.frames.some((f) => "opacity" in f))!.frames.at(-1)!.opacity).toBe(0);
   });
-  it("a punch rises above 1 and settles back at exactly 1", () => {
-    const f = popPlan("full")[0].frames;
-    expect(Math.max(...f.map((x) => Number(x.scale)))).toBeGreaterThan(1.1);
-    expect(f.at(-1)!.scale).toBe("1");
+  it("a toast leaves from its place in the stack", () => {
+    const move = exitPlan("drop", "full", 50).find((s) => s.frames.some((f) => f.translate))!;
+    expect(move.frames[0].translate).toBe("0px 50px");
+    expect(exitPlan("drop", "calm", 50)[1].frames[0].translate).toBe("0px 50px");
+  });
+  it("a punch rises above 1.1, jiggles, and settles back at exactly 1", () => {
+    const p = popPlan("full");
+    expect(Math.max(...axes(p))).toBeGreaterThan(1.1);
+    expect(Math.min(...axes(p))).toBeLessThan(1);                  // the jiggle back
+    expect(p[0].frames.at(-1)!.scale).toBe("1 1");
   });
 });
 

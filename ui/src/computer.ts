@@ -307,9 +307,14 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
   dlg.classList.add("tkdlg");
   const shell = dlg;
   // slow to answer: the dialog opens at once with a skeleton of the form (loader.ts), then the form crossfades in
-  const { value: templates } = await loadInto(() => (shell.open ? null : dialogShell(shell, "🖐 Task helper")),
+  // `mine`: this call put the loading frame up. Two calls can overlap (a slow load still running when the owner
+  // opens Tasks again); the other call's shellKept() clears the shared flag, so without this a frame the owner
+  // already closed was popped open again when this call's load finished.
+  let mine = false;
+  const { value: templates } = await loadInto(() => (shell.open ? null : (mine = true, dialogShell(shell, "🖐 Task helper"))),
     async () => { await refresh(); return loadTemplates(api); }, { what: "the task helper", skel: "form", rows: 4, art: "monkey", failed: () => null });
-  if (!shellKept(shell)) return;
+  if (!shellKept(shell) || (mine && !shell.open)) return;
+  const shownNow = shell.open;                            // open now: if it's closed by the time we draw, stay closed
   const st = state!;
   if (prefill?.objective !== undefined) askText = prefill.objective;
   if (prefill?.start_url !== undefined) askUrl = prefill.start_url;
@@ -388,6 +393,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
 
   // ---- recent tasks (browser tasks and the last inbox cleanup)
   const inbox = await api.inbox_state?.().catch(() => null);
+  if (shownNow && !shell.open) return;                    // closed while that loaded: don't pop it back open
   const runs: HTMLElement[] = [];
   const last = inbox?.undo_run ?? inbox?.last_run;
   if (last) runs.push(h("li", {}, h("span", { class: "badge s-completed" }, last.status === "undone" ? "Undone" : "Done ✓"),

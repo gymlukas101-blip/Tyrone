@@ -74,6 +74,12 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - Slow menus (over 150 ms) show a skeleton in their real layout with a jungle shimmer, a banana trio / swinging vine / bobbing monkey, words that change after 3 s and 8 s, an error with Try again, then crossfade to the content: `ui/src/loader.ts`. Covers Today, Homework, To-do, Health, Lab, Settings and its sections, Check everything, Tasks and task planning, Mailing lists, Inbox cleanup, Brain, the morning brief, update checks and image generation.
 - Rules, inventory (items 94–121) and levels: `docs/ui/MOTION.md` ("Menus", "Loading"); perf and notes: `docs/IMPLEMENTATION-NOTES.md` (2026-11-24, menu motion). Try it in a browser with `?demo&slow=1500`. Not tried on the Dell.
 
+## Cartoon motion (branch `feature/cartoon-motion`, waiting for review)
+- The owner asked for in and out transitions that are "much more poppy/bouncy and cartoony", then longer and more dramatic (menus readable by ~0.4 s at Juice Full).
+- At Juice **Full** every menu, card, toast, chat bubble, list row, chip and loader now winds up (squash), pops past full size with squash-and-stretch and wobbles home (~0.65 s menus, ~0.5 s rows); cards and toasts land tilted; exits squat, hop and suck back (0.32–0.34 s); buttons squash on press, jelly on release and bob on hover. Errors, approvals and "⚠" toasts still appear at once. Calm is the same springs scaled way down; Minimal / reduce motion = fades.
+- All the bounce is tuned in one place: `SPRING` in `ui/src/spring.ts` (stiffness / damping / peak / lengths). Settings → Look & feel → **Bounciness** (0–100, default 85) scales it. Fixed on the way: Tasks closed while loading slowly popped back open (on `main` too).
+- Details, tokens and perf: `docs/ui/MOTION.md` ("Cartoon springs"), `docs/IMPLEMENTATION-NOTES.md` (2026-11-24, cartoon motion). Not tried on the Dell.
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

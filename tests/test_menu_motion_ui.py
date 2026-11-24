@@ -151,6 +151,68 @@ def test_a_slow_menu_shows_a_skeleton_then_the_content(browser):
         ctx.close()
 
 
+def test_a_slow_dialog_closed_while_it_loads_stays_closed(browser):
+    """Tasks closed with its ✕ while its content is still loading must not pop back open when the load finishes
+    (it did: openTasks awaited the inbox state after its "was it closed?" check; the longer cartoon exit made the
+    window wide enough for the perf tool to hit it)."""
+    ctx, p = _page(browser, "?demo&svg&slow=1000&slowonly=automation_state,inbox_state")
+    try:
+        # click, then ✕ 1.4 s later: after the first load (shell up, 1 s) and during the inbox one (1–2 s)
+        p.evaluate("""() => { document.getElementById('tasksBtn').click();
+          setTimeout(() => document.querySelector('#tasksDlg .taskstop button[aria-label=Close]').click(), 1400); }""")
+        p.wait_for_timeout(1600)
+        p.wait_for_function(SHUT, arg="#tasksDlg", timeout=3000)
+        p.wait_for_timeout(2000)                                          # both loads are long done
+        assert not p.evaluate("() => document.querySelector('#tasksDlg').hasAttribute('open')")
+        # and opening it again still works
+        p.click("#tasksBtn")
+        p.wait_for_function(OPEN, arg="#tasksDlg", timeout=10000)
+    finally:
+        ctx.close()
+
+
+def test_bounciness_slider_rebuilds_the_springs_and_is_saved(browser):
+    """Settings → Look & feel → Bounciness: moving it rebuilds the CSS springs at once and is saved."""
+    ctx, p = _page(browser)
+    try:
+        before = p.evaluate("() => document.getElementById('m-spring').textContent")
+        assert "@keyframes ms-pop{" in before and ":root[data-motion=\"full\"]" in before
+        p.click("#settingsBtn")
+        p.wait_for_selector("#settings #bounciness", timeout=10000)
+        p.evaluate("""() => { const r = document.getElementById('bounciness'); r.value = '20';
+          r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); }""")
+        p.wait_for_function("t => document.getElementById('m-spring').textContent !== t", arg=before, timeout=3000)
+        p.keyboard.press("Escape")
+        p.wait_for_function(SHUT, arg="#settings", timeout=3000)
+        p.click("#settingsBtn")
+        p.wait_for_selector("#settings #bounciness", timeout=10000)
+        assert p.evaluate("() => document.getElementById('bounciness').value") == "20"
+    finally:
+        ctx.close()
+
+
+def test_chunky_buttons_squash_on_press_and_jelly_on_release(browser):
+    """Full level: a pressed button squashes while held, then jellies back and stops."""
+    ctx, p = _page(browser)
+    try:
+        p.click("#todoBtn")
+        p.wait_for_selector(".card.todo .tabs button", timeout=10000)
+        p.wait_for_timeout(800)
+        btn = p.query_selector(".card.todo .tabs button")
+        btn.hover()                                                       # scrolled into view, nothing on top
+        p.wait_for_timeout(500)                                           # the hover bob is over
+        p.mouse.down()
+        assert "m-press" in btn.evaluate("b => b.getAnimations().map(a => a.id)")
+        # the tab redraws on click (a new button), so look at the pressed one as the pointer comes up
+        p.evaluate("""() => document.addEventListener('pointerup', (e) => {
+          const b = e.target.closest('button'); window.__jelly = b ? b.getAnimations().map(a => a.id) : []; }, { once: true })""")
+        p.mouse.up()
+        assert "m-jelly" in p.evaluate("() => window.__jelly"), p.evaluate("() => window.__jelly")
+        assert "m-press" not in p.evaluate("() => window.__jelly")                # the squash let go
+    finally:
+        ctx.close()
+
+
 def test_a_fast_load_shows_no_loader(browser):
     ctx, p = _page(browser)
     try:

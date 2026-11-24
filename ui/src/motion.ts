@@ -6,10 +6,15 @@
 //    on top of an element's own transform (a toast's centring, a button's hover lift) instead of fighting it.
 //  - Readability first: anything with text is fully opaque within READ_MS; the bounce continues after that but
 //    the words are already readable. Errors, approvals and reminders appear at once and only then move.
-//  - Three levels: "full" (default), "calm" (Juice calm: half the travel, no overshoot, no confetti) and
-//    "min" (Juice minimal or the OS "reduce motion": short fades only, nothing moves).
+//  - Three levels: "full" (default: cartoon springs baked from spring.ts: wind-up, big overshoot, squash-and-stretch,
+//    wobbly settle; exits hop then suck back), "calm" (Juice calm: half the travel, the springs scaled way down, half
+//    the confetti) and "min" (Juice minimal or the OS "reduce motion": short fades only, nothing moves).
+//    Settings → Look & feel → Bounciness scales the full level's springs (spring.ts setBounciness).
 //  - Nothing loops while idle, and nothing starts while the window is hidden (it just jumps to the end state).
 // The avatar has its own animation system; this file never touches #avatar.
+import {
+  bakeSamples, calmFeel, exitKeyframes, feel, onBounciness, punchSamples, SPRING, springCss, toKeyframes, type BakeIn, type Feel,
+} from "./spring";
 
 export type Juice = "auto" | "full" | "calm" | "minimal";
 export type Level = "full" | "calm" | "min";
@@ -19,10 +24,12 @@ export const T = {
   instant: 80, fast: 150, base: 240, slow: 400, celebrate: 900,
   read: 110,          // text is fully opaque by then
   fade: 90,           // the whole animation in "min"
-  stagger: 30,        // between list items
-  staggerCap: 120,    // a cascade never delays the last item by more than this
-  exit: 160,          // exits are quicker than entrances and never bounce
+  stagger: 30,        // between list items (calm; full: STAGGER_FULL)
+  staggerCap: 120,    // a cascade never delays the last item by more than this (calm; full: STAGGER_FULL)
+  exit: 160,          // calm exits (full: spring.ts SPRING.ms.exit, a hop then a suck-back)
 };
+/** Full level: each child of a cascade pops a beat after the one before (the springs are longer there). */
+export const STAGGER_FULL = { step: 45, cap: 180 };
 export const EASE = {
   out: "cubic-bezier(.2, .8, .2, 1)",
   in: "cubic-bezier(.5, 0, .75, 0)",
@@ -63,51 +70,96 @@ export function setJuice(j: string | undefined) { juice = j || "auto"; refresh()
 
 // ------------------------------------------------------------------ plans (pure: what each animation does)
 const amp = (lv: Level) => (lv === "calm" ? 0.5 : 1);
+const feelFor = (lv: Level): Feel => (lv === "calm" ? calmFeel() : feel());
 
-/** The keyframes for an entrance. Opacity reaches 1 by T.read; motion may settle later. */
+/** Where each entrance kind starts (full level); calm travels half as far and doesn't tilt. */
+const ENTER_FROM: Record<Exclude<Enter, "fade">, Pick<BakeIn, "scale" | "x" | "y" | "rotate">> = {
+  pop: { scale: 0.55, y: 12 },
+  rise: { scale: 0.7, y: 16 },
+  drop: { scale: 0.8, y: -16 },
+  left: { scale: 0.75, x: -30, rotate: -1 },
+  right: { scale: 0.75, x: 30, rotate: 1 },
+};
+
+// Baked springs are cached per kind/level and dropped when the Bounciness slider moves.
+const baked = new Map<string, { frames: Keyframe[]; duration: number }>();
+onBounciness(() => baked.clear());
+function bakeOnce(key: string, make: () => { frames: Keyframe[]; duration: number }) {
+  let b = baked.get(key);
+  if (!b) { b = make(); baked.set(key, b); }
+  return b;
+}
+
+/** The keyframes for an entrance. Opacity reaches 1 by T.read (so the wind-up is seen); the spring settles later. */
 export function enterPlan(kind: Enter, lv: Level, delay = 0): Step[] {
   const fill: FillMode = "backwards";
   if (lv === "min" || kind === "fade") {
     return [{ frames: [{ opacity: 0 }, { opacity: 1 }], opts: { duration: lv === "min" ? T.fade : T.read, delay: lv === "min" ? 0 : delay, easing: EASE.linear, fill } }];
   }
-  const a = amp(lv);
-  const ease = lv === "calm" ? EASE.out : EASE.pop;
-  const dur = lv === "calm" ? T.base : 320;
-  const px = (n: number) => `${Math.round(n * a)}px`;
-  const move: Record<Exclude<Enter, "fade">, Frames> = {
-    pop: [{ scale: `${1 - 0.18 * a}`, translate: `0 ${px(8)}` }, { scale: "1", translate: "0 0" }],
-    rise: [{ translate: `0 ${px(10)}` }, { translate: "0 0" }],
-    drop: [{ translate: `0 ${px(-12)}` }, { translate: "0 0" }],
-    left: [{ translate: `${px(-18)} 0` }, { translate: "0 0" }],
-    right: [{ translate: `${px(18)} 0` }, { translate: "0 0" }],
-  };
+  const { frames, duration } = bakeOnce(`e:${kind}:${lv}`, () => {
+    const a = amp(lv), f = feelFor(lv), from = ENTER_FROM[kind];
+    const { samples, duration } = bakeSamples({
+      spring: SPRING.item, feel: f, ms: SPRING.ms.item, windupMs: SPRING.ms.windupItem,
+      scale: 1 - (1 - (from.scale ?? 1)) * a, x: (from.x ?? 0) * a, y: (from.y ?? 0) * a, rotate: (from.rotate ?? 0) * f.tilt * 0.4,
+    });
+    return { frames: toKeyframes(samples, { translate: true }), duration };
+  });
   return [
     { frames: [{ opacity: 0 }, { opacity: 1 }], opts: { duration: T.read, delay, easing: EASE.linear, fill } },
-    { frames: move[kind], opts: { duration: dur, delay, easing: ease, fill } },
+    { frames, opts: { duration, delay, easing: EASE.linear, fill } },
   ];
 }
 
-export function exitPlan(kind: Exit, lv: Level): Step[] {
-  const dur = lv === "min" ? T.fade : T.exit;
-  const fade: Step = { frames: [{ opacity: 1 }, { opacity: 0 }], opts: { duration: dur, easing: EASE.in, fill: "forwards" } };
-  if (lv === "min" || kind === "fade") return [fade];
-  const a = amp(lv);
-  const to: Record<Exclude<Exit, "fade">, Keyframe> = {
-    drop: { translate: `0 ${Math.round(10 * a)}px`, scale: `${1 - 0.04 * a}` },
-    shrink: { scale: `${1 - 0.12 * a}` },
-    left: { translate: `${Math.round(-40 * a)}px 0` },
-    right: { translate: `${Math.round(40 * a)}px 0` },
-  };
-  return [fade, { frames: [{ translate: "0 0", scale: "1" }, to[kind]], opts: { duration: dur, easing: EASE.in, fill: "forwards" } }];
+/** How long an exit takes at a level (full: the hop-and-suck-back; faster than any entrance). */
+export function exitMs(lv: Level = current): number {
+  return lv === "min" ? T.fade : lv === "calm" ? T.exit : Math.round(SPRING.ms.exit * feel().durScale);
 }
 
-/** A one-shot scale punch: confirms ("saved", a choice, a count that changed). Nothing in "min". */
+/** An exit. Full: a squat, a little hop that grows it, then it sucks back small and drops (or flies to the side).
+ *  `baseY` keeps a toast's place in the stack while it leaves. */
+export function exitPlan(kind: Exit, lv: Level, baseY = 0): Step[] {
+  const dur = exitMs(lv);
+  const fade: Step = { frames: [{ opacity: 1 }, { opacity: 0 }], opts: { duration: dur, easing: EASE.in, fill: "forwards" } };
+  if (lv === "min" || kind === "fade") return [fade];
+  if (lv === "calm") {
+    const a = amp(lv);
+    const to: Record<Exclude<Exit, "fade">, Keyframe> = {
+      drop: { translate: `0px ${Math.round(10 * a) + baseY}px`, scale: `${1 - 0.04 * a}` },
+      shrink: { translate: `0px ${baseY}px`, scale: `${1 - 0.12 * a}` },
+      left: { translate: `${Math.round(-40 * a)}px ${baseY}px` },
+      right: { translate: `${Math.round(40 * a)}px ${baseY}px` },
+    };
+    return [fade, { frames: [{ translate: `0px ${baseY}px`, scale: "1" }, to[kind]], opts: { duration: dur, easing: EASE.in, fill: "forwards" } }];
+  }
+  const f = feel();
+  const end: Record<Exclude<Exit, "fade">, { to: number; x?: number; y?: number; rotate?: number }> = {
+    drop: { to: 0.45, y: 22, rotate: f.tilt * 0.6 },
+    shrink: { to: 0.3, y: 8 },
+    left: { to: 0.7, x: -70, rotate: -f.tilt },
+    right: { to: 0.7, x: 70, rotate: f.tilt },
+  };
+  const k = exitKeyframes({ feel: f, ms: SPRING.ms.exit, baseY, ...end[kind] });
+  return [{ frames: k.fade, opts: { duration: k.duration, fill: "forwards" } }, { frames: k.move, opts: { duration: k.duration, fill: "forwards" } }];
+}
+
+/** A one-shot punch: confirms ("saved", a choice, a count that changed). Full: a jelly jump; nothing in "min". */
 export function popPlan(lv: Level, strength = 1): Step[] {
   if (lv === "min") return [];
   if (lv === "calm") return [{ frames: [{ scale: "1" }, { scale: `${1 + 0.05 * strength}` }, { scale: "1" }], opts: { duration: T.base, easing: EASE.out } }];
-  const up = 1 + 0.14 * strength, under = 1 - 0.04 * strength;
-  return [{ frames: [{ scale: "1" }, { scale: `${up}`, offset: 0.35 }, { scale: `${under}`, offset: 0.7 }, { scale: "1" }],
-            opts: { duration: 300, easing: EASE.out } }];
+  const { frames, duration } = bakeOnce(`p:${strength}`, () => {
+    const { samples, duration } = punchSamples(strength, feel());
+    return { frames: toKeyframes(samples, { translate: false, rotate: false }), duration };
+  });
+  return [{ frames, opts: { duration, easing: EASE.linear } }];
+}
+
+/** A list row gliding to its new place (FLIP): a spring that overshoots a little and settles. */
+export function movePlan(dx: number, dy: number, lv: Level): Step[] {
+  if (lv === "min") return [];
+  if (lv === "calm") return [{ frames: [{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], opts: { duration: T.base, easing: EASE.out } }];
+  const f = feel();
+  const { samples, duration } = bakeSamples({ spring: SPRING.move, feel: { ...f, squash: f.squash * 0.25, windup: 0 }, ms: SPRING.ms.move, x: dx, y: dy });
+  return [{ frames: toKeyframes(samples, { translate: true, rotate: false }), opts: { duration, easing: EASE.linear } }];
 }
 
 /** A short horizontal shake ("no", an error). Nothing in "min" (the colour change carries it). */
@@ -139,7 +191,8 @@ export function countFrames(from: number, to: number, ms: number, hz = 15): numb
 }
 
 /** Stagger delay for the i-th item of a cascade (never more than T.staggerCap in total; none in "min"). */
-export const staggerDelay = (i: number, lv: Level, step = T.stagger) => (lv === "min" ? 0 : Math.min(i * step, T.staggerCap));
+export const staggerDelay = (i: number, lv: Level, step = T.stagger) =>
+  (lv === "min" ? 0 : lv === "full" ? Math.min(i * step * (STAGGER_FULL.step / T.stagger), STAGGER_FULL.cap) : Math.min(i * step, T.staggerCap));
 
 /** How many confetti bits a celebration gets at each level. */
 export const confettiCount = (lv: Level, n = 16) => (lv === "full" ? n : lv === "calm" ? Math.ceil(n / 2) : 0);
@@ -169,7 +222,7 @@ export function stagger(els: Iterable<Element>, kind: Enter = "rise", step = T.s
 }
 
 /** Animate out, then call `done` (default: remove the element). The element stops taking clicks at once. */
-export function leave(el: HTMLElement | null | undefined, kind: Exit = "drop", done?: () => void) {
+export function leave(el: HTMLElement | null | undefined, kind: Exit = "drop", done?: () => void, baseY = 0) {
   if (!el || el.dataset.leaving) return;
   const finish = done ?? (() => el.remove());
   if (!el.isConnected) { finish(); return; }
@@ -177,12 +230,12 @@ export function leave(el: HTMLElement | null | undefined, kind: Exit = "drop", d
   el.setAttribute("aria-hidden", "true");
   el.inert = true;
   el.style.pointerEvents = "none";
-  const anims = run(el, exitPlan(kind, current));
+  const anims = run(el, exitPlan(kind, current, baseY));
   if (!anims.length) { finish(); return; }
   let called = false;
   const once = () => { if (!called) { called = true; finish(); } };
   anims[0].finished.then(once, once);
-  setTimeout(once, T.exit + 120);                         // never stuck on screen if the animation is cancelled
+  setTimeout(once, exitMs() + 120);                       // never stuck on screen if the animation is cancelled
 }
 
 /** A fixed, click-through layer for ghosts and confetti (aria-hidden, above the page, below modal dialogs). */
@@ -211,7 +264,7 @@ function ghostAt(node: HTMLElement, r: DOMRect, kind: Exit) {
   const a = run(g, exitPlan(kind, current));
   const rm = () => g.remove();
   if (a.length) a[0].finished.then(rm, rm); else rm();
-  setTimeout(rm, T.exit + 200);
+  setTimeout(rm, exitMs() + 200);
 }
 
 /** Remove an item from a list smoothly: it animates out from where it was and its neighbours glide into place. */
@@ -287,8 +340,7 @@ function playFlip(root: Element, selector: string, key: (el: HTMLElement) => unk
     const r = el.getBoundingClientRect();
     const dx = b.rect.left - r.left, dy = b.rect.top - r.top;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-      const a = run(el, [{ frames: [{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }],
-                           opts: { duration: current === "calm" ? T.base : 300, easing: current === "calm" ? EASE.out : EASE.snap } }]);
+      const a = run(el, movePlan(dx, dy, current));
       a.forEach((x) => { x.id = "m-flip"; });
     }
     const bar = el.querySelector<HTMLElement>(":scope > .prio");
@@ -399,7 +451,7 @@ function restackSoon(host: Element) {
 /** Call after a toast is appended: stacks it with the others and gives alerts a "look here" once they're shown. */
 export function toastShown(t: HTMLElement) {
   const host = t.parentElement ?? document.body;
-  if (t.getAttribute("role") === "alert") {
+  if (t.getAttribute("role") === "alert" || t.classList.contains("m-now")) {
     // an alert lands in its final place at once (it's never slid in), then wobbles
     t.style.transition = "none";
     restack(host);
@@ -410,12 +462,91 @@ export function toastShown(t: HTMLElement) {
 /** Remove a toast with a quick exit, then let the rest of the stack settle. */
 export function toastGone(t: HTMLElement) {
   const host = t.parentElement;
-  leave(t, "drop", () => { t.remove(); if (host) restackSoon(host); });
+  const stack = parseFloat(t.style.getPropertyValue("--m-stack")) || 0;      // leave from its place in the stack
+  leave(t, "drop", () => { t.remove(); if (host) restackSoon(host); }, stack);
+}
+
+// ------------------------------------------------------------------ buttons: jelly press, hover bob (full only)
+/** The chunky buttons that squash and jelly. Buttons wearing a toy-block icon (.bi) are left to the icon's own clips. */
+export const JELLY = "#send, .primary, .ghost, .draft .send, #importance button, .tabs button, .star, .opt, .card .close, header .icon, #mic, .m-retry";
+const jellyTarget = (t: EventTarget | null): HTMLElement | null => {
+  const b = (t as Element | null)?.closest?.(JELLY) as HTMLElement | null;
+  if (!b || (b as HTMLButtonElement).disabled || b.querySelector(":scope > .bi") || current !== "full" || hidden()) return null;
+  return b;
+};
+/** The squash while a button is held: wider and shorter, anchored on its bottom edge. */
+export function pressPlan(f: Feel = feel()): Step[] {
+  const a = SPRING.press * f.b;
+  return [{ frames: [{ scale: "1 1" }, { scale: `${1 + a} ${1 - a}` }], opts: { duration: 90, easing: EASE.out, fill: "forwards" } }];
+}
+/** Let go: it springs back past its shape (taller, narrower) and jiggles home. `held` = how far the squash got (0..1). */
+export function releasePlan(held = 1, f: Feel = feel()): Step[] {
+  const a = SPRING.press * f.b * Math.max(0, Math.min(1, held));
+  if (a <= 0.001) return [];
+  const { samples, duration } = bakeSamples({ spring: SPRING.jelly, feel: f, ms: SPRING.ms.jelly, jelly: a });
+  return [{ frames: toKeyframes(samples, { translate: false, rotate: false }), opts: { duration, easing: EASE.linear } }];
+}
+/** Pointer over a button: one little bob (not a loop). */
+export function hoverPlan(f: Feel = feel()): Step[] {
+  const h = (4 * f.b) / (SPRING.bounciness / 100);
+  if (h < 0.5) return [];
+  return [{ frames: [{ translate: "0 0" }, { translate: `0 ${-h}px`, offset: 0.3 }, { translate: `0 ${h * 0.25}px`, offset: 0.6 },
+                     { translate: `0 ${-h * 0.3}px`, offset: 0.8 }, { translate: "0 0" }], opts: { duration: 440, easing: EASE.out } }];
+}
+function installJelly() {
+  let held: { el: HTMLElement; anim: Animation | null; at: number } | null = null;
+  const bobbed = new WeakMap<Element, number>();
+  const anchor = (b: HTMLElement) => { if (!b.style.transformOrigin) b.style.transformOrigin = "50% 100%"; };
+  const release = () => {
+    if (!held) return;
+    const { el, anim, at } = held;
+    held = null;
+    const got = Math.min(1, (performance.now() - at) / 90);
+    try { anim?.cancel(); } catch { /* gone */ }
+    run(el, releasePlan(got)).forEach((x) => { x.id = "m-jelly"; });
+  };
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const b = jellyTarget(e.target);
+    if (!b) return;
+    release();
+    anchor(b);
+    b.getAnimations?.().forEach((x) => { if (x.id === "m-jelly" || x.id === "m-hop") x.cancel(); });
+    const anim = run(b, pressPlan())[0] ?? null;
+    if (anim) anim.id = "m-press";
+    held = { el: b, anim, at: performance.now() };
+  }, true);
+  document.addEventListener("pointerup", release, true);
+  document.addEventListener("pointercancel", release, true);
+  // keyboard (Enter / Space): a click with no pointer gets a full jelly
+  document.addEventListener("click", (e) => {
+    if (e.detail !== 0) return;
+    const b = jellyTarget(e.target);
+    if (b) { anchor(b); run(b, releasePlan(1)).forEach((x) => { x.id = "m-jelly"; }); }
+  }, true);
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType !== "mouse" || held) return;
+    const b = jellyTarget(e.target);
+    if (!b || b.contains(e.relatedTarget as Node | null)) return;
+    const now = performance.now();
+    if (now - (bobbed.get(b) ?? -1e9) < 600) return;
+    bobbed.set(b, now);
+    run(b, hoverPlan()).forEach((x) => { x.id = "m-hop"; });
+  }, true);
 }
 
 // ------------------------------------------------------------------ boot
+/** The springs motion.css uses (@keyframes ms-*), baked from spring.ts; rebuilt when the Bounciness slider moves. */
+function installSpringCss() {
+  let st = document.getElementById("m-spring") as HTMLStyleElement | null;
+  if (!st) { st = document.createElement("style"); st.id = "m-spring"; document.head.append(st); }
+  st.textContent = springCss();
+}
 if (hasDom) {
   refresh();
+  installSpringCss();
+  onBounciness(installSpringCss);
+  installJelly();
   try { matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", refresh); } catch { /* old engine */ }
   // Hidden window (tray, minimised): pause the CSS loops (vines, shine, pulses) and skip new motion; finish this
   // file's one-shots so nothing is left half-way when it comes back. Done here rather than with a CSS rule on

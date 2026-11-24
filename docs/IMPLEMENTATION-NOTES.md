@@ -939,3 +939,74 @@ menus end open/closed with focus back, Escape/rapid toggling/hand-over never stu
 content in the same card, a fast load shows no loader, error + Try again, reduced motion holds still).
 `tests/test_task_helper_ui.py` now waits for the Tasks dialog's hand-over exit instead of asserting it hidden at once.
 Not tried on the Dell.
+
+## 2026-11-24: cartoon motion (branch `feature/cartoon-motion`)
+
+**Asked:** "make the in and out transitions for the UI much more poppy/bouncy and cartoony"; then "longer and more
+dramatic": menus may take ~0.4 s to become readable at the *full* Juice level (the ~150 ms rule is relaxed there only).
+
+**What:**
+- `ui/src/spring.ts` (new): all the bounce in one place. `SPRING` tokens (stiffness / damping ratio per role: pop, item,
+  toast, jelly, move; peak 1.18; squash, wind-up, tilt, exit grow, press, punch; lengths), a damped-spring solver that
+  bakes multi-keyframe animations (wind-up squash → pop with velocity-coupled squash-and-stretch → wobbly settle → a
+  taper that lands exactly at rest; thinned to ≤ 45 keyframes), the exit shape (squat, hop that grows ~5 %, suck back
+  small and drop), a punch, and `springCss()` (CSS `@keyframes ms-*` plus the full level's `--m-a-*` tokens).
+  `setBounciness()` scales overshoot (linearly, via the damping ratio), squash, wind-up, tilt, exit hop, press and
+  punch, and the length a little (0 → ×0.75, 85 → ×1, 100 → ×1.04).
+- `ui/src/motion.ts`: entrances, exits, punches and FLIP moves use the baked springs at *full* (calm: the same springs
+  scaled way down; min: fades); exits take 320 ms (hop then suck back); toasts leave from their place in the stack;
+  stagger 45 ms (cap 180) at full; jelly buttons (`installJelly`: press squash, release jelly, one hover bob; full
+  only, not on toy-block-icon buttons); the CSS springs are written to `<style id="m-spring">` and rebuilt when the
+  slider moves (the plan cache is dropped too).
+- `ui/src/motion.css` / `menu-motion.css`: every entrance goes through `--m-a-*` tokens (full → `ms-*` springs, calm/min →
+  the old keyframes); toasts bounce in from below the bottom edge with a tilt (transform-origin fixed to the toast's
+  visual bottom-centre, it was offset by its `translateX(-50%)` centring); "⚠" toasts (`m-now`) appear at once and
+  wobble like other errors; the backdrop fades out over 300 ms at full; skeleton rows spring in; the loader pops in;
+  the banana hop squashes harder; a leaving loader doesn't replay its entrance.
+- `ui/src/menu-motion.ts`: dialogs/panels wind up at the button, pop to ~1.17 and wobble (~650 ms); close = hop then
+  suck back into the button (340 ms, `closeMs()`); hand-over slides spring with a tilt; contents pop one by one (40 ms
+  apart, cap 160); the header icon spins in bigger; Today stays translate-only (no scale on the whole pane).
+- Settings → Look & feel → **Bounciness** (0–100, default 85; saved as `bounciness`, `monkey/config.py`), applied in
+  `applyLook` and live while dragging.
+- **Bug fixed on the way** (`ui/src/computer.ts` `openTasks`): Tasks closed while its slow content loaded popped back
+  open, because `openTasks` awaited the inbox state *after* its "closed meanwhile?" check (and two overlapping calls
+  shared one shell flag). It's on `main` too (a baseline perf run hit it); the longer exit made it frequent in
+  `motion_perf`'s slow-load pass. New browser test fails on `main`, passes here.
+- Recorder: `python -m tools.playtest.menu_record --scenario pops` (toasts stacking/leaving, an error, chat bubbles, a
+  card, to-do add/delete, a button hover + press); filmstrip offsets now 0–750 ms.
+
+**Readability (unit-tested, `ui/test/spring.test.ts`):** every full entrance is ≥ 0.9 opaque at 110 ms (so the wind-up
+is seen) and within ±12 % scale / 10 px travel at 400 ms; menus land in 500–750 ms; exits 280–400 ms; overshoot
+≤ 1.18 at every Bounciness; calm ≤ 1 % overshoot with no squash/tilt/wind-up and shorter; min = fades ≤ 90 ms.
+Pointer events stay on during entrances (only a closing menu stops taking clicks); Escape / double Escape / reopen
+mid-exit unchanged (`ui/test/menu-motion.test.ts`, `tests/test_menu_motion_ui.py`).
+
+**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, software rendering). The container was shared
+with other sessions (load average 8–13, one baseline run at 24–32 dropped), so run-to-run spread is large; medians
+[min–max] of 6 baseline (`origin/main` 988ab25) and 5 branch runs, the last 2+2 alternating:
+
+| | before | after |
+|---|---|---|
+| Idle main-thread CPU (ms/s) | 104 [74–144] | 98 [71–156] |
+| Animations running at idle / after menus / after slow loads / hidden | 6 / 8 / 8 / 0 | 6 / 8 / 8 / 0 (same vines, leaves, tier shine) |
+| Stream 400 deltas: CPU ms / long tasks | 1432 [1054–2763] / 0 [0–2] | 1749 [1150–3159] / 0 [0–5] |
+| Add 10 to-dos: CPU ms / long tasks | 786 [484–1448] / 1.5 [0–4] | 1141 [539–1447] / 2 [0–4] |
+| 30 mixed events: CPU ms / long tasks | 672 [441–838] / 0.5 [0–3] | 968 [553–1512] / 1 [0–5] |
+| Menus ×2: CPU ms / frames > 50 ms / long tasks | 3093 [1607–4381] / 5.5 [1–18] / 4 [0–11] | 3330 [2834–4755] / 5 [2–27] / 4 [0–14] |
+| Slow loads: CPU ms / long tasks | 5021 [3359–7969] / 2.5 [0–21] | 6404 [4195–8177] / 7 [0–19] |
+| Idle with Settings open / after menus (ms/s) | 146 / 162 | 133 / 159 |
+
+Idle is unchanged and nothing new keeps running. The bursts cost more main-thread time (longer, multi-keyframe
+animations: roughly +10–40 %); long-task counts follow the machine's load (the quietest run on each side has 0–1 per
+scenario: before-2 and after-2), so no new long task could be pinned on the change here, but this container can't
+prove its absence either. Not measured on the Dell.
+
+**Evidence** (not in the repo): before/after recordings and filmstrips (menus, pops) from
+`python -m tools.playtest.menu_record`, plus scrubbed frame strips of a toast, a card and Settings opening.
+
+**Tests:** vitest 160 (was 140: `ui/test/spring.test.ts` 18 new; `motion.test.ts` and `menu-motion.test.ts` updated to
+the cartoon behaviour: overshoot instead of "no bounce", the exit pre-bounce, calm ≤ 1 %, stagger caps);
+`tests/test_menu_motion_ui.py` 9 (was 6: slider rebuilds the springs and is saved, jelly press/release, Tasks closed
+mid-load stays closed). No browser-test waits needed extending. Browser tests under 4 parallel workers on the loaded
+container failed in different places between runs (Today/a11y/hearing timeouts); each passed when re-run alone.
+Not tried on the Dell.

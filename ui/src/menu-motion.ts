@@ -7,19 +7,29 @@
 //    exit. Escape always closes: a second Escape (or one the browser won't let us delay) closes at once.
 //  - Panels and cards (Today, To-do, Homework, Health, Lab): openFrom() / closeTo() / slideIn() do the same for
 //    elements that aren't dialogs.
-//  - Readability: text is opaque within ~110 ms and the box is at full size by ~150 ms; the overshoot and the
-//    header-icon bounce happen after that, around readable content. Only opacity and scale/translate/rotate move.
-//  - Levels follow motion.ts (full / calm / min); a hidden window skips motion (end state at once).
+//  - Full level (cartoon, spring.ts): a menu winds up (squashes) where its button is, pops out past full size,
+//    stretching as it shoots out, and wobbles home (~0.65 s); it is opaque within ~100 ms and readable by ~0.4 s.
+//    Closing: a squat and a little hop, then it sucks back into its button (~0.34 s). Pointer events stay on during
+//    the entrance (only a closing menu stops taking clicks).
+//  - Only opacity and scale/translate/rotate move. Levels follow motion.ts (full / calm / min); a hidden window skips
+//    motion (end state at once).
 import { EASE, T, hidden, level, type Level, type Step } from "./motion";
+import { bakeSamples, calmFeel, exitKeyframes, feel, SPRING, toKeyframes, type Feel } from "./spring";
 
 export const MT = {
-  open: 380,          // the springy settle (the box is readable and full size well before this ends)
-  close: 140,         // exits are faster than entrances and never bounce
+  open: 380,          // calm: the settle (full: SPRING.ms.pop + wind-up)
+  close: SPRING.ms.close,   // full exit at the default Bounciness (calm 140 ms; closeMs() has the live value)
+  calmClose: 140,
   fade: 100,          // opacity of an opening box
-  contentStagger: 22, contentCap: 66, contentDur: 220,
-  iconDelay: 70, iconDur: 480,
-  switchPx: 56,
+  contentStagger: 40, contentCap: 160, contentDur: 220,
+  iconDelay: 200, iconDur: 560,
+  switchPx: 64,
 };
+/** How long a close takes now (full follows the Bounciness slider). */
+export function closeMs(lv: Level = level()): number {
+  return lv === "min" ? T.fade : lv === "calm" ? MT.calmClose : Math.round(SPRING.ms.close * feel().durScale);
+}
+const feelFor = (lv: Level): Feel => (lv === "calm" ? calmFeel() : feel());
 
 export type From = "origin" | "right" | "left" | "below";
 
@@ -29,51 +39,74 @@ export function openPlan(lv: Level, from: From = "origin"): Step[] {
   const fill: FillMode = "backwards";
   if (lv === "min") return [{ frames: [{ opacity: 0 }, { opacity: 1 }], opts: { duration: T.fade, easing: EASE.linear, fill } }];
   const op: Step = { frames: [{ opacity: 0 }, { opacity: 1 }], opts: { duration: MT.fade, easing: EASE.linear, fill } };
-  const calm = lv === "calm";
+  const calm = lv === "calm", f = feelFor(lv), a = calm ? 0.5 : 1;
+  let baked;
   if (from === "left" || from === "right") {
-    const px = Math.round((from === "right" ? 1 : -1) * MT.switchPx * (calm ? 0.5 : 1));
-    return [op, { frames: [{ translate: `${px}px 0`, scale: calm ? "1" : ".96" }, { translate: "0 0", scale: "1" }],
-                  opts: { duration: calm ? T.base : 320, easing: calm ? EASE.out : EASE.snap, fill } }];
+    const dir = from === "right" ? 1 : -1;
+    baked = bakeSamples({ spring: SPRING.pop, feel: f, ms: SPRING.ms.pop, windupMs: SPRING.ms.windupItem,
+                          x: dir * MT.switchPx * a, scale: calm ? 1 : 0.9, rotate: dir * f.tilt * 0.5 });
+  } else if (from === "below") {
+    // a full pane (Today): translate only, no wind-up squash: scaling the whole pane is a long task on software GL
+    baked = bakeSamples({ spring: SPRING.pop, feel: { ...f, squash: 0, windup: 0 }, ms: SPRING.ms.pop, y: calm ? 8 : 40 });
+  } else {
+    // out of the button: wind up small, pop past full size, wobble home
+    baked = bakeSamples({ spring: SPRING.pop, feel: f, ms: SPRING.ms.pop, windupMs: SPRING.ms.windup, scale: calm ? 0.88 : 0.45 });
   }
-  if (from === "below") {
-    return [op, { frames: [{ translate: `0 ${calm ? 8 : 18}px` }, { translate: "0 0" }],
-                  opts: { duration: calm ? T.base : 340, easing: calm ? EASE.out : EASE.pop, fill } }];
-  }
-  if (calm) return [op, { frames: [{ scale: ".88" }, { scale: "1" }], opts: { duration: T.base, easing: EASE.out, fill } }];
-  // full: out of the button, a little past full size, settle. With this ease-out the box passes 100 % at ~140 ms.
-  return [op, { frames: [{ scale: ".5" }, { scale: "1.035", offset: 0.55 }, { scale: ".995", offset: 0.8 }, { scale: "1" }],
-                opts: { duration: MT.open, easing: EASE.out, fill } }];
+  const frames = toKeyframes(baked.samples, { translate: from !== "origin", rotate: from === "left" || from === "right" });
+  if (from === "below") for (const k of frames) delete k.scale;
+  return [op, { frames, opts: { duration: baked.duration, easing: EASE.linear, fill } }];
 }
 
-/** Closing: the opening reversed (back into the button, or out to the side when another menu takes over), faster. */
+/** Closing: back into the button (or out to the side when another menu takes over), faster than it came. Full: a
+ *  squat, a little hop that grows it, then it sucks back small. */
 export function closePlan(lv: Level, to: From = "origin"): Step[] {
   const fill: FillMode = "forwards";
-  const dur = lv === "min" ? T.fade : MT.close;
+  const dur = closeMs(lv);
   const op: Step = { frames: [{ opacity: 1 }, { opacity: 0 }], opts: { duration: dur, easing: EASE.in, fill } };
   if (lv === "min") return [op];
-  const calm = lv === "calm";
-  const end: Keyframe = to === "left" || to === "right"
-    ? { translate: `${Math.round((to === "right" ? 1 : -1) * MT.switchPx * (calm ? 0.5 : 1))}px 0`, scale: "1" }
-    : to === "below" ? { translate: `0 ${calm ? 6 : 14}px`, scale: "1" }
-    : { translate: "0 0", scale: calm ? ".92" : ".62" };
-  return [op, { frames: [{ translate: "0 0", scale: "1" }, end], opts: { duration: dur, easing: EASE.in, fill } }];
+  if (lv === "calm") {
+    const end: Keyframe = to === "left" || to === "right"
+      ? { translate: `${Math.round((to === "right" ? 1 : -1) * MT.switchPx * 0.5)}px 0`, scale: "1" }
+      : to === "below" ? { translate: "0 6px", scale: "1" }
+      : { translate: "0 0", scale: ".92" };
+    return [op, { frames: [{ translate: "0 0", scale: "1" }, end], opts: { duration: dur, easing: EASE.in, fill } }];
+  }
+  const f = feel();
+  const side = to === "left" || to === "right" ? (to === "right" ? 1 : -1) : 0;
+  const k = side
+    ? exitKeyframes({ feel: f, ms: SPRING.ms.close, to: 0.85, x: side * MT.switchPx * 1.4, rotate: side * f.tilt })
+    : to === "below"
+      ? exitKeyframes({ feel: f, ms: SPRING.ms.close, to: 1, y: 60, noScale: true })
+      : exitKeyframes({ feel: f, ms: SPRING.ms.close, to: 0.2 });
+  return [{ frames: k.fade, opts: { duration: k.duration, fill } }, { frames: k.move, opts: { duration: k.duration, fill } }];
 }
 
-/** Contents cascade in behind the box: never fully transparent, so nothing is unreadable for long. */
+/** Contents pop in behind the box, one after another: never fully transparent, so nothing is unreadable for long. */
 export function contentPlan(lv: Level, i: number): Step[] {
   if (lv === "min") return [];
-  const delay = Math.min(i * MT.contentStagger, MT.contentCap);
   const calm = lv === "calm";
-  return [{ frames: [{ opacity: 0.35, translate: `0 ${calm ? 5 : 12}px` }, { opacity: 1, translate: "0 0" }],
-            opts: { duration: calm ? 180 : MT.contentDur, delay, easing: calm ? EASE.out : EASE.pop, fill: "backwards" } }];
+  const delay = Math.min(i * (calm ? 22 : MT.contentStagger), calm ? 66 : MT.contentCap);
+  if (calm) {
+    return [{ frames: [{ opacity: 0.35, translate: "0 5px" }, { opacity: 1, translate: "0 0" }],
+              opts: { duration: 180, delay, easing: EASE.out, fill: "backwards" } }];
+  }
+  const b = bakeSamples({ spring: SPRING.item, feel: { ...feel(), windup: 0 }, ms: SPRING.ms.item, scale: 0.82, y: 14 });
+  return [
+    { frames: [{ opacity: 0.35 }, { opacity: 1 }], opts: { duration: T.read, delay, easing: EASE.linear, fill: "backwards" } },
+    { frames: toKeyframes(b.samples, { translate: true, rotate: false }), opts: { duration: b.duration, delay, easing: EASE.linear, fill: "backwards" } },
+  ];
 }
 
-/** The header icon bounces in once the box has landed (full only; calm gets a small pop). */
+/** The header icon bounces in once the box has landed (full: a spin and a big jelly; calm a small pop). */
 export function iconPlan(lv: Level): Step[] {
   if (lv === "min") return [];
-  if (lv === "calm") return [{ frames: [{ scale: "1" }, { scale: "1.08" }, { scale: "1" }], opts: { duration: T.base, delay: MT.iconDelay, easing: EASE.out } }];
+  if (lv === "calm") return [{ frames: [{ scale: "1" }, { scale: "1.08" }, { scale: "1" }], opts: { duration: T.base, delay: 70, easing: EASE.out } }];
+  const b = feel().b / (SPRING.bounciness / 100);
+  const s = (v: number) => `${Math.round((1 + (v - 1) * b) * 1000) / 1000}`;
+  const r = (v: number) => `${Math.round(v * b * 10) / 10}deg`;
   return [{ frames: [
-    { scale: ".4", rotate: "-18deg" }, { scale: "1.25", rotate: "8deg", offset: 0.45 }, { scale: ".92", rotate: "-3deg", offset: 0.72 }, { scale: "1", rotate: "0deg" },
+    { scale: s(0.3), rotate: r(-24) }, { scale: `${s(1.32)} ${s(1.2)}`, rotate: r(12), offset: 0.38 },
+    { scale: `${s(0.86)} ${s(0.94)}`, rotate: r(-6), offset: 0.6 }, { scale: s(1.06), rotate: r(3), offset: 0.8 }, { scale: "1", rotate: "0deg" },
   ], opts: { duration: MT.iconDur, delay: MT.iconDelay, easing: EASE.out, fill: "backwards" } }];
 }
 
@@ -234,7 +267,7 @@ export function closeDialog(d: Dlg, then?: () => void, rv?: string) {
   s.anims = play(d, closePlan(lv, "origin"), "mm-close");
   if (!s.anims.length) { finishClose(d); return; }
   s.anims[0].finished.then(() => finishClose(d), () => {});
-  s.timer = setTimeout(() => finishClose(d), (lv === "min" ? T.fade : MT.close) + 160);   // never stuck open
+  s.timer = setTimeout(() => finishClose(d), closeMs(lv) + 160);   // never stuck open
 }
 
 /** End a close now: the real close() (fires "close"; the cleanup runs from there). */
@@ -351,7 +384,7 @@ export function closeTo(el: HTMLElement | null | undefined, done: () => void, to
     for (const a of anims) { try { a.cancel(); } catch { /* gone */ } }
   };
   anims[0].finished.then(fin, () => {});
-  st.timer = setTimeout(fin, MT.close + 160);
+  st.timer = setTimeout(fin, closeMs() + 160);
 }
 export const panelClosing = (el: object) => panelState.has(el);
 
@@ -359,11 +392,21 @@ export const panelClosing = (el: object) => panelState.has(el);
 export function slideIn(el: Element | null | undefined, dir: "left" | "right" | "up" | "down") {
   const lv = level();
   if (!el || lv === "min") return [];
-  const a = lv === "calm" ? 0.5 : 1;
-  const px = Math.round(28 * a);
-  const from = dir === "right" ? `${px}px 0` : dir === "left" ? `${-px}px 0` : dir === "down" ? `0 ${px}px` : `0 ${-px}px`;
-  return play(el, [{ frames: [{ opacity: 0.3, translate: from }, { opacity: 1, translate: "0 0" }],
-                     opts: { duration: lv === "calm" ? 200 : 300, easing: lv === "calm" ? EASE.out : EASE.snap, fill: "backwards" } }], "mm-slide");
+  return play(el, slidePlan(lv, dir), "mm-slide");
+}
+/** Switching tabs or sections (pure): calm a short glide; full a springy slide that overshoots and squashes. */
+export function slidePlan(lv: Level, dir: "left" | "right" | "up" | "down"): Step[] {
+  if (lv === "min") return [];
+  const calm = lv === "calm";
+  const px = calm ? 14 : 40;
+  const x = dir === "right" ? px : dir === "left" ? -px : 0, y = dir === "down" ? px : dir === "up" ? -px : 0;
+  if (calm) {
+    return [{ frames: [{ opacity: 0.3, translate: `${x}px ${y}px` }, { opacity: 1, translate: "0 0" }],
+              opts: { duration: 200, easing: EASE.out, fill: "backwards" } }];
+  }
+  const b = bakeSamples({ spring: SPRING.item, feel: { ...feel(), windup: 0 }, ms: SPRING.ms.item, x, y, scale: 0.94 });
+  return [{ frames: [{ opacity: 0.3 }, { opacity: 1 }], opts: { duration: T.read, easing: EASE.linear, fill: "backwards" } },
+          { frames: toKeyframes(b.samples, { translate: true, rotate: false }), opts: { duration: b.duration, easing: EASE.linear, fill: "backwards" } }];
 }
 
 /** The window came back from the tray: the header buttons hop in, the open panel pops. Once, no loop. */
@@ -371,8 +414,12 @@ export function wake(root: ParentNode = document) {
   const lv = level();
   if (lv === "min" || hidden()) return;
   const btns = Array.from(root.querySelectorAll("#side > header > button:not([hidden])")).slice(0, 9);
-  btns.forEach((b, i) => play(b, [{ frames: [{ translate: `0 ${lv === "calm" ? 4 : 10}px`, opacity: 0.4 }, { translate: "0 0", opacity: 1 }],
-    opts: { duration: lv === "calm" ? 200 : 320, delay: Math.min(i * 25, 150), easing: lv === "calm" ? EASE.out : EASE.pop, fill: "backwards" } }], "mm-wake"));
+  const hop = lv === "calm" ? null : bakeSamples({ spring: SPRING.item, feel: feel(), ms: SPRING.ms.item, windupMs: SPRING.ms.windupItem, y: 14, scale: 0.8 });
+  btns.forEach((b, i) => play(b, hop
+    ? [{ frames: [{ opacity: 0.4 }, { opacity: 1 }], opts: { duration: T.read, delay: Math.min(i * 30, 180), easing: EASE.linear, fill: "backwards" } },
+       { frames: toKeyframes(hop.samples, { translate: true, rotate: false }), opts: { duration: hop.duration, delay: Math.min(i * 30, 180), easing: EASE.linear, fill: "backwards" } }]
+    : [{ frames: [{ translate: "0 4px", opacity: 0.4 }, { translate: "0 0", opacity: 1 }],
+         opts: { duration: 200, delay: Math.min(i * 25, 150), easing: EASE.out, fill: "backwards" } }], "mm-wake"));
   const panel = root.querySelector("#today:not([hidden]), #cards > .card:not(.folded)");
   if (panel) play(panel, [{ frames: [{ scale: lv === "calm" ? ".98" : ".95", opacity: 0.6 }, { scale: "1", opacity: 1 }],
     opts: { duration: lv === "calm" ? 200 : 320, easing: lv === "calm" ? EASE.out : EASE.pop } }], "mm-wake");

@@ -17,6 +17,7 @@ dialog[data-m-closing] { pointer-events: none; }
 dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier(.5, 0, .75, 0) forwards; }
 @keyframes mm-backdrop-out { to { opacity: 0; } }
 :root[data-motion="min"] dialog[data-m-closing]::backdrop { animation-duration: 90ms; }
+:root[data-motion="full"] dialog[data-m-closing]::backdrop { animation-duration: 300ms; }   /* the cartoon exit is ~340 ms */
 
 /* panels and cards opened by menu-motion.openFrom: their CSS entrance is replaced */
 :is(.card, #today).m-js { animation: none; }
@@ -27,7 +28,7 @@ dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier
 #m-fx-top { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0;
   border: 0; background: transparent; overflow: visible; pointer-events: none; color: inherit; }
 .m-load.m-leaving { pointer-events: none; z-index: 1; overflow: hidden; }
-.m-load.m-leaving .m-sk::after, .m-load.m-leaving :is(.m-ban, .m-vine, .m-head, .m-head-shadow) { animation: none; }
+.m-load.m-leaving .m-sk::after, .m-load.m-leaving :is(.m-ban, .m-vine, .m-head, .m-head-shadow, .m-load-top, .m-skel > *) { animation: none; }
 
 /* ---------- the loading block */
 .m-load { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 4px; min-width: 0; }
@@ -78,9 +79,12 @@ dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier
 .m-sk-sec { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line, rgba(255, 255, 255, .12)); }
 .m-sk-field { display: flex; gap: 10px; align-items: center; }
 /* a skeleton row rises in once, a few ms apart (no loop) */
-.m-skel > * { animation: m-op var(--m-read) linear backwards, m-rise var(--m-move) var(--m-ease-move) backwards;
+.m-skel > * { animation: m-op var(--m-read) linear backwards, var(--m-a-rise) backwards;
   animation-delay: calc(min(var(--i, 0), 4) * var(--m-stagger)); }
 .m-skel > .m-sk { animation: none; }
+
+/* the loader's character and words pop in once when it appears (a chip spring at full) */
+.m-load-top { animation: m-op var(--m-read) linear backwards, var(--m-a-chip) backwards; transform-origin: 0 50%; }
 
 /* ---------- the loader characters */
 .m-art { display: inline-flex; align-items: flex-end; flex: none; line-height: 0; }
@@ -91,8 +95,9 @@ dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier
   animation-delay: calc(var(--i) * 130ms); }
 @keyframes m-ban-hop {
   0%, 100% { translate: 0 0; rotate: 0deg; scale: 1; }
-  30% { translate: 0 calc(-10px * var(--m-amp)); rotate: calc(-16deg * var(--m-amp)); scale: 1; }
-  55% { translate: 0 0; rotate: calc(6deg * var(--m-amp)); scale: calc(1 + .1 * var(--m-amp)) calc(1 - .1 * var(--m-amp)); }
+  12% { translate: 0 0; scale: calc(1 + .1 * var(--m-amp)) calc(1 - .12 * var(--m-amp)); }
+  32% { translate: 0 calc(-13px * var(--m-amp)); rotate: calc(-16deg * var(--m-amp)); scale: calc(1 - .08 * var(--m-amp)) calc(1 + .14 * var(--m-amp)); }
+  55% { translate: 0 0; rotate: calc(6deg * var(--m-amp)); scale: calc(1 + .18 * var(--m-amp)) calc(1 - .18 * var(--m-amp)); }
   70% { scale: 1; rotate: 0deg; }
 }
 /* swinging vine: a monkey head on a rope, swinging from the top */
@@ -128,7 +133,7 @@ dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier
 :root[data-motion="calm"] :is(.m-ban, .m-vine, .m-head, .m-head-shadow) { animation-duration: 1.6s; }
 :root[data-motion="calm"] .m-sk::after { animation-duration: 2.2s; }
 /* min (Juice minimal / OS reduce motion): nothing moves; the skeleton breathes slowly (one opacity animation) */
-:root[data-motion="min"] :is(.m-ban, .m-vine, .m-head, .m-head-shadow, .m-load-error, .m-skel > *) { animation: none; }
+:root[data-motion="min"] :is(.m-ban, .m-vine, .m-head, .m-head-shadow, .m-load-error, .m-skel > *, .m-load-top) { animation: none; }
 :root[data-motion="min"] .m-sk::after { display: none; animation: none; }
 :root[data-motion="min"] .m-skel, :root[data-motion="min"] .m-art { animation: m-pulse 1.8s ease-in-out infinite alternate; }
 @keyframes m-pulse { to { opacity: .55; } }
