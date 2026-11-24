@@ -14,12 +14,27 @@ Kept current after each bounded step. If a run is interrupted, resume from **nex
 | source_model_sha256 | production `monkey.glb` `e9f02358` (unchanged); Tripo `8f990a33`; F3 `.blend` `295d1c8d` / `.glb` `504c4373` (approved face, immutable); approved images: `refs/approved/` (hashes in the manifest) |
 | current_stage | **Clip batches done (C3)**: all 37 V1 clips + 9 Phase C poses on the rebuilt body (both arms, articulated hands, authored hand shapes, grounded sit/lie). Next: contact fixes (arms-crossed / hand-to-head interpenetration), then the owner's review of C3 in the app |
 | last_completed_step | C1 (`PHASE_C.md`): left arm underlay sleeve (Data-Transfer fur UVs), all left-arm clumps (`part_2`, `part_18`, body) re-skinned rigidly off the bone chain (Tripo's finger weights removed), Skin-modifier articulated left hand in Tripo's fist, 9 pose clips, `elbowBend_L` corrective (Pose-Shape-Keys method) + app driver, `talk_gest_open_palms` opens the hand; brows: `brow.L/R` bones + 7 per-side morphs, richer asymmetric acting, `worried` / `focused` cues, brow beats on stressed syllables |
-| last_verified_artifact | `character_v2_workspace/eyes_e7/tripo_E7.blend` / `.glb` (C4 + E7 animatable eyes, `EYES_E7.md`); before that `character_v2_workspace/clips_c4/tripo_clips_C4.blend` / `.glb` (C3 clips + arm-contact fix, 46 animations); `clips_c4/crossed_close.png` (before/after); `renders/clips_C4_app/sheet.png` (all clips in the app, 0 errors) |
+| last_verified_artifact | `character_v2_workspace/mouth_m1/tripo_M1.blend` / `.glb` (E7 + the M1 mouth: sealed mouth bag, ivory tooth band + lower row, gums, grooved tongue, wider open shapes; `MOUTH_M1.md`); evidence `mouth_m1/M1_before_after_face.png`, `M1_before_after_mouth.png`, `M1_app_mouth_sheet.png`; before that `eyes_e7/tripo_E7.blend` / `.glb` (C4 + E7 animatable eyes, `EYES_E7.md`) and `clips_c4/tripo_clips_C4.blend` / `.glb` (46 animations) |
 | validation_command_and_result | C1: `phase_c.py` → 190 clumps re-skinned (112 + 55 + 23), 234 finger weights remapped, corrective on 3 meshes (≤ 28 mm). Fidelity vs hero B (locked camera): overall 0.886 → 0.889, forearms 0.788 → 0.836, hands 0.832 → 0.904, upper arms 0.937 → 0.931, rest ± 0.003; vs Tripo neutral 0.992 / 0.985 / 0.990. Topology: hand 100% quads, closed, 16 non-manifold edges; underlay 100% quads, 2 hidden end loops. Runtime: +1 draw call, +5.9% vertices. App (`threejs_hand_check.py`): hand_open / point / grip pose the fingers; `elbowBend_L` = 1.00 at 120°, 0 at rest; the gesture opens the hand mid-clip (f2.01 quat w 0.94 → 0.99 → 0.86); 0 page errors. `threejs_body_performance.py`: idle / listen / think / talk / idle, ratio 1.00; thinking brows browSqueeze 0.25 + browDown_R 0.15; curious cue browOuterUp_R 0.46 while talking. Vitest 50 passed (new: brow beats, cues, corrective driver); `pytest tests/test_character_v2_*.py` 16 passed |
 | known_failures | Fixed: actions renamed twice while iterating (no clips found); B1 boxer stance from V1's bent-elbow base (fixed by base-relative retarget); recording at half speed under SwiftShader (fixed by virtual time); screencast repaint frames stretching the video; narrow layout hiding the avatar at 760 px; the hero camera cropping the forearms (rejected before locking). **Open:** elbow fur clumps crumple at strong bends; mitten fists (no digits); only 5 of 37 clips; head/ear/tuft/mic springs need bones Tripo lacks; the hero B feet/hips/forearms gap (pose/perspective). **C1 fixed during the run:** `bmesh` import before `bpy`; brow bones unmapped in the region labels; sleeve poking out behind the forearm (rays slipped between clumps → per-sector fur percentiles); fingers hanging down (re-laid as a punch fist); `part_18` arm fur still on finger bones (the streak). **C1 open:** straight elbow parts the tufts; knuckle support has no IK (the fist goes below the floor); flat hand colour; right hand still the mitten |
 | next_single_action | Contact pass on `idle_impatient_tap`, `idle_knuckle_crack`, `laugh`, `idle_scratch_head` (pull the arms out from the chest/head by the bigger fist's radius: a per-clip arm offset or IK target), then a real-time app recording of an idle → fidget → emote → sleep → wake session for the owner |
 | files_changed | `tools/character_v2/{retarget,clip_sheet,threejs_body_performance,measure_character,fidelity_render,fidelity}.py` (new); `ui/src/avatar3d.ts` (expression cleanup); `docs/character_v2/{CHARACTER_DESIGN_AUTHORITY.md, STAGE3_PLAN.md, PROGRESS.md, tripo_poc_manifest.json}`; `docs/agent-lessons.md`; `tests/test_character_v2_fidelity.py` |
 | external_tool_versions | bpy 5.3.0, Mesa software EGL, Playwright Chromium + SwiftShader, system ffmpeg. No Blender GUI or MCP; no local computer shared |
+
+## Mouth M1 run (2026-11-24): verified / failed / untested
+- **VERIFIED (cloud container):**
+  - `mouth_m1.py` rebuilds the mouth on the E7 blend headless; same 62 morph names, all defaults 0, 46 clips.
+  - 0 magenta (hole) and 0 foreign pixels inside the mouth in 76 renders (19 poses × front / 3/4 / side / low), with the
+    leak pass forced to exact colours.
+  - Visible mouth 1.3–2.1× E7 in open shapes; no teeth through closed lips; 0 bag faces through the skin in 32 poses.
+  - The app: face check (speech, laugh, bigGrin, jawOpen, tongueOut, mouthO) and all 46 clips, 0 page errors. Fidelity
+    tests 5 passed, vitest 52 passed, tsc clean.
+- **FAILED and fixed:** BMesh slot reuse scrambled the new vertex order; Workbench AgX made the magenta test vacuous;
+  a skin spike in cheeksUp (front ray missed → bad fallback); bag lagging the jaw through the lower lip; F3's
+  upper-lip fold next to the corners in bigGrin/laugh. **Found, not fixed (separate task):** `eye_poses.py`'s leak test
+  has the same AgX blind spot, so the E5–E7 "0 leak pixels" claims are unverified.
+- **UNTESTED:** Windows / WebView2 / GPU frame time (+2.7k vertices, +2 draw calls); look-dev under the app's ACES
+  lighting; real TTS audio.
 
 ## Phase C run (2026-11-23): verified / failed / untested
 - **VERIFIED (cloud container):**
@@ -104,6 +119,7 @@ The cloud workspace is ephemeral. Each accepted `.blend` and GLB, plus the evide
 - [x] Strategy proof of concept: A0 direct vs C hybrid on the face. Decision: `ADR_001_tripo_strategy.md`.
 - [x] Stage 2a: eyes. E5 candidate built and verified, awaiting owner review (`EYES_E5.md`).
 - [x] Stage 2b: face. F3 integrated face, speaking and acting in the app, awaiting owner review (`FACE_F3.md`).
+- [x] Stage 2d: mouth interior M1 (mouth bag, teeth, gums, tongue, wider open shapes): candidate, awaiting owner review (`MOUTH_M1.md`).
 - [ ] Stage 2c: face sculpt pass (mouth shapes, muzzle rim weld) once F3 is approved. Gaze, sculpted shapes, lip-line texture, combination tests (speech + smile, speech + squint, wink while talking).
 - [x] Stage 3A: semantic skeleton + 5 retargeted clips in the app (B2); design authority + fidelity loop (Phase A).
 - [ ] Stage 3 (Phase C–E): clean arm/hand prototype, then the remaining 32 clips (`STAGE3_PLAN.md`).
