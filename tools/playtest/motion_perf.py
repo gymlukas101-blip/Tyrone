@@ -7,9 +7,13 @@ Drives the built UI in demo mode (no Python) and measures, for one build:
       * a long reply streams in (400 deltas, one every 16 ms),
       * 10 to-dos are added through the quick-add box (each redraws the list),
       * 30 mixed events land at once (cards, toasts, errors, memory, state changes);
-  - hidden window: whether CSS loops pause when the page reports hidden.
+  - hidden window: whether CSS loops pause when the page reports hidden;
+  - menus (docs/ui/MOTION.md "Menus"): frames and long tasks while Settings, Tasks, Today, To-do and Homework open
+    and close (Escape and ✕), idle CPU with Settings open (the backdrop), and with --menus-only just these;
+  - slow loads ("Loading"): a second page with `&slow=900` (demo delay) opens the same menus, so every loader
+    shows (skeleton, shimmer, banana trio…), then checks nothing keeps running once everything has loaded.
 
-    python -m tools.playtest.motion_perf [--dist ui/dist] [--query "?demo&svg"] [--json out.json]
+    python -m tools.playtest.motion_perf [--dist ui/dist] [--query "?demo&svg"] [--json out.json] [--menus-only]
 
 Compare two builds by running it on each dist folder. Numbers from software-rendered Chromium (the cloud
 container) are for comparing builds with each other, not Dell timings (docs/LAG-AUDIT.md).
@@ -30,6 +34,10 @@ PROBE = """() => {
   window.__mp = { frames: [], longs: [], on: false };
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (window.__mp.on) window.__mp.longs.push(e.duration); })
           .observe({ type: 'longtask', buffered: false }); } catch (e) {}
+  // loaders that appeared (loader.ts .m-load): the slow-load scenario must actually show them
+  new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes)
+    if (n.classList && n.classList.contains('m-load') && !n.classList.contains('m-leaving')) window.__mpSkel = (window.__mpSkel || 0) + 1; })
+    .observe(document.body, { childList: true, subtree: true });
   let last = performance.now();
   const tick = (t) => { if (window.__mp.on) window.__mp.frames.push(t - last); last = t; requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
@@ -84,10 +92,14 @@ def _cpu(cdp) -> float:
     return m["TaskDuration"] * 1000.0
 
 
-def _frames(page, cdp, script: str, settle_ms: int = 600) -> dict:
+def _frames(page, cdp, script, settle_ms: int = 600) -> dict:
+    """Frame gaps, long tasks and CPU while `script` runs (JS source, or a Python callable that drives the page)."""
     page.evaluate("() => { window.__mp.frames = []; window.__mp.longs = []; window.__mp.on = true; }")
     c0 = _cpu(cdp)
-    page.evaluate(script)
+    if callable(script):
+        script(page)
+    else:
+        page.evaluate(script)
     page.wait_for_timeout(settle_ms)
     cpu = _cpu(cdp) - c0
     f, longs = page.evaluate("() => { window.__mp.on = false; return [window.__mp.frames, window.__mp.longs]; }")
@@ -95,6 +107,89 @@ def _frames(page, cdp, script: str, settle_ms: int = 600) -> dict:
     pct = lambda q: round(f[min(len(f) - 1, int(q * len(f)))], 1)  # noqa: E731
     return {"main_thread_cpu_ms": round(cpu), "frames": len(f), "p50_ms": pct(0.5), "p95_ms": pct(0.95), "max_ms": round(f[-1], 1),
             "over_50ms": sum(1 for x in f if x > 50), "long_tasks": len(longs), "long_task_ms": round(sum(longs), 1)}
+
+
+RUNNING = """() => document.getAnimations().filter(a => a.playState === 'running')
+    .map(a => (a.animationName || a.id || 'anim') + '@' + ((a.effect && a.effect.target && (a.effect.target.id || a.effect.target.getAttribute('class'))) || '?'))"""
+
+
+def _menus(page) -> None:
+    """Open and close the main menus the way the owner does: header buttons, Escape, ✕, the Today toggle."""
+    gone = "() => { const d = document.querySelector('%s'); return !d || !d.hasAttribute('open'); }"
+    for _ in range(2):
+        page.click("#settingsBtn")
+        page.wait_for_selector("#settings[open] .settingsnav", timeout=15000)
+        page.wait_for_timeout(450)
+        page.keyboard.press("Escape")
+        page.wait_for_function(gone % "#settings", timeout=5000)
+        page.wait_for_timeout(150)
+        page.click("#tasksBtn")
+        page.wait_for_selector("#tasksDlg[open] .taskstop", timeout=15000)
+        page.wait_for_timeout(450)
+        page.click("#tasksDlg .taskstop button[aria-label=Close]")
+        page.wait_for_function(gone % "#tasksDlg", timeout=5000)
+        page.wait_for_timeout(150)
+        page.click("#todayBtn")
+        page.wait_for_selector("#todayPanel .focustitle", timeout=15000)
+        page.wait_for_timeout(400)
+        page.click("#todayBtn")
+        page.wait_for_function("() => document.getElementById('today').hidden", timeout=5000)
+        page.wait_for_timeout(150)
+        page.click("#todoBtn")
+        page.wait_for_selector(".card.todo .todo-body", timeout=15000)
+        page.wait_for_timeout(400)
+        page.click("#asgBtn")
+        page.wait_for_selector(".card.assign:not(.todo) .asg-body", timeout=15000)
+        page.wait_for_timeout(400)
+
+
+def measure_menus(dist: Path, query: str = "?demo&svg", idle_s: float = 5.0, slow_ms: int = 900) -> dict:
+    """The menu and slow-load scenarios (see the module docstring)."""
+    from playwright.sync_api import sync_playwright
+
+    from tools.automation_eval import browser_path
+
+    srv = _serve(dist)
+    out: dict = {}
+    try:
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path=browser_path())
+            for name, q in (("menus", query), ("slow_loads", f"{query}&slow={slow_ms}")):
+                ctx = b.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference")
+                page = ctx.new_page()
+                page.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html{q}")
+                page.wait_for_function("() => !!window.__monkeyEvents && !!window.__monkeyReady", timeout=60000)
+                page.wait_for_timeout(2500)
+                cdp = ctx.new_cdp_session(page)
+                cdp.send("Performance.enable")
+                page.evaluate(PROBE)
+                r = _frames(page, cdp, _menus, 800)
+                r["skeletons_seen"] = page.evaluate("() => window.__mpSkel || 0")
+                out[name] = r
+                if name == "menus":
+                    # idle with Settings open: what the backdrop (dim + blur) costs while nothing happens
+                    page.click("#settingsBtn")
+                    page.wait_for_selector("#settings[open] .settingsnav")
+                    page.wait_for_timeout(1000)
+                    c0 = _cpu(cdp)
+                    page.wait_for_timeout(int(idle_s * 1000))
+                    out["idle_cpu_settings_open_ms_per_s"] = round((_cpu(cdp) - c0) / idle_s, 1)
+                    page.add_style_tag(content="dialog::backdrop { backdrop-filter: none !important; }")
+                    page.wait_for_timeout(500)
+                    c0 = _cpu(cdp)
+                    page.wait_for_timeout(int(idle_s * 1000))
+                    out["idle_cpu_settings_open_no_blur_ms_per_s"] = round((_cpu(cdp) - c0) / idle_s, 1)
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(600)
+                c0 = _cpu(cdp)
+                page.wait_for_timeout(int(idle_s * 1000))
+                out[f"idle_cpu_after_{name}_ms_per_s"] = round((_cpu(cdp) - c0) / idle_s, 1)
+                out[f"running_after_{name}"] = page.evaluate(RUNNING)
+                ctx.close()
+            b.close()
+    finally:
+        srv.shutdown()
+    return out
 
 
 def measure(dist: Path, query: str = "?demo&svg", idle_s: float = 5.0, idle_only: bool = False) -> dict:
@@ -147,8 +242,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--query", default="?demo&svg")
     ap.add_argument("--json", type=Path)
     ap.add_argument("--idle-only", action="store_true", help="only the idle numbers (the 3D avatar in software rendering is slow)")
+    ap.add_argument("--menus-only", action="store_true", help="only the menu open/close and slow-load scenarios")
+    ap.add_argument("--no-menus", action="store_true", help="skip the menu and slow-load scenarios")
     a = ap.parse_args(argv)
-    res = measure(a.dist, a.query, idle_only=a.idle_only)
+    res = {} if a.menus_only else measure(a.dist, a.query, idle_only=a.idle_only)
+    if not a.idle_only and not a.no_menus:
+        res.update(measure_menus(a.dist, a.query))
     text = json.dumps(res, indent=2, ensure_ascii=False)
     print(text)
     if a.json:

@@ -7,6 +7,8 @@
 import { renderAssignments } from "./assignments";
 import { countdown, h, toast } from "./dom";
 import { pop } from "./motion";
+import { loadInto, skeleton } from "./loader";
+import { closeTo, openFrom } from "./menu-motion";
 
 type Sec = { status: string; items: any[]; note: string };
 export interface Dash { ok: boolean; sections: Record<string, Sec>; stats?: Record<string, number>; brief_day?: string | null }
@@ -33,7 +35,9 @@ let drawSeq = 0;                                 // only the latest draw may wri
 function statusLine(s: Sec | undefined) {
   if (!s) return h("p", { class: "meta" }, "Not loaded yet.");
   if (s.status === "ok" && s.items.length) return null;
-  return h("p", { class: `meta status-${s.status}` }, s.note || WHY[s.status] || s.status);
+  const line = h("p", { class: `meta status-${s.status}` }, s.note || WHY[s.status] || s.status);
+  // still coming in: a small shimmering skeleton of the tile's rows under the words (gone once it's loaded)
+  return s.status === "loading" ? h("div", { class: "tile-loading" }, line, skeleton("tile")) : line;
 }
 
 function tile(title: string, s: Sec | undefined, body: () => HTMLElement | null) {
@@ -111,12 +115,20 @@ async function draw(attempt = 0) {
   const panel = root.querySelector<HTMLElement>("#todayPanel")!;
   let content: HTMLElement;
   let d: Dash | null = null;
-  try {
+  const which = tab;
+  // Slow (over 150 ms) first draw of a tab: a skeleton in the tab's real layout, words that change if it's slow, an
+  // error with Try again; background reloads (attempt > 0) stay quiet.
+  const got = await loadInto(() => {
+    if (attempt > 0 || seq !== drawSeq || !root) return null;
+    panel.replaceChildren();
+    return panel;
+  }, async () => {
     d = await api.dashboard();
-    content = tab === "focus" ? focusPanel(d) : tab === "schedule" ? schedulePanel(d) : await homeworkPanel();
-  } catch (e) {
-    content = h("p", { class: "meta" }, "Couldn't load this right now. Try again in a moment.");
-  }
+    return which === "focus" ? focusPanel(d) : which === "schedule" ? schedulePanel(d) : await homeworkPanel();
+  }, { what: which === "focus" ? "your day" : which === "schedule" ? "your calendar" : "your homework",
+       skel: which === "focus" ? "tiles" : which === "schedule" ? "rows" : "list", art: which === "focus" ? "monkey" : "bananas",
+       failed: () => null });
+  content = got.value;
   if (seq !== drawSeq || !root) return;          // a newer tab/draw started meanwhile: don't overwrite it
   panel.setAttribute("aria-labelledby", `todayTab-${tab}`);
   panel.classList.toggle("m-quiet", attempt > 0);  // a background reload doesn't replay the entrance
@@ -165,14 +177,29 @@ export function initToday(a: TodayApi, host: HTMLElement, before: Element) {
 
 export function toggleToday(open?: boolean, returnFocus = true) {
   if (!root) return;
-  const show = open ?? root.hidden;
-  if (show === !root.hidden) return;
-  root.hidden = !show;
-  document.body.classList.toggle("today-open", show);
+  // the logical state is the button's (a closing view is still on screen for ~140 ms but already "closed")
+  const isOpen = document.getElementById("todayBtn") ? btnPressed() : !root.hidden;
+  const show = open ?? !isOpen;
+  if (show === isOpen) return;
   const btn = document.getElementById("todayBtn");
   btn?.setAttribute("aria-pressed", String(show));
-  if (show) select(tab, true);
-  else if (returnFocus) btn?.focus();
+  if (show) {
+    // opening (or reopening mid-close): pops out of the ☀ button, tabs bounce in; contents follow per tab
+    root.hidden = false;
+    document.body.classList.add("today-open");
+    openFrom(root, btn);
+    select(tab, true);
+    return;
+  }
+  // closing: shrinks back toward the button, faster, then hides; the chat comes back when it's gone
+  if (returnFocus) btn?.focus();
+  const el = root;
+  closeTo(el, () => {
+    if (btn?.getAttribute("aria-pressed") === "true") return;        // reopened meanwhile
+    el.hidden = true;
+    document.body.classList.remove("today-open");
+  });
 }
 
-export function todayOpen() { return !!root && !root.hidden; }
+export function todayOpen() { return !!root && !root.hidden && btnPressed(); }
+const btnPressed = () => document.getElementById("todayBtn")?.getAttribute("aria-pressed") === "true";

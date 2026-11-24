@@ -4,7 +4,8 @@
 // Subjects and sender names come from emails: shown as text, never acted on.
 import type { Api } from "./bridge";
 import { h, toast } from "./dom";
-import { attention, enter, pop, progress as moveBar, stagger } from "./motion";
+import { attention, pop, progress as moveBar, stagger } from "./motion";
+import { dialogShell, loadInto, loadingSince, shellKept } from "./loader";
 import "./inboxcleanup.css";
 
 export interface InboxPerm { kind: string; label: string; archive: boolean; filter: boolean; why: string; note?: string }
@@ -196,7 +197,7 @@ function draw() {
   const head = h("div", { class: "taskstop" }, h("h3", {}, "🧹 Inbox cleanup"),
     h("button", { type: "button", class: "ghost mini", "aria-label": "Close", onclick: () => dlg!.close() }, "✕"));
   let body: (HTMLElement | string)[];
-  if (stage === "scanning") body = [h("p", { class: "ib-scan", role: "status" }, "Checking your inbox… (subjects and senders only; nothing changes yet)"), rulesLine()];
+  if (stage === "scanning") body = [scanLoader(), rulesLine()];
   else if (stage === "plan" && plan) body = planView(plan);
   else if (stage === "running") body = runView();
   else if (stage === "done" || stage === "undone") body = doneView();
@@ -208,6 +209,17 @@ function draw() {
     dlg.querySelectorAll(".ib-perm").forEach((c) => attention(c));      // a permission step appears at once, then wobbles
   }
   if (stage === "done" || stage === "undone") pop(dlg.querySelector(".ib-result"));
+}
+
+/** While Monkey reads the inbox: a skeleton of the plan with a banana trio; the words keep their place on redraws. */
+let scanSince = 0;
+function scanLoader() {
+  if (!scanSince) scanSince = performance.now();
+  const box = loadingSince({ what: "", art: "bananas", skel: "rows", rows: 5, compact: false, msgs: [
+    "Checking your inbox… (subjects and senders only; nothing changes yet)", "Still reading: sorting senders into groups…",
+    "Big inboxes take a minute. Still going…", "Nearly there. Nothing changes until you approve the plan."] }, scanSince);
+  box.classList.add("ib-scan");
+  return box;
 }
 
 async function refreshState() {
@@ -229,8 +241,13 @@ export async function openInbox(opts: { accounts?: string[]; organize?: boolean;
   if (opts.organize !== undefined) organize = opts.organize;
   if (opts.scanning) stage = "scanning";
   else if (stage !== "running" && stage !== "scanning") { stage = plan ? "plan" : "start"; }
-  await refreshState();
-  if (!dlg.open) { dlg.showModal(); enter(dlg, "pop"); }
+  if (stage !== "scanning") scanSince = 0;
+  const d = dlg;
+  // slow to answer: the dialog opens at once with a skeleton (loader.ts); its own draw replaces it
+  await loadInto(() => (d.open ? null : dialogShell(d, "🧹 Inbox cleanup")), () => refreshState(),
+    { what: "your inbox cleanup", skel: "rows", rows: 5, art: "bananas", failed: () => null });
+  if (!shellKept(d)) return;
+  if (!dlg.open) dlg.showModal();                      // menu-motion pops it out of the button that opened it
 }
 
 /** Backend events: inbox_cleanup_open / inbox_plan / inbox_permission / inbox_progress / inbox_done / inbox_undone. */

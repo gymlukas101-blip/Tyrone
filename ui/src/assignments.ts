@@ -144,7 +144,7 @@ function ring(done: number, total: number) {
 }
 
 export function undoToast(text: string, undo: () => void) {
-  const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
+  const host = (Array.from(document.querySelectorAll("dialog[open]:not([data-m-closing])")).pop() as HTMLElement | undefined) ?? document.body;
   const t = h("div", { class: "toast" }, text, " ",
     h("button", { class: "ghost mini", type: "button", onclick: () => { toastGone(t); undo(); } }, "Undo"));
   host.append(t);

@@ -2,6 +2,7 @@
 // leave notes for the Blender modeling pass, and generate more ideas.
 import { h, toast } from "./dom";
 import type { Api } from "./bridge";
+import { loadInto, startLoading } from "./loader";
 
 interface Proto { id: string; title: string; direction: string; traits?: string; hero: string; sheet: string; fresh?: boolean }
 
@@ -20,7 +21,8 @@ export async function renderAvatarLab(card: HTMLElement, api: Api) {
     card.append(h("p", { class: "meta" }, "No prototypes bundled."));
     return;
   }
-  const state = await api.list_prototypes();
+  const { value: state } = await loadInto(() => card, () => api.list_prototypes(),
+    { what: "the Monkey designs", skel: "tiles", art: "monkey", failed: () => null });
   const grid = h("div", { class: "lab-grid" });
 
   const tile = (p: Proto) => {
@@ -58,7 +60,15 @@ export async function renderAvatarLab(card: HTMLElement, api: Api) {
     if (!dir.value.trim()) return toast("Describe a direction first");
     go.disabled = true;
     go.textContent = "Generating… (~40s)";
-    const r = await api.generate_prototypes(dir.value, 1, refSel.value);
+    // a placeholder tile at the front of the grid, where the new picture will land
+    const slot = h("div", { class: "lab-tile lab-gen-slot" });
+    grid.prepend(slot);
+    const ld = startLoading(slot, { what: "", art: "vine", skel: "tile",
+      msgs: ["Painting a new Monkey…", "Still painting (about 40 seconds)…", "Adding the last bananas…", "Big pictures take a while. Almost there."] });
+    let r: Awaited<ReturnType<Api["generate_prototypes"]>>;
+    try { r = await api.generate_prototypes(dir.value, 1, refSel.value); } catch (e) { r = { ok: false, error: String(e) } as typeof r; }
+    await new Promise<void>((done) => ld.done(done));
+    slot.remove();
     go.disabled = false;
     go.textContent = "✨ Generate";
     if (!r.ok) return toast(`⚠ ${r.error}`);

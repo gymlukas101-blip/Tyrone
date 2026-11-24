@@ -4,6 +4,7 @@
 import qrcode from "qrcode-generator";
 import type { Api, AppState } from "./bridge";
 import { h, toast } from "./dom";
+import { loadInto } from "./loader";
 
 export interface PhoneStatus { state: "idle" | "ok" | "failed"; at: number | null; detail: string }
 export interface ReminderChannels {
@@ -39,7 +40,7 @@ function toggle(id: string, checked: boolean, label: string, onChange: (on: bool
 /** The Reminders section. `saved` hands the new app state back to Settings after a save. */
 export function reminderSettings(api: Api, s: Record<string, any>, saved: (st: AppState) => void): HTMLElement {
   const sec = h("section", { class: "remind", id: "set-reminders" }, h("h4", {}, "Reminders"));
-  const body = h("div", {}, h("p", { class: "help" }, "Loading…"));
+  const body = h("div", {});
   sec.append(body);
   let ch: ReminderChannels = { ok: false };
   let phoneMsg = "";                                 // the test button's last answer, kept across redraws
@@ -162,6 +163,8 @@ export function reminderSettings(api: Api, s: Record<string, any>, saved: (st: A
       phoneBlock());
   }
 
-  void reload();
+  // first load: a skeleton of the two blocks if the app is slow to answer (loader.ts); errors keep draw()'s message
+  void loadInto(() => body, () => api.reminder_channels(), { what: "your reminder settings", skel: "block", rows: 4, art: "bananas", failed: () => null })
+    .then(({ value }) => { ch = value; draw(); });
   return sec;
 }

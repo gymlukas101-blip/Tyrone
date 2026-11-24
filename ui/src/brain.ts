@@ -1,6 +1,7 @@
 // Settings → Brain: which model + effort Monkey uses for each task, and the "Calibrate models" benchmark.
 import type { Api, CalResults, Policy, PolicyRow } from "./bridge";
 import { h, toast } from "./dom";
+import { dialogShell, loadInto, shellKept } from "./loader";
 
 const TIERS: [keyof Pick<PolicyRow, "min" | "default" | "max">, string, string][] = [
   ["min", "⚡ Quick", "Cheapest that works (used when you press ⚡ Quick or say 'quick')"],
@@ -44,7 +45,9 @@ export async function openBrain(api: Api) {
       h("div", { class: "body" }, body)));
   };
   refresh = () => render("results");
-  await render();
+  await loadInto(() => (d.open ? null : dialogShell(d, "🧠 Brain: models per task")), () => render(),
+    { what: "the brain settings", skel: "table", rows: 6, art: "monkey", failed: () => null });
+  if (!shellKept(d)) return;
   if (!d.open) d.showModal();
 }
 

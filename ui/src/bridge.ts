@@ -263,8 +263,30 @@ export function waitForApi(timeoutMs = 2500): Promise<Api> {
     // Also poll: the ready event can fire before this listener is attached.
     const iv = setInterval(() => { if (ready()) { clearInterval(iv); resolve(window.pywebview!.api); } }, 200);
     if (isDevPreview()) {
-      setTimeout(() => { if (!ready()) { clearInterval(iv); resolve(mockApi()); } }, timeoutMs);
+      setTimeout(() => { if (!ready()) { clearInterval(iv); resolve(slowDemo(mockApi())); } }, timeoutMs);
     }
+  });
+}
+
+/** Demo only: `?demo&slow=1500` makes every call take that long (loading UIs, recordings, perf runs);
+ *  `&slowonly=todo_list,get_health` limits it to those calls; `&failonce=get_health` makes the first call of each
+ *  listed method fail (the error state + Try again). The desktop app never takes this path. */
+function slowDemo(api: Api): Api {
+  const q = new URLSearchParams(location.search);
+  const ms = Number(q.get("slow") ?? 0);
+  const only = new Set((q.get("slowonly") ?? "").split(",").filter(Boolean));
+  const fail = new Set((q.get("failonce") ?? "").split(",").filter(Boolean));
+  if (!ms && !fail.size) return api;
+  return new Proxy(api, {
+    get(target, prop, recv) {
+      const v = Reflect.get(target, prop, recv);
+      if (typeof v !== "function" || typeof prop !== "string") return v;
+      return async (...args: unknown[]) => {
+        if (ms > 0 && (!only.size || only.has(prop))) await new Promise((r) => setTimeout(r, ms));
+        if (fail.delete(prop)) return { ok: false, error: "The demo was told to fail this once (?failonce)." };
+        return v.apply(target, args);
+      };
+    },
   });
 }
 

@@ -44,7 +44,7 @@ export function toast(text: string, ms?: number) {
   const t = h("div", { class: "toast" }, text);
   // A modal <dialog> (Settings) sits on the browser's top layer, above everything in <body>. Put the toast inside
   // the open dialog so messages shown while Settings is open are actually visible.
-  const host = (Array.from(document.querySelectorAll("dialog[open]")).pop() as HTMLElement | undefined) ?? document.body;
+  const host = (Array.from(document.querySelectorAll("dialog[open]:not([data-m-closing])")).pop() as HTMLElement | undefined) ?? document.body;
   host.append(t);
   toastShown(t);
   setTimeout(() => toastGone(t), ms ?? (text.startsWith("⚠") ? 6500 : 3500));

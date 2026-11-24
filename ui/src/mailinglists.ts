@@ -5,6 +5,7 @@
 import type { Api } from "./bridge";
 import { h, toast } from "./dom";
 import "./mailinglists.css";
+import { dialogShell, loadInto, loadingSince, shellKept } from "./loader";
 
 export interface MailingList {
   id: string; account: string; account_label: string; sender: string; sender_email: string; list_id: string;
@@ -198,7 +199,8 @@ function draw() {
       h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", {}, "Sender / list"), h("th", {}, "Inbox"), h("th", {}, "Last 90 days"),
         h("th", {}, "Last email"), h("th", {}, "How"), h("th", {}, "Status"), h("th", {}, ""))),
       h("tbody", {}, ...lists.map(row)))
-      : h("p", { class: "meta" }, st.scanning ? "Reading list headers…" : "No mailing lists found yet. Connect an inbox in Settings → Accounts, then Check inboxes."));
+      : st.scanning ? scanLoader()
+      : h("p", { class: "meta" }, "No mailing lists found yet. Connect an inbox in Settings → Accounts, then Check inboxes."));
     const n = [...picked].filter((id) => st!.lists.some((l) => l.id === id)).length;
     const next = h("button", { type: "button", class: "primary", disabled: !n || !!st.running, onclick: async () => {
       const r = await api.mailing_prepare([...picked], wantArchive, wantFilter);
@@ -211,6 +213,14 @@ function draw() {
   dlg.replaceChildren(head, ...body);
 }
 
+/** The first scan: a skeleton of the table with a banana trio; the words follow how long it has been reading. */
+let scanSince = 0;
+function scanLoader() {
+  if (!scanSince) scanSince = performance.now();
+  return loadingSince({ what: "", art: "bananas", skel: "table", rows: 6, compact: false, msgs: ["Reading list headers…",
+    "Still reading your inboxes (only the list headers)…", "Big inboxes take a minute. Still going…", "Nearly there. You can close this; it keeps going."] }, scanSince);
+}
+
 async function refresh() {
   try { st = await api.mailing_state(); } catch { /* keep the last state */ }
   draw();
@@ -221,7 +231,11 @@ export async function openMailing(select: string[] = []) {
   if (!dlg) { dlg = h("dialog", { id: "mailDlg", class: "tasksdlg mldlg" }) as HTMLDialogElement; document.body.append(dlg); }
   for (const id of select) picked.add(id);
   review = null;
-  await refresh();
+  const d = dlg;
+  // slow to answer: the dialog opens at once with a skeleton table (loader.ts); the lists replace it when they come
+  await loadInto(() => (d.open ? null : dialogShell(d, "📭 Mailing lists")), () => refresh(),
+    { what: "your mailing lists", skel: "table", rows: 6, art: "bananas", failed: () => null });
+  if (!shellKept(d)) return;
   if (!dlg.open) dlg.showModal();
   if (st && !st.lists.length && !st.scanning) { const r = await api.mailing_scan(); if (r.ok) { st.scanning = true; draw(); } }
 }
@@ -242,7 +256,7 @@ export function mailingEvent(name: string, p: any) {
       break;
     }
     case "mailing_review": void openMailing(p.ids ?? []); return;
-    case "mailing_scan": if (st) st.scanning = p.stage !== "done"; if (p.stage === "reading") progress = ""; break;
+    case "mailing_scan": if (st) st.scanning = p.stage !== "done"; if (p.stage === "done") scanSince = 0; if (p.stage === "reading") progress = ""; break;
     case "mailing_progress": progress = `Unsubscribing: ${p.index} of ${p.total} done · now ${p.sender}…`; if (st) st.running = p.batch; break;
     case "mailing_item": if (st) st.lists = st.lists.map((l) => (l.id === p.item?.id ? { ...l, ...p.item } : l)); break;
     case "mailing_done": {

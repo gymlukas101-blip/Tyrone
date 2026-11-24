@@ -7,6 +7,7 @@ import { openInbox } from "./inboxcleanup";
 import { openMailing } from "./mailinglists";
 import { type TaskTemplate, approvalKind, loadTemplates, templateChip } from "./tasktemplates";
 import { attention, enter } from "./motion";
+import { busyButton, dialogShell, loadInto, loadingSince, nextStepIn, shellKept } from "./loader";
 
 let api: Api;
 let state: AutoState | null = null;
@@ -111,6 +112,20 @@ async function control(action: "pause" | "resume" | "stop" | "done") {
   if (!r.ok) toast(`⚠ ${r.error}`);
 }
 
+/** While a task plans (a Claude call that can take a while): a bobbing monkey and words that change with time. */
+const planStart = new Map<string, number>();
+let planTimer: ReturnType<typeof setTimeout> | null = null;
+function planningLoader(id: string, redraw: () => void): HTMLElement {
+  for (const k of planStart.keys()) if (k !== id) planStart.delete(k);
+  const since = planStart.get(id) ?? performance.now();
+  planStart.set(id, since);
+  const next = nextStepIn(since);
+  if (planTimer) clearTimeout(planTimer);
+  planTimer = next == null ? null : setTimeout(() => { planTimer = null; if (current?.id === id && current.state === "PLANNING") redraw(); }, next + 30);
+  return loadingSince({ what: "", art: "monkey", msgs: ["Planning the steps…", "Still planning: reading the page…",
+    "Still planning. Busy pages take Claude longer.", "Taking a while. You can Pause or Stop anytime."] }, since);
+}
+
 /** The live panel: what Monkey is doing, what he needs from you, and the controls. */
 export function taskPanel(compact = false): HTMLElement {
   const box = h("div", { class: `taskpanel${compact ? " compact" : ""}` });
@@ -128,6 +143,7 @@ export function taskPanel(compact = false): HTMLElement {
         h("span", { class: "tasknote" }, t.note || t.subgoal || ""), compact ? "" : templateChip(t.template)),
     ];
     if (!compact) parts.push(h("p", { class: "meta" }, `“${t.objective}”`));
+    if (!compact && t.state === "PLANNING") parts.push(planningLoader(t.id, draw)); else if (!compact) planStart.delete(t.id);
     if (!compact) parts.push(h("p", { class: "meta" }, [t.progress?.modules_done ? `${t.progress.modules_done} module(s) done` : "",
       `${t.usage?.actions ?? 0} steps`, t.usage?.model_calls ? `${t.usage.model_calls} Claude call(s) · $${(t.usage.usd ?? 0).toFixed(3)}` : "no Claude calls"]
       .filter(Boolean).join(" · ")));
@@ -180,7 +196,7 @@ export function taskPanel(compact = false): HTMLElement {
     if (LIVE.includes(t.state)) row.append(h("button", { type: "button", class: "ghost mini", onclick: () => void control("pause") }, "⏸ Pause"));
     if (t.state === "PAUSED") row.append(h("button", { type: "button", class: "primary mini", onclick: () => void control("resume") }, "▶ Resume"));
     if (LIVE.includes(t.state) || t.state === "PAUSED") row.append(h("button", { type: "button", class: "ghost mini danger", onclick: () => void control("stop") }, "■ Stop"));
-    if (!compact) row.append(h("button", { type: "button", class: "ghost mini", onclick: () => void showHistory(t.id) }, "History"));
+    if (!compact) row.append(h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => void busyButton(e.currentTarget as HTMLButtonElement, () => showHistory(t.id), "Loading…") }, "History"));
     parts.push(row);
     const ev = t.outcome?.evidence;
     if (t.state === "COMPLETED" && ev) parts.push(h("p", { class: "meta ok" }, typeof ev === "string"
@@ -201,7 +217,8 @@ async function showHistory(taskId: string) {
     `${new Date(a.ts * 1000).toLocaleTimeString()} · ${a.kind} ${a.target}`.trim() + ` · ${a.outcome}` + (a.risk ? ` (${a.risk.toLowerCase()})` : "")));
   dlg.append(h("h3", {}, "What Monkey did"), h("p", { class: "meta" }, "Only the kind of action, which control and the site are kept: never what was typed, page text or screenshots."),
     ...(steps.length ? [h("h4", {}, "Step by step"), h("ol", { class: "histlist feed" }, ...steps), h("h4", {}, "Permission log")] : []),
-    h("ol", { class: "histlist" }, ...rows), h("button", { type: "button", class: "primary", onclick: () => { dlg.close(); dlg.remove(); } }, "Close"));
+    h("ol", { class: "histlist" }, ...rows), h("button", { type: "button", class: "primary", onclick: () => dlg.close() }, "Close"));
+  dlg.addEventListener("close", () => dlg.remove());      // after its exit animation (✕, Close or Escape)
   document.body.append(dlg);
   dlg.showModal();
 }
@@ -285,11 +302,14 @@ function blockyChips(root: HTMLElement) {
 /** The Tasks dialog, general-first: "What should Monkey do?", what he can do (capabilities), what he can't, the live
  *  task, the details form for a browser task (course fields only for Course modules), and recent tasks. */
 export async function openTasks(prefill?: { objective?: string; start_url?: string; template?: string }) {
-  await refresh();
-  const templates = await loadTemplates(api);
   let dlg = document.getElementById("tasksDlg") as HTMLDialogElement | null;
   if (!dlg) { dlg = h("dialog", { id: "tasksDlg", class: "tasksdlg tkdlg" }) as HTMLDialogElement; document.body.append(dlg); }
   dlg.classList.add("tkdlg");
+  const shell = dlg;
+  // slow to answer: the dialog opens at once with a skeleton of the form (loader.ts), then the form crossfades in
+  const { value: templates } = await loadInto(() => (shell.open ? null : dialogShell(shell, "🖐 Task helper")),
+    async () => { await refresh(); return loadTemplates(api); }, { what: "the task helper", skel: "form", rows: 4, art: "monkey", failed: () => null });
+  if (!shellKept(shell)) return;
   const st = state!;
   if (prefill?.objective !== undefined) askText = prefill.objective;
   if (prefill?.start_url !== undefined) askUrl = prefill.start_url;
@@ -375,7 +395,7 @@ export async function openTasks(prefill?: { objective?: string; start_url?: stri
     inbox?.undo_run ? h("button", { type: "button", class: "ghost mini", onclick: () => { dlg!.close(); void openInbox(); } }, "Open") : ""));
   runs.push(...st.tasks.filter((t) => !LIVE.includes(t.state) && t.state !== "PAUSED").slice(0, 8).map((t) =>
     h("li", {}, h("span", { class: `badge s-${t.state.toLowerCase()}` }, STATE_LABEL[t.state] ?? t.state), " ", t.objective.slice(0, 70),
-      " ", templateChip(t.template), " ", h("button", { type: "button", class: "ghost mini", onclick: () => void showHistory(t.id) }, "History"))));
+      " ", templateChip(t.template), " ", h("button", { type: "button", class: "ghost mini", onclick: (e: Event) => void busyButton(e.currentTarget as HTMLButtonElement, () => showHistory(t.id), "Loading…") }, "History"))));
 
   const sw = h("input", { type: "checkbox", id: "tkEnable", checked: st.enabled }) as HTMLInputElement;
   sw.addEventListener("change", async () => {

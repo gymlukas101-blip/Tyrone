@@ -2,7 +2,9 @@
 
 Every UI event and interaction, what it showed before, and the motion it has now. Code: `ui/src/motion.ts`
 (helpers, levels, FLIP lists, toasts, confetti, count-up) and `ui/src/motion.css` (tokens, entrances that need no code,
-voice-state glows, button springs, level overrides). Tests: `ui/test/motion.test.ts`. Perf check:
+voice-state glows, button springs, level overrides); menus and loading UIs in `ui/src/menu-motion.ts`,
+`ui/src/loader.ts` and `ui/src/menu-motion.css` ([Menus](#menus), [Loading](#loading)). Tests: `ui/test/motion.test.ts`,
+`ui/test/menu-motion.test.ts`, `ui/test/loader.test.ts`, `tests/test_menu_motion_ui.py`. Perf check:
 `python -m tools.playtest.motion_perf` (below).
 
 ## Rules
@@ -61,7 +63,8 @@ so the levels are unit-tested without a browser.
 
 ## Inventory
 
-**93 items** (54 backend events/states, 39 user interactions and UI states). "Before" is what `main` showed;
+**93 items** (54 backend events/states, 39 user interactions and UI states), plus the menu and loading items 94–121
+[below](#menus-and-loading-inventory). "Before" is what `main` showed;
 "min" is the Juice-minimal / reduce-motion fallback.
 
 ### Backend events (Python `_emit` → `window.__monkeyEvents` → `onEvent` in `main.ts`)
@@ -134,13 +137,13 @@ so the levels are unit-tested without a browser.
 | 59 | New chat | log cleared, system line | system line rises in | 110 + 320 ms | fade |
 | 60 | Card title (fold/unfold) | instant | unfolding body rises in | 110 + 320 ms | fade |
 | 61 | Card ✕ | removed | shrinks away, the cards below glide up | 160 ms; 300 ms | instant |
-| 62 | Header: Settings / Tasks / Brain dialogs open | scale-in 380 ms | readable in 110 ms, springy; backdrop fades in | 110 + 380 ms | fade |
-| 63 | Dialog close (✕, Escape) | instant | **unchanged on purpose**: native `close()`, Escape can't be intercepted cleanly, and an instant close reads as "done" | — | — |
-| 64 | Settings nav jump | outline on the section | unchanged (static outline: readable) | — | — |
+| 62 | Header: Settings / Tasks / Brain dialogs open | scale-in 380 ms | **grows out of the button that opened it**, readable in 100 ms, full size by ~140 ms, springy settle; contents cascade; the title bounces; backdrop dims and blurs (see #94) | 100 + 380 ms | fade |
+| 63 | Dialog close (✕, Escape) | instant | **now animated** (#95): shrinks back into its button, faster than it opened; Escape always closes | 140 ms | 90 ms fade |
+| 64 | Settings nav jump | outline on the section | the section slides in from the direction you jumped (#100); outline kept | 300 ms snap | outline only |
 | 65 | Settings `details` expand (Advanced, guides, memory inspector) | instant | content drops in | 110 + 320 ms | fade |
 | 66 | Settings toggle checkbox on | native tick | tick punches | 260 ms | none |
 | 67 | Key save | "Checking the key…" text | the note breathes while it checks | 1 s loop while busy | none |
-| 68 | Today open / close | view shows | view rises in (close is instant) | 110 + 320 ms | fade |
+| 68 | Today open / close | view shows | pops out of the ☀ button, the selected tab bounces; **close shrinks back** toward it, then the chat returns (#98) | 100 + 380 ms; 140 ms | fade |
 | 69 | Today tabs (click, arrows, Home/End) | content swaps | content **slides in from the side of the tab**; the tab punches | 110 + 320 ms; 300 ms | fade |
 | 70 | Today "Mark done" / Undo | hero dims, Undo | hero punches; the "done" message pops | 360 ms; 320 ms | fade |
 | 71 | Homework / To-do tabs | list swaps (rows replay a fade) | new list cascades; the tab punches; changed counts bump | 30 ms stagger; 300 ms | fade |
@@ -175,9 +178,111 @@ so the levels are unit-tested without a browser.
 ## Not animated, on purpose
 
 - **Per-delta text** while a reply streams: animating every token would cost frames and slow reading.
-- **Dialog close** (#63) and **focus rings** (#81): instant is clearer and native.
+- **Focus rings** (#81): instant is clearer and native. (Dialog close, #63, used to be here: it animates now, #95.)
 - **Settings re-renders** (a key saved, a sign-in finished) don't replay entrances for the whole dialog (only `details` that were closed and open again).
 - **Text progress** (update download %, voice download MB, voice set %): text is already the readable form; a bar would be new UI, not motion.
+
+## Menus
+
+`ui/src/menu-motion.ts`. `installDialogMotion()` (once, at start-up in `main.ts`) routes every dialog's `showModal()`,
+`close()` and Escape through one helper, so all of them, including ones added later, behave the same:
+
+- **Opening** grows out of the element that was just pressed (a capture listener notes the last pressed button; the
+  focused button is the fallback): `transform-origin` = that button's centre relative to the dialog, clamped to its
+  edges. Opacity 0→1 in 100 ms, scale .5 → 1.035 → 1 over 380 ms with an ease-out that passes full size at ~140 ms,
+  so the menu is readable and clickable within ~150 ms and the overshoot happens around readable content. The first
+  few blocks (header, nav, first sections) cascade in from 35 % opacity, 22 ms apart (capped at 66 ms); the title or
+  header icon bounces once (70 ms after the box lands). The backdrop dims (as before) and blurs 3 px; it fades in and
+  out with its opacity (the blur radius isn't animated).
+- **Closing** (✕, Escape, any `close()` call) is the opening reversed and faster: 140 ms ease-in back toward the
+  opener, the backdrop fades out, clicks on the closing dialog are off (`data-m-closing`), then the real `close()` runs
+  (the `close` event fires then; focus goes back to the opener, and the helper re-focuses it if focus got lost).
+  While it is closing the dialog already reports `open === false`, so code like `if (!dlg.open) dlg.showModal()` reopens
+  it, and toasts don't land in it.
+- **Escape:** the `cancel` event is intercepted (capture listener on `document`) and animates the close. A second Escape
+  during the exit, an Escape the browser won't let a page delay (Chrome makes `cancel` non-cancelable without a recent
+  user activation), or a hidden window closes at once. A timer finishes any close whose animation can't (never stuck).
+- **Interrupting:** opening a dialog that is closing reverses the exit (`Animation.reverse()`) from wherever it is;
+  double clicks on ✕ close once; Escape while it is still opening closes from where it is.
+- **Switching menus** (Tasks → Mailing lists): when a dialog opens while another is closing, the old one slides out to
+  the left and the new one slides in from the right (56 px, a snap ease).
+- **Panels and cards** (`openFrom` / `closeTo` / `slideIn`): Today, To-do, Homework, Health and the Lab pop out of
+  their header button the same way (their CSS entrance is switched off with `.m-js`); Today closes back toward its
+  button and only then hides; a card's ✕ keeps the existing shrink-away (#61). Settings section jumps slide in from
+  the direction of travel; Today tabs keep their side slide (#69).
+- **The window coming back from the tray** (hidden ≥ 0.8 s): the header buttons hop in, 25 ms apart, and the open
+  panel settles (`wake()`); nothing if it was hidden only briefly.
+- Levels: *calm* = scale .88→1 with no overshoot, half the slide distance, a small title pop; *min* (Juice minimal or
+  OS reduce motion) = 90 ms fades only, no cascade or bounce. A hidden window: no motion, end state at once.
+
+## Loading
+
+`ui/src/loader.ts` + `ui/src/menu-motion.css`. One rule set for every menu that waits on the Python side:
+
+- **Nothing for the first 150 ms** (a fast load stays instant, no flash). Then the loader appears in the panel (a header
+  card is put up at once and filled in place; a dialog opens a frame with its title and ✕). **Once shown it stays at
+  least 400 ms** (no flicker). Both are in `gate()`, unit-tested with a manual clock.
+- **Skeleton in the panel's real layout**: to-do / homework rows (checkbox + two lines), the Today focus card and tiles,
+  the health ring + tiles + chart, Settings (nav pills + sections, at the dialog's real height), a form (Tasks), a table
+  (Mailing lists, Brain), text blocks (settings sections, the morning brief), slim rows (Check everything, accounts,
+  memory). Rows rise in once, then a banana-and-leaf shimmer sweeps across the bars (one `translate` per bar, 1.35 s).
+- **A playful loader** next to the words (CSS + inline SVG, decorative, `aria-hidden`): a **banana trio** that hops and
+  squashes in a wave, a **swinging vine** with a monkey head on it, or a **bobbing monkey head** with a breathing shadow.
+- **Words that change** (a `role=status` live region): "Loading your calendar…", after 3 s "Still fetching your
+  calendar…", after 8 s "Still working on it. Hang tight 🍌", after 15 s "This is taking longer than usual. You can keep
+  chatting meanwhile." Panels can give their own lines (Check everything names what it is checking).
+- **Errors** stay in the panel: "Couldn't load your to-do list", the reason, **↻ Try again** (focused, so Enter retries;
+  the retry shows the loader at once). The box appears at once and wobbles once (#41's rule).
+- **Crossfade, no layout jump**: the skeleton is moved to a fixed, click-through layer at exactly its place (inside a
+  dialog: a manual popover, which sits in the top layer above the dialog and survives the dialog redrawing) and fades
+  out over 220 ms while the real content, rendered in the same spot, fades in under it.
+- **Levels**: *full* everything; *calm* slower loops (1.6 s, shimmer 2.2 s) at half amplitude; *min* (Juice minimal or
+  OS reduce motion) nothing moves: the skeleton and loader only breathe in opacity (1.8 s). **Hidden window**: loaders
+  pause (`html[data-m-hidden]`, also ones that start while hidden). **Once loaded nothing keeps running** (the loader
+  and its ghost are removed; checked by the browser test and the perf tool).
+- **Buttons whose action takes time** (Check now, Clean up old installs, Fill in from my calendar, Check everything,
+  Canvas ↻, History) show a tiny banana trio and a busy label after 150 ms, at least 400 ms (`busyButton`).
+- **States that last** (a task planning, the first mailing-list scan) use `loadingSince()`: a redraw keeps the words'
+  place in the sequence instead of starting over.
+- **Demo:** `?demo&slow=900` delays every demo call (`&slowonly=todo_list,get_state` limits it, `&failonce=todo_list`
+  fails the first call) for recordings, tests and the perf tool.
+
+### Menus and loading inventory
+
+| # | Menu / load | Before | Now | Duration / easing | Min |
+|---|---|---|---|---|---|
+| 94 | Dialog backdrop | dims, fades in | dims + 3 px blur; fades out on close | 240 ms in; 140 ms out | same (static blur) |
+| 95 | Every dialog's close (✕, Escape, `close()`): Settings, Tasks, Mailing lists, Brain, task history | instant | back into its button, faster; Escape always closes; focus returns | 140 ms ease-in | 90 ms fade |
+| 96 | Approval / permission cards (draft, task approval, reminder) | appear at once + wobble | unchanged on purpose: they must be readable at once (#22, #31, #45) | — | — |
+| 97 | Account dialogs (Google sign-in guide, Garmin, Outlook) | in Settings | Settings' motion; their `details` drop open (#65) | — | — |
+| 98 | Today close | instant | shrinks back toward ☀, then the chat returns | 140 ms | fade |
+| 99 | To-do / Homework / Health / Lab open | card pop (CSS) | grows out of its header button; contents rise; the to-do title icon bounces | 100 + 380 ms | fade |
+| 100 | Settings section jump (nav, "Fix it" buttons) | scroll + outline | + the section slides in from the side you travelled | 300 ms snap | none |
+| 101 | Tasks → Mailing lists | one dialog closes, the other pops | hand-over: old slides out left, new slides in from right | 140 ms; 320 ms snap | fades |
+| 102 | Dropdowns / popovers (`details`, memory chip, guides) | drop open (#65, #39) | unchanged | 110 + 320 ms | fade |
+| 103 | Native `select` menus | OS menu | not animatable (the OS draws it) | — | — |
+| 104 | Narrow / mobile layout (≤ 820 px stacked, ≤ 560 px icon-only header) | as wide | the same origin-aware motion; dialogs at 94 vw grow out of the (wrapped) header button | as wide | as wide |
+| 105 | Window shown from the tray | appears as it was | header buttons hop in, open panel settles (once) | 320 ms, 25 ms apart | none |
+| 106 | Today: Focus / Homework / Schedule loading | nothing until data, then content | after 150 ms: skeleton of the tab (focus card + tiles / rows / list), monkey or bananas, "Still fetching your calendar…"; error + Try again | ≥ 400 ms; 220 ms crossfade | opacity pulse |
+| 107 | Today tiles still loading (`loading` sections) | "Loading…" | "Loading…" + a two-line shimmer skeleton in the tile | until loaded | static |
+| 108 | Homework (Canvas) | toast on error, card when loaded | card at once with a list skeleton; Canvas ↻ shows the banana trio | as #106 | pulse |
+| 109 | To-do list | as Homework | card at once, list skeleton (5 rows), error card with Try again | as #106 | pulse |
+| 110 | Phone screen-time card (to-do) | empty until loaded | two-line skeleton | as #106 | pulse |
+| 111 | Health (Garmin) | toast / card | card at once: ring + tiles + chart skeleton, swinging vine | as #106 | pulse |
+| 112 | Settings open | waited for the app, then opened | opens at once (full height) with nav + section skeleton, bobbing monkey | as #106 | pulse |
+| 113 | Settings sections: Reminders (Windows & phone), Phone, Accounts (email list), Update status, Morning brief status, history count, "What Monkey knows" | "Loading…" / "…" / empty | skeletons or a compact loader in place | as #106 | pulse |
+| 114 | Check everything (10–20 s) | one line of text | swinging vine + six-row skeleton; words say what is being checked; the report crossfades in | until the report | pulse |
+| 115 | Update check, Clean up old installs, Fill in from my calendar | button text | banana trio + busy label in the button | ≥ 400 ms | static |
+| 116 | Tasks dialog open | waited, then opened | opens at once with a form skeleton | as #106 | pulse |
+| 117 | Task helper planning (`PLANNING`) | "Thinking" badge | + bobbing monkey with "Planning the steps…" → "Still planning: reading the page…" (redraws keep their place) | while planning | static |
+| 118 | Mailing lists open / first scan | waited / "Reading list headers…" | dialog at once with a table skeleton; the scan shows the table skeleton + banana trio with changing words | while scanning | pulse |
+| 119 | Brain dialog (models per task) | waited, then opened | opens at once with a table skeleton | as #106 | pulse |
+| 120 | Avatar Lab: designs list; image generation (~40 s) | "Generating… (~40s)" on the button | designs skeleton; a placeholder tile with the swinging vine where the new picture lands, words change | until done | pulse |
+| 121 | Morning brief at start-up | card when ready | card at once with a text skeleton and the monkey; gone smoothly if there's no brief | as #106 | pulse |
+
+Not given a loader on purpose: email suggestions (they load in the background into an already-drawn to-do list), the
+chat's own cards (Monkey's "thinking" state already covers them), saves and toggles (they answer in well under 150 ms
+and confirm with a toast), and anything in the companion window (too small; it shows the task state badge).
 
 ## Performance (cloud container, software rendering)
 

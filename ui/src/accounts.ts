@@ -2,6 +2,7 @@
 // picks, the address (this screen only), "Find to-dos in this inbox", and Remove for Gmail accounts.
 import type { Api, EmailAccount } from "./bridge";
 import { h, toast } from "./dom";
+import { loadInto } from "./loader";
 import "./todosuggest.css";
 
 const KIND: Record<string, string> = { gmail: "Gmail", outlook: "Outlook" };
@@ -53,6 +54,8 @@ export function emailAccountsList(api: Api, onRemoved: () => void): HTMLElement 
       remove,
       note ? h("span", { class: "acct-note", role: "status" }, note) : null);
   }));
-  void api.email_accounts().then((r) => { if (r.ok) draw(r.accounts); }).catch(() => { /* Settings still works */ });
+  // slow to answer: a skeleton of the account rows (loader.ts); a failure just leaves the list empty (Settings still works)
+  void loadInto(() => box, () => api.email_accounts(), { what: "your email accounts", skel: "rows", rows: 2, art: "bananas", retry: false })
+    .then(({ value: r }) => { if (r?.ok) draw(r.accounts); }).catch(() => { /* Settings still works */ });
   return box;
 }

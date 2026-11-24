@@ -3,6 +3,7 @@
 // pairing QR, status, import, Forget data). Self-contained: main.ts only mounts these and forwards events.
 // Python side: monkey/integrations/screentime.py. Off by default; nothing is read until the owner turns it on.
 import type { Api } from "./bridge";
+import { loadInto } from "./loader";
 import { h, toast } from "./dom";
 import { qrSvg } from "./reminders";      // qrcode-generator, drawn locally
 import "./screentime.css";
@@ -74,7 +75,11 @@ export function mountPhoneCard(todoCard: HTMLElement, api: Api, hooks: Hooks) {
 export async function refreshPhoneCard(panel?: StPanel) {
   if (!mounted || !document.body.contains(mounted.box)) return;
   if (!panel) {
-    const r = await mounted.api.screentime_state();
+    const m = mounted;
+    const first = !m.box.childElementCount;          // first fill: a small skeleton if it's slow (loader.ts)
+    const r = first ? (await loadInto(() => m.box, () => m.api.screentime_state(),
+      { what: "your screen time", skel: "block", rows: 2, art: "bananas", failed: () => null })).value
+      : await m.api.screentime_state();
     if (!r.ok || !r.panel) return;
     panel = r.panel;
   }
@@ -235,16 +240,19 @@ let settingsBox: { sec: HTMLElement; api: Api } | null = null;
 
 /** The Settings section (id set-phone). It loads and redraws itself; Settings doesn't need to re-render. */
 export function phoneSettings(api: Api): HTMLElement {
-  const sec = h("section", { id: "set-phone" }, h("h4", {}, "Phone screen time"),
-    h("p", { class: "help" }, "Loading…"));
+  const sec = h("section", { id: "set-phone" }, h("h4", {}, "Phone screen time"));
   settingsBox = { sec, api };
-  void refreshPhoneSettings();
+  void refreshPhoneSettings(true);
   return sec;
 }
 
-export async function refreshPhoneSettings() {
+export async function refreshPhoneSettings(first = false) {
   if (!settingsBox) return;
-  const r = await settingsBox.api.screentime_state();
+  const box = settingsBox;
+  // the first load gets a skeleton if the app is slow to answer (loader.ts); later refreshes redraw in place
+  const r = first ? (await loadInto(() => box.sec, () => box.api.screentime_state(),
+    { what: "your phone settings", skel: "block", rows: 3, art: "bananas", failed: () => null })).value
+    : await box.api.screentime_state();
   if (!r.ok || !r.status) {
     settingsBox.sec.replaceChildren(h("h4", {}, "Phone screen time"), h("p", { class: "help" }, `⚠ ${r.error ?? "Unavailable"}`));
     return;
