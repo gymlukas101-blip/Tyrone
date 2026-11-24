@@ -18,7 +18,10 @@ separate parts the app animates, while keeping the reference look.
 
 Measured on Tripo's paint: iris ≈ 36° (angular radius on a 43 mm eyeball), pupil = 64% of the iris. One iris size
 for both eyes. Stack heights over the eyeball: iris 0.18–0.53 mm < catchlights 0.62 mm < lid margin 0.7 mm, so the
-lids slide over everything and a blink still seals (0 leak pixels in all 16 poses).
+lids slide over everything and a blink still seals: 0 leak pixels in 16 poses × 4 views, re-checked on the M1 model after
+`eye_poses.py` was fixed to render exact colours (before, AgX tone mapping turned the magenta background grey, so the
+E5–E7 leak tests could not fail; the detector now sees the background in 48 of 64 frames, the rest are face-filling
+close-ups).
 
 ## App (this branch's UI)
 - `face.ts`: pupils are one signed size (dilate − constrict) with a slow irregular flutter (hippus, ±0.07), so the eyes

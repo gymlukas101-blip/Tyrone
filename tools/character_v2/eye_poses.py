@@ -62,6 +62,10 @@ def main(model: Path, out: Path, views: list[str], poses: dict | None = None, bg
             o.data.shape_keys.animation_data.action = None
     sc = bpy.context.scene
     sc.render.engine = "BLENDER_WORKBENCH"
+    # Exact colours: the V2 blends use AgX, which turns the magenta background pinkish grey so a leak could never be
+    # detected (every E5-E7 "0 leak" result before this fix was unverified). Standard keeps magenta magenta.
+    sc.view_settings.view_transform = "Standard"
+    sc.view_settings.look = "None"
     sc.render.resolution_x = sc.render.resolution_y = size
     sh = sc.display.shading
     sh.light, sh.color_type, sh.show_cavity = "STUDIO", "TEXTURE", True
@@ -95,7 +99,7 @@ def main(model: Path, out: Path, views: list[str], poses: dict | None = None, bg
                 p = world_to_camera_view(sc, cam, c)
                 yy, xx = np.mgrid[0:n, 0:n]
                 leak += int((mag & (((xx - p.x * n) ** 2 + (yy - p.y * n) ** 2) < (0.03 / scale * n) ** 2)).sum())
-            res[pose][v] = {"magenta_px_in_eye_discs": leak}
+            res[pose][v] = {"magenta_px_in_eye_discs": leak, "magenta_px_in_frame": int(mag.sum())}   # >0: detector sees bg
     (out / "poses.json").write_text(json.dumps(res, indent=1))
     return res
 
