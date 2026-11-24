@@ -45,6 +45,10 @@ def test_no_serious_accessibility_problems(browser, w, h):
     if not AXE.is_file():
         pytest.skip("axe-core not installed (npm ci in ui/)")
     p = _open(browser, w, h)
+    # Contrast is judged on the settled page: an entrance animation caught mid-fade (slow CI) measures as low
+    # contrast though the final colours pass. Looping ambience (vines, shimmer) doesn't block this.
+    p.wait_for_function("""() => document.getAnimations().filter(a => a.playState === 'running'
+        && a.effect && a.effect.getTiming().iterations !== Infinity).length === 0""", timeout=15000)
     p.add_script_tag(content=AXE.read_text(encoding="utf-8"))
     bad = p.evaluate("""async () => (await axe.run(document, {resultTypes: ['violations']})).violations
         .filter(v => v.impact === 'serious' || v.impact === 'critical').map(v => v.id + ': ' + v.nodes.length)""")
