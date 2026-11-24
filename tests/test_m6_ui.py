@@ -149,16 +149,24 @@ def test_today_tabs_follow_the_keyboard_tab_pattern(browser):
 
 def test_focus_mark_done_has_undo_and_open_on_canvas(browser):
     ctx, p = _today(browser)
-    p.click("#todayBtn")
-    p.wait_for_selector("#todayPanel .focustitle")
-    assert p.locator("text=Open on Canvas").count() == 1
-    p.click("text=Mark done in Monkey")
-    p.wait_for_selector("text=Undo")
-    done = p.evaluate("() => document.querySelector('.focushero').classList.contains('is-done')")
-    p.evaluate("() => [...document.querySelectorAll('.focusactions button')].find(b => b.textContent === 'Undo').click()")
-    p.wait_for_timeout(300)
-    undone = p.evaluate("() => !document.querySelector('.focushero').classList.contains('is-done')")
-    ctx.close()
+    try:
+        p.click("#todayBtn")
+        p.wait_for_selector("#todayPanel .focustitle")
+        assert p.locator("text=Open on Canvas").count() == 1
+        # Mark done, then Undo, inside the page: the Undo lives for a 10 s window, and on a loaded machine separate
+        # Playwright round trips (each waiting for the springy panel to hold still) took longer than that.
+        done, undone = p.evaluate("""async () => {
+          const until = async (f) => { for (let i = 0; i < 200 && !f(); i++) await new Promise(r => setTimeout(r, 25)); return f(); };
+          const undoBtn = () => [...document.querySelectorAll('.focusactions button')].find(b => b.textContent === 'Undo');
+          [...document.querySelectorAll('.focusactions button')].find(b => b.textContent.includes('Mark done in Monkey')).click();
+          const shown = await until(undoBtn);
+          const done = !!shown && document.querySelector('.focushero').classList.contains('is-done');
+          undoBtn()?.click();
+          const undone = await until(() => !document.querySelector('.focushero')?.classList.contains('is-done'));
+          return [done, !!undone];
+        }""")
+    finally:
+        ctx.close()
     assert done and undone
 
 

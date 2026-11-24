@@ -981,32 +981,38 @@ is seen) and within ±12 % scale / 10 px travel at 400 ms; menus land in 500–7
 Pointer events stay on during entrances (only a closing menu stops taking clicks); Escape / double Escape / reopen
 mid-exit unchanged (`ui/test/menu-motion.test.ts`, `tests/test_menu_motion_ui.py`).
 
-**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, software rendering). The container was shared
-with other sessions (load average 8–13, one baseline run at 24–32 dropped), so run-to-run spread is large; medians
-[min–max] of 6 baseline (`origin/main` 988ab25) and 5 branch runs, the last 2+2 alternating:
+**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, software rendering). Two alternating pairs
+on a quiet container (load ≈ 1), before = `origin/main` 988ab25, after = this branch; mean [min–max]:
 
 | | before | after |
 |---|---|---|
-| Idle main-thread CPU (ms/s) | 104 [74–144] | 98 [71–156] |
-| Animations running at idle / after menus / after slow loads / hidden | 6 / 8 / 8 / 0 | 6 / 8 / 8 / 0 (same vines, leaves, tier shine) |
-| Stream 400 deltas: CPU ms / long tasks | 1432 [1054–2763] / 0 [0–2] | 1749 [1150–3159] / 0 [0–5] |
-| Add 10 to-dos: CPU ms / long tasks | 786 [484–1448] / 1.5 [0–4] | 1141 [539–1447] / 2 [0–4] |
-| 30 mixed events: CPU ms / long tasks | 672 [441–838] / 0.5 [0–3] | 968 [553–1512] / 1 [0–5] |
-| Menus ×2: CPU ms / frames > 50 ms / long tasks | 3093 [1607–4381] / 5.5 [1–18] / 4 [0–11] | 3330 [2834–4755] / 5 [2–27] / 4 [0–14] |
-| Slow loads: CPU ms / long tasks | 5021 [3359–7969] / 2.5 [0–21] | 6404 [4195–8177] / 7 [0–19] |
-| Idle with Settings open / after menus (ms/s) | 146 / 162 | 133 / 159 |
+| Idle main-thread CPU (ms/s) | 84 [80–89] | 84 [83–84] |
+| Animations running at idle / after menus / after slow loads / hidden | 6 / 8 / 8 / 0 | 6 / 8 / 8 / 0 (the same vines, leaves, tier shine) |
+| Stream 400 deltas: CPU ms / p95 ms / long tasks | 1077 / 16.8 / 0 | 1079 / 16.7 / 0 |
+| Add 10 to-dos: CPU ms / p95 ms / long tasks | 562 / 16.8 / 0 | 594 / 25 [16.8–33.3] / 0 |
+| 30 mixed events: CPU ms / p95 ms / long tasks | 326 / 16.8 / 0 | 361 / 16.8 / 0 |
+| Menus ×2: CPU ms / p95 ms / frames > 50 ms / long tasks (ms) | 1730 / 16.8 / 0.5 / 1.5 (90) | 2159 / 16.8 / 1 / 1 (62) |
+| Slow loads (22 loaders): CPU ms / p95 ms / long tasks | 3376 / 16.8 / 0 | 3772 / 16.8 / 0 |
+| Idle with Settings open / after menus / after slow loads (ms/s) | 112 / 122 / 122 | 115 / 133 / 119 |
 
-Idle is unchanged and nothing new keeps running. The bursts cost more main-thread time (longer, multi-keyframe
-animations: roughly +10–40 %); long-task counts follow the machine's load (the quietest run on each side has 0–1 per
-scenario: before-2 and after-2), so no new long task could be pinned on the change here, but this container can't
-prove its absence either. Not measured on the Dell.
+No new long tasks (the menu pass has the same one ~50–100 ms first-open task as `main`), idle unchanged, nothing new
+keeps running, and frame p95 stays 16.8 ms except the to-do adds (one 33 ms gap in one run). The cost is main-thread
+time during the motion: +25 % for the menus pass (430 ms over ten opens/closes: longer, multi-keyframe animations and
+the content pops), +6–12 % elsewhere. Earlier runs while other sessions loaded the container (load 8–13, 6 + 5 runs)
+had long-task counts that followed the load on both sides (medians 4 vs 4 for menus) and the same idle. Not measured
+on the Dell.
 
 **Evidence** (not in the repo): before/after recordings and filmstrips (menus, pops) from
 `python -m tools.playtest.menu_record`, plus scrubbed frame strips of a toast, a card and Settings opening.
 
-**Tests:** vitest 160 (was 140: `ui/test/spring.test.ts` 18 new; `motion.test.ts` and `menu-motion.test.ts` updated to
+**Tests:** vitest 160 (was 140; 161 after rebasing onto `main`, which added one: `ui/test/spring.test.ts` 18 new; `motion.test.ts` and `menu-motion.test.ts` updated to
 the cartoon behaviour: overshoot instead of "no bounce", the exit pre-bounce, calm ≤ 1 %, stagger caps);
 `tests/test_menu_motion_ui.py` 9 (was 6: slider rebuilds the springs and is saved, jelly press/release, Tasks closed
-mid-load stays closed). No browser-test waits needed extending. Browser tests under 4 parallel workers on the loaded
-container failed in different places between runs (Today/a11y/hearing timeouts); each passed when re-run alone.
-Not tried on the Dell.
+mid-load stays closed). No browser-test waits needed extending. One test changed:
+`tests/test_m6_ui.py::test_focus_mark_done_has_undo_and_open_on_canvas` raced Today's 10 s Undo window with separate
+Playwright round trips (each one waits for the springy panel to hold still); under load it failed on `main` too (2 of 3
+runs at 20× CPU throttling) and here in every 4-worker run, and its unclosed page then timed out the next two Today
+tests. It now marks done and undoes inside one `page.evaluate`, and closes its page in `finally`.
+`tests/test_chrome_bridge.py::test_course_runs_in_the_users_own_chrome_through_the_extension` fails the same way on
+`main` here (not UI). Other 4-worker failures (hearing click, sound wiring, the idle-fps avatar test) moved between runs
+and passed alone. Not tried on the Dell.
