@@ -25,6 +25,7 @@ CLOSE = {  # name: (bone to aim at, camera direction from it, ortho scale)
     "elbow_L": ("forearm.L", Vector((0.85, -0.5, 0.1)), 0.42),
     "neck_muzzle": ("head", Vector((0.55, -0.83, 0.1)), 0.4),
     "hand_L": ("hand.L", Vector((0.6, -0.8, 0.2)), 0.36),
+    "hand_R": ("hand.R", Vector((-0.6, -0.8, 0.2)), 0.36),
 }
 
 

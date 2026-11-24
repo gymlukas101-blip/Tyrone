@@ -569,23 +569,31 @@ def build_hand(arm, rep, outdir: Path, s="L"):
             b.parent = eb[f"hand.{s}"] if j == 1 else eb[f"{f}.0{j - 1}.{s}"]
             b.align_roll(ainv.to_3x3() @ Vector((0, 0, 1)))
     bpy.ops.object.mode_set(mode="OBJECT")
-    # weights: inverse-distance to the bone segments (sharp falloff, two strongest kept)
-    for i, v in enumerate(o.data.vertices):
-        p = v.co.copy()
-        ds = []
-        for a, b, name in seg_bones:
-            ab = b - a
-            u = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
-            ds.append(((a + ab * u - p).length, name))
-        ds.sort()
-        w = {}
-        for d, name in ds[:3]:
-            w[name] = w.get(name, 0.0) + 1.0 / (d + 0.004) ** 6
-        top = sorted(w.items(), key=lambda t: -t[1])[:2]
-        tot = sum(x for _, x in top)
-        for name, x in top:
-            g = o.vertex_groups.get(name) or o.vertex_groups.new(name=name)
-            g.add([i], x / tot, "REPLACE")
+    # weights: each tube (a separate closed piece = one chain) only from its own chain's bones, so skin never
+    # follows a neighbouring finger it happened to touch in the fist (that tore open hands into shards).
+    # Within a chain: inverse-distance to its segments (sharp falloff, two strongest kept).
+    chains = []
+    for pts, bones in hand_chains(fingers, wrist, palm):
+        chains.append([(Vector(pts[j - 1][:3]), Vector(pts[j][:3]), f"{bones[j - 1]}.{s}") for j in range(1, len(pts))])
+
+    def seg_d(p, a, b):
+        ab = b - a
+        u = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
+        return (a + ab * u - p).length
+
+    for comp in islands(o):
+        P = [o.data.vertices[i].co.copy() for i in comp]
+        best = min(chains, key=lambda ch: sum(min(seg_d(p, a, b) for a, b, _ in ch) for p in P[::7]))
+        for i, p in zip(comp, P):
+            ds = sorted((seg_d(p, a, b), name) for a, b, name in best)
+            w = {}
+            for d, name in ds[:3]:
+                w[name] = w.get(name, 0.0) + 1.0 / (d + 0.004) ** 6
+            top = sorted(w.items(), key=lambda t: -t[1])[:2]
+            tot = sum(x for _, x in top)
+            for name, x in top:
+                g = o.vertex_groups.get(name) or o.vertex_groups.new(name=name)
+                g.add([i], x / tot, "REPLACE")
     fist = bpy.data.objects[SIDES[s]["fist"]]
     filled = bake_fist_texture(o, fist, outdir, s)
     skin_object(o, arm)

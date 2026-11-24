@@ -253,11 +253,11 @@
   "builder": "bpy python tools/character_v2/phase_c.py -- character_v2_workspace/tripo_body/tripo_body_B2.blend character_v2_workspace/phase_c2 --name tripo_phaseC_C2",
   "outputs": {
    "tripo_phaseC_C2.blend": {
-    "sha256": "9c1c6fdf73bf3ef1c2cba822ef40408eea691eb0a306367b0b72a4d8edbf65c2",
+    "sha256": "d96284c2cb25498268b16d5576e731eaee50cb15032091a8ac5121f27c685f47",
     "bytes": 7994369
    },
    "tripo_phaseC_C2.glb": {
-    "sha256": "42901690780ca1135e7231d175e2585c1fa86ee7ffa6e262cf3843818c102d16",
+    "sha256": "466ce1d3609c996ed2cad5c2e990effd9831f5e4bcf9384511520d54a75d6ebf",
     "bytes": 7760176,
     "draw_calls": 45,
     "vertices": 33348,
@@ -278,6 +278,51 @@
   "references_unchanged": {
    "tripo_body_B2.blend": "9fdfe0228abba249fb3196f7bca1aa56d36d50c90d780480c6c2cf55a79c0c7d",
    "ui/public/models/monkey.glb": "e9f023589860e402bb048eaf179fd0405b2c8be28f3ba1946acbbca80e061012"
-  }
+  },
+  "note": "rebuilt 2026-11-24: hand weights per tube (own chain only) after the open-hand shards"
+ },
+ "clips_C3": {
+  "date": "2026-11-24",
+  "builder": "bpy python tools/character_v2/clip_batches.py -- character_v2_workspace/phase_c2/tripo_phaseC_C2.blend ui/public/models/monkey.glb character_v2_workspace/clips_c3 --name tripo_clips_C3 --batches 1,2,3,4",
+  "outputs": {
+   "tripo_clips_C3.blend": {
+    "sha256": "0310eeb55880e0962f2a951635f34050064170905dd45c4fe631e3988ed671c4"
+   },
+   "tripo_clips_C3.glb": {
+    "sha256": "2fef2733dfa32f31d969d22dd25ea1544a6f8e8b64c1d37b1e732b5fcd059fed",
+    "animations": 46
+   }
+  },
+  "grounded": {
+   "yawn": {
+    "max_sink_cm": 0.8,
+    "max_lift_cm": 0.8
+   },
+   "sit_down": {
+    "max_sink_cm": 7.3,
+    "max_lift_cm": 7.3
+   },
+   "sit_doze_loop": {
+    "max_sink_cm": 6.1,
+    "max_lift_cm": 6.1
+   },
+   "lie_down": {
+    "max_sink_cm": 20.1,
+    "max_lift_cm": 20.1
+   },
+   "sleep_loop": {
+    "max_sink_cm": 20.8,
+    "max_lift_cm": 20.8
+   },
+   "wake_groggy": {
+    "max_sink_cm": 16.4,
+    "max_lift_cm": 16.4
+   },
+   "wake_startle": {
+    "max_sink_cm": 16.4,
+    "max_lift_cm": 16.4
+   }
+  },
+  "app_check": "threejs_clip_check.py: 46 clips play, 0 page errors"
  }
 }
