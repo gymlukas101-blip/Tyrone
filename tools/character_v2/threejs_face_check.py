@@ -50,10 +50,21 @@ STEPS = [  # (label, events, extra js, wait ms)
     ("talk_while_looking", [["state", {"state": "speaking"}], ["level", {"v": 0.5}], ["visemes", {"viseme_aa": 1}]],
      "a.life.target.set(0.8, 0.3);", 1200),
     # (no wink step: the app writes blink_L and blink_R together every frame, so it has no wink trigger yet)
+    # M1 mouth: open shapes through the app's own emote layer. window.__pinExpr re-applies the expression every frame,
+    # because an idle clip change replaces a.expr with that clip's preset between the read-back and the screenshot.
+    ("laugh", [["visemes", {}], ["level", {"v": 0}], ["state", {"state": "idle"}], ["emote", {"name": "laugh"}]],
+     "a.expr = {}; a.life.target.set(0, 0);", 1200),
+    ("big_grin", [], "window.__pinExpr = {bigGrin: 1};", 1500),
+    ("jaw_open", [], "window.__pinExpr = {jawOpen: 1};", 1500),
+    ("tongue_out", [], "window.__pinExpr = {tongueOut: 1};", 1500),
+    ("mouth_O", [], "window.__pinExpr = {mouthO: 1};", 1500),
+    ("smile_aa", [["state", {"state": "speaking"}], ["level", {"v": 0.4}], ["visemes", {"viseme_aa": 1}]],
+     "window.__pinExpr = {smile: 1};", 1500),
 ]
 WATCH = ["viseme_aa", "viseme_PP", "viseme_O", "viseme_E", "viseme_FF", "jawOpen", "blink_L", "blink_R", "smile",
          "squint", "browsAngry", "angryEyes", "browsSad", "sadEyes", "frown", "grimace", "mouthO", "wideEyes", "browsUp",
-         "pupilDilate", "pupilConstrict", "irisSmall", "irisBig", "eyeSparkle", "squint_R"]   # E7 eyes
+         "pupilDilate", "pupilConstrict", "irisSmall", "irisBig", "eyeSparkle", "squint_R",   # E7 eyes
+         "bigGrin", "cheeksUp", "tongueOut"]                                                # M1 mouth
 
 
 def main(dist: Path, model: Path, out: Path) -> dict:
@@ -113,6 +124,8 @@ def main(dist: Path, model: Path, out: Path) -> dict:
                 r.render = (sc, cam) => { const out = {};
                     for (const [b, q0] of rest) out[b.name] = Math.round(q0.angleTo(b.quaternion) * 573) / 10;
                     window.__eyeDeg = out; return orig(sc, cam); }; }""")
+            p.evaluate("""() => { const a = window.__monkeyAvatarObj; window.__pinExpr = null;
+                const pin = () => { if (window.__pinExpr) a.expr = window.__pinExpr; requestAnimationFrame(pin); }; pin(); }""")
             for label, events, js, wait in STEPS:
                 if js:
                     p.evaluate(f"() => {{ const a = window.__monkeyAvatarObj; {js} }}")

@@ -20,6 +20,14 @@ python tools/character_v2/sheet.py $W/renders/cmp.png $W/renders/baseline_000:ba
     --views front,three_quarter,side,back --mode clay
 ```
 
+Mouth M1 (on the E7 eyes blend):
+```bash
+$PY tools/character_v2/mouth_m1.py -- $W/eyes_e7/tripo_E7.blend $W/mouth_m1
+$PY tools/character_v2/mouth_poses.py -- $W/mouth_m1/tripo_M1.blend $W/mouth_m1/poses_after --size 360 --all \
+    --views front,three_quarter,side,low
+python tools/character_v2/mouth_sheet.py $W/mouth_m1/poses_before $W/mouth_m1/poses_after $W/mouth_m1/M1_before_after_face.png
+```
+
 The baseline `.blend` is `import_glb(monkey.glb)` saved as is (`tools/blender/common.py`).
 
 | Script | Role |
@@ -32,6 +40,9 @@ The baseline `.blend` is `import_glb(monkey.glb)` saved as is (`tools/blender/co
 | `validate.py` | Applies the rules to a candidate, plus a GLB export/re-import round trip |
 | `sheet.py` | Comparison sheets (Pillow) |
 | `tripo_face_poc.py` | Tripo direction: hybrid face (new muzzle with lip loops, eyes with lids, brow keys) or the direct control (`--mode direct`) |
+| `mouth_m1.py` | M1 mouth on a V2 blend: mouth bag in the muzzle, tooth band, gums, tongue, one jaw field, all mouth keys rebuilt, numeric checks |
+| `mouth_poses.py` | Mouth pose renders (front, 3/4, side, low) with hole / foreign-geometry / poke-through tests in exact colours |
+| `mouth_sheet.py`, `app_mouth_sheet.py` | Before/after mouth sheets from `mouth_poses.py` and `threejs_face_check.py` runs (Pillow) |
 | `threejs_face_check.py` | Loads a candidate GLB in the real UI (demo build, `?model=`) and drives speech, blink and emotes with the app's own code; screenshots + morph read-back |
 
 Status, decisions and open issues: `docs/character_v2/PROGRESS.md`, `ADR_001_tripo_strategy.md` and `TRIPO_AUDIT.md` (the Stage 1 blockout: `STAGE1_REPORT.md`).
