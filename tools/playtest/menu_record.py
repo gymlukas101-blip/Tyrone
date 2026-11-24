@@ -98,38 +98,41 @@ class Recorder:
 
 def _step(rec: Recorder, page, name: str, action, settle_ms: int) -> None:
     rec.mark(name)
-    action()
+    try:
+        action()
+    except Exception as e:  # noqa: BLE001 - an older build may not have this control (e.g. no Try again): record on
+        print(f"  step {name}: skipped ({type(e).__name__})")
     page.wait_for_timeout(settle_ms)
 
 
 def scenario_menus(page, rec: Recorder) -> None:
-    _step(rec, page, "settings-open", lambda: page.click("#settingsBtn"), 900)
-    _step(rec, page, "settings-jump-reminders", lambda: page.click("#settings .settingsnav >> text=Reminders"), 700)
+    _step(rec, page, "settings-open", lambda: page.click("#settingsBtn", timeout=4000), 900)
+    _step(rec, page, "settings-jump-reminders", lambda: page.click("#settings .settingsnav >> text=Reminders", timeout=4000), 700)
     _step(rec, page, "settings-escape", lambda: page.keyboard.press("Escape"), 600)
-    _step(rec, page, "tasks-open", lambda: page.click("#tasksBtn"), 900)
-    _step(rec, page, "tasks-to-mailing", lambda: page.click("#tasksDlg >> text=Unsubscribe from lists"), 1000)
+    _step(rec, page, "tasks-open", lambda: page.click("#tasksBtn", timeout=4000), 900)
+    _step(rec, page, "tasks-to-mailing", lambda: page.click("#tasksDlg >> text=Unsubscribe from lists", timeout=4000), 1000)
     _step(rec, page, "mailing-escape", lambda: page.keyboard.press("Escape"), 600)
-    _step(rec, page, "today-open", lambda: page.click("#todayBtn"), 1000)
-    _step(rec, page, "today-tab-schedule", lambda: page.click("#todayTab-schedule"), 800)
-    _step(rec, page, "today-close", lambda: page.click("#todayBtn"), 600)
-    _step(rec, page, "todo-open", lambda: page.click("#todoBtn"), 1000)
-    _step(rec, page, "todo-close", lambda: page.click(".card.todo > .close"), 600)
-    _step(rec, page, "homework-open", lambda: page.click("#asgBtn"), 1000)
+    _step(rec, page, "today-open", lambda: page.click("#todayBtn", timeout=4000), 1000)
+    _step(rec, page, "today-tab-schedule", lambda: page.click("#todayTab-schedule", timeout=4000), 800)
+    _step(rec, page, "today-close", lambda: page.click("#todayBtn", timeout=4000), 600)
+    _step(rec, page, "todo-open", lambda: page.click("#todoBtn", timeout=4000), 1000)
+    _step(rec, page, "todo-close", lambda: page.click(".card.todo > .close", timeout=4000), 600)
+    _step(rec, page, "homework-open", lambda: page.click("#asgBtn", timeout=4000), 1000)
 
 
 def scenario_slow(page, rec: Recorder) -> None:
-    _step(rec, page, "slow-todo", lambda: page.click("#todoBtn"), 2600)
-    _step(rec, page, "slow-today", lambda: page.click("#todayBtn"), 2600)
-    _step(rec, page, "slow-today-close", lambda: page.click("#todayBtn"), 500)
-    _step(rec, page, "slow-settings", lambda: page.click("#settingsBtn"), 2600)
-    _step(rec, page, "slow-check-everything", lambda: page.click("#checkAllBtn"), 4200)
+    _step(rec, page, "slow-todo", lambda: page.click("#todoBtn", timeout=4000), 2600)
+    _step(rec, page, "slow-today", lambda: page.click("#todayBtn", timeout=4000), 2600)
+    _step(rec, page, "slow-today-close", lambda: page.click("#todayBtn", timeout=4000), 500)
+    _step(rec, page, "slow-settings", lambda: page.click("#settingsBtn", timeout=4000), 2600)
+    _step(rec, page, "slow-check-everything", lambda: page.click("#checkAllBtn", timeout=4000), 4200)
     _step(rec, page, "slow-settings-close", lambda: page.keyboard.press("Escape"), 500)
-    _step(rec, page, "slow-tasks", lambda: page.click("#tasksBtn"), 2600)
+    _step(rec, page, "slow-tasks", lambda: page.click("#tasksBtn", timeout=4000), 2600)
 
 
 def scenario_error(page, rec: Recorder) -> None:
-    _step(rec, page, "error-todo", lambda: page.click("#todoBtn"), 1600)
-    _step(rec, page, "error-retry", lambda: page.click(".m-load-error .m-retry"), 1800)
+    _step(rec, page, "error-todo", lambda: page.click("#todoBtn", timeout=4000), 1600)
+    _step(rec, page, "error-retry", lambda: page.click(".m-load-error .m-retry", timeout=4000), 1800)
 
 
 SCENARIOS = {

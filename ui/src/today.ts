@@ -184,21 +184,21 @@ export function toggleToday(open?: boolean, returnFocus = true) {
   const btn = document.getElementById("todayBtn");
   btn?.setAttribute("aria-pressed", String(show));
   if (show) {
-    // opening (or reopening mid-close): pops out of the ☀ button, tabs bounce in; contents follow per tab
+    // opening (or reopening mid-close): the pane rises in, the selected tab bounces; contents follow per tab
     root.hidden = false;
     document.body.classList.add("today-open");
-    openFrom(root, btn);
+    openFrom(root, btn, "below");          // a full-pane view: rises in (scaling the whole pane cost a long task on software GL)
     select(tab, true);
     return;
   }
-  // closing: shrinks back toward the button, faster, then hides; the chat comes back when it's gone
+  // closing: sinks away, faster than it came, then hides; the chat comes back when it's gone
   if (returnFocus) btn?.focus();
   const el = root;
   closeTo(el, () => {
     if (btn?.getAttribute("aria-pressed") === "true") return;        // reopened meanwhile
     el.hidden = true;
     document.body.classList.remove("today-open");
-  });
+  }, "below");                                                       // sinks away (translate + fade)
 }
 
 export function todayOpen() { return !!root && !root.hidden && btnPressed(); }

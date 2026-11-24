@@ -167,18 +167,13 @@ def measure_menus(dist: Path, query: str = "?demo&svg", idle_s: float = 5.0, slo
                 r["skeletons_seen"] = page.evaluate("() => window.__mpSkel || 0")
                 out[name] = r
                 if name == "menus":
-                    # idle with Settings open: what the backdrop (dim + blur) costs while nothing happens
+                    # idle with Settings open: what an open menu (its backdrop) costs while nothing happens
                     page.click("#settingsBtn")
                     page.wait_for_selector("#settings[open] .settingsnav")
                     page.wait_for_timeout(1000)
                     c0 = _cpu(cdp)
                     page.wait_for_timeout(int(idle_s * 1000))
                     out["idle_cpu_settings_open_ms_per_s"] = round((_cpu(cdp) - c0) / idle_s, 1)
-                    page.add_style_tag(content="dialog::backdrop { backdrop-filter: none !important; }")
-                    page.wait_for_timeout(500)
-                    c0 = _cpu(cdp)
-                    page.wait_for_timeout(int(idle_s * 1000))
-                    out["idle_cpu_settings_open_no_blur_ms_per_s"] = round((_cpu(cdp) - c0) / idle_s, 1)
                     page.keyboard.press("Escape")
                     page.wait_for_timeout(600)
                 c0 = _cpu(cdp)

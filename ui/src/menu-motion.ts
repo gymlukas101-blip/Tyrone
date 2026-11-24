@@ -36,7 +36,7 @@ export function openPlan(lv: Level, from: From = "origin"): Step[] {
                   opts: { duration: calm ? T.base : 320, easing: calm ? EASE.out : EASE.snap, fill } }];
   }
   if (from === "below") {
-    return [op, { frames: [{ translate: `0 ${calm ? 8 : 18}px`, scale: calm ? "1" : ".97" }, { translate: "0 0", scale: "1" }],
+    return [op, { frames: [{ translate: `0 ${calm ? 8 : 18}px` }, { translate: "0 0" }],
                   opts: { duration: calm ? T.base : 340, easing: calm ? EASE.out : EASE.pop, fill } }];
   }
   if (calm) return [op, { frames: [{ scale: ".88" }, { scale: "1" }], opts: { duration: T.base, easing: EASE.out, fill } }];
@@ -54,7 +54,7 @@ export function closePlan(lv: Level, to: From = "origin"): Step[] {
   const calm = lv === "calm";
   const end: Keyframe = to === "left" || to === "right"
     ? { translate: `${Math.round((to === "right" ? 1 : -1) * MT.switchPx * (calm ? 0.5 : 1))}px 0`, scale: "1" }
-    : to === "below" ? { translate: `0 ${calm ? 6 : 14}px`, scale: calm ? "1" : ".97" }
+    : to === "below" ? { translate: `0 ${calm ? 6 : 14}px`, scale: "1" }
     : { translate: "0 0", scale: calm ? ".92" : ".62" };
   return [op, { frames: [{ translate: "0 0", scale: "1" }, end], opts: { duration: dur, easing: EASE.in, fill } }];
 }
@@ -188,19 +188,25 @@ export function openDialog(d: Dlg, opts: { from?: From } = {}) {
   for (const other of closingNow) { const o = states.get(other); if (o && o.to === "origin" && handover === "right") retarget(other as Dlg, "left"); }
   nativeShow(d);
   (d as HTMLElement).dataset.m = "1";
-  const lv = level();
   if (hidden()) return;
-  if (handover === "origin" && opener) {
-    try { (d.style as CSSStyleDeclaration).transformOrigin = originFor(rectOf(d), rectOf(opener)); } catch { /* no layout */ }
-  } else if (d.style) d.style.transformOrigin = "";
-  const anims = play(d, openPlan(lv, handover), "mm-open");
-  if (!anims.length) return;
-  const s: DState = { phase: "opening", anims, timer: null, then: [], to: "origin" };
+  const s: DState = { phase: "opening", anims: [], timer: null, then: [], to: "origin" };
   states.set(d, s);
-  playContents(d, lv);
-  const end = () => { if (states.get(d) === s) states.delete(d); };
-  anims[anims.length - 1].finished.then(end, end);
+  // Start in the next frame's callbacks (still before it paints): reading the dialog's box here, right after it was
+  // built, would force its whole layout inside the click's task and turn it into a long task.
+  nextFrame(() => {
+    if (states.get(d) !== s || !realOpen(d)) return;      // closed (or reopened) before the first frame
+    const lv = level();
+    if (handover === "origin" && opener) {
+      try { (d.style as CSSStyleDeclaration).transformOrigin = originFor(rectOf(d), rectOf(opener)); } catch { /* no layout */ }
+    } else if (d.style) d.style.transformOrigin = "";
+    s.anims = play(d, openPlan(lv, handover), "mm-open");
+    if (!s.anims.length) { states.delete(d); return; }
+    playContents(d, lv);
+    const end = () => { if (states.get(d) === s) states.delete(d); };
+    s.anims[s.anims.length - 1].finished.then(end, end);
+  });
 }
+const nextFrame = (fn: () => void) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => fn()) : fn());
 
 const closingNow = new Set<object>();
 function retarget(d: Dlg, to: From) {
@@ -308,16 +314,19 @@ const panelState = new WeakMap<object, { anims: Anim[]; timer: ReturnType<typeof
 /** A panel or card that just appeared: pops out of `opener` (default: the button just pressed), contents cascade,
  *  header icon bounces. Replaces the element's CSS entrance (class m-js). */
 export function openFrom(el: HTMLElement | null | undefined, opener: Element | null = openerFor(el), from: From = "origin") {
-  if (!el || hidden()) return [];
+  if (!el || hidden()) return;
   const ps = panelState.get(el);
   if (ps) { if (ps.timer) clearTimeout(ps.timer); for (const a of ps.anims) { try { a.cancel(); } catch { /* gone */ } } panelState.delete(el); }
   delete el.dataset.mClosing;
-  const lv = level();
   el.classList.add("m-js");
-  if (from === "origin" && opener) el.style.transformOrigin = originFor(rectOf(el), rectOf(opener));
-  const anims = play(el, openPlan(lv, from), "mm-open");
-  playContents(el, lv);
-  return anims;
+  // measured and started in the next frame (before it paints): no forced layout inside the click's task
+  nextFrame(() => {
+    if (!el.isConnected || panelState.has(el)) return;
+    const lv = level();
+    if (from === "origin" && opener?.isConnected) el.style.transformOrigin = originFor(rectOf(el), rectOf(opener));
+    play(el, openPlan(lv, from), "mm-open");
+    playContents(el, lv);
+  });
 }
 
 /** Animate a panel out (back toward where it came from, faster), then `done` (hide or remove it). Calling openFrom

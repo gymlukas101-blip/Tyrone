@@ -143,7 +143,7 @@ so the levels are unit-tested without a browser.
 | 65 | Settings `details` expand (Advanced, guides, memory inspector) | instant | content drops in | 110 + 320 ms | fade |
 | 66 | Settings toggle checkbox on | native tick | tick punches | 260 ms | none |
 | 67 | Key save | "Checking the key…" text | the note breathes while it checks | 1 s loop while busy | none |
-| 68 | Today open / close | view shows | pops out of the ☀ button, the selected tab bounces; **close shrinks back** toward it, then the chat returns (#98) | 100 + 380 ms; 140 ms | fade |
+| 68 | Today open / close | view shows | the pane rises in, the selected tab bounces; **close sinks away**, then the chat returns (#98) | 100 + 340 ms; 140 ms | fade |
 | 69 | Today tabs (click, arrows, Home/End) | content swaps | content **slides in from the side of the tab**; the tab punches | 110 + 320 ms; 300 ms | fade |
 | 70 | Today "Mark done" / Undo | hero dims, Undo | hero punches; the "done" message pops | 360 ms; 320 ms | fade |
 | 71 | Homework / To-do tabs | list swaps (rows replay a fade) | new list cascades; the tab punches; changed counts bump | 30 ms stagger; 300 ms | fade |
@@ -193,7 +193,10 @@ so the levels are unit-tested without a browser.
   so the menu is readable and clickable within ~150 ms and the overshoot happens around readable content. The first
   few blocks (header, nav, first sections) cascade in from 35 % opacity, 22 ms apart (capped at 66 ms); the title or
   header icon bounces once (70 ms after the box lands). The backdrop dims (as before) and blurs 3 px; it fades in and
-  out with its opacity (the blur radius isn't animated).
+  out with its opacity (the blur radius isn't animated). The blur is only on with a real GPU (`html.blocky`, set when the
+  toy-block icons could bake; they skip software GL): on software rendering it took menu frame p95 from 16.8 to 50 ms.
+  The entrance starts in the next frame's callbacks (before it paints) so measuring the box never forces a layout
+  inside the click's task.
 - **Closing** (✕, Escape, any `close()` call) is the opening reversed and faster: 140 ms ease-in back toward the
   opener, the backdrop fades out, clicks on the closing dialog are off (`data-m-closing`), then the real `close()` runs
   (the `close` event fires then; focus goes back to the opener, and the helper re-focuses it if focus got lost).
@@ -206,10 +209,11 @@ so the levels are unit-tested without a browser.
   double clicks on ✕ close once; Escape while it is still opening closes from where it is.
 - **Switching menus** (Tasks → Mailing lists): when a dialog opens while another is closing, the old one slides out to
   the left and the new one slides in from the right (56 px, a snap ease).
-- **Panels and cards** (`openFrom` / `closeTo` / `slideIn`): Today, To-do, Homework, Health and the Lab pop out of
-  their header button the same way (their CSS entrance is switched off with `.m-js`); Today closes back toward its
-  button and only then hides; a card's ✕ keeps the existing shrink-away (#61). Settings section jumps slide in from
-  the direction of travel; Today tabs keep their side slide (#69).
+- **Panels and cards** (`openFrom` / `closeTo` / `slideIn`): To-do, Homework, Health and the Lab pop out of their
+  header button the same way (their CSS entrance is switched off with `.m-js`); a card's ✕ keeps the existing
+  shrink-away (#61). Today is a full pane, not a popup: it rises in (translate + fade, no scale: scaling the whole pane
+  cost a 50–80 ms long task on software rendering) with its selected tab bouncing, and sinks away before it hides.
+  Settings section jumps slide in from the direction of travel; Today tabs keep their side slide (#69).
 - **The window coming back from the tray** (hidden ≥ 0.8 s): the header buttons hop in, 25 ms apart, and the open
   panel settles (`wake()`); nothing if it was hidden only briefly.
 - Levels: *calm* = scale .88→1 with no overshoot, half the slide distance, a small title pop; *min* (Juice minimal or
@@ -251,11 +255,11 @@ so the levels are unit-tested without a browser.
 
 | # | Menu / load | Before | Now | Duration / easing | Min |
 |---|---|---|---|---|---|
-| 94 | Dialog backdrop | dims, fades in | dims + 3 px blur; fades out on close | 240 ms in; 140 ms out | same (static blur) |
+| 94 | Dialog backdrop | dims, fades in | dims + 3 px blur with a real GPU (none on software rendering, where it doubled frame gaps); fades out on close | 240 ms in; 140 ms out | same (static blur) |
 | 95 | Every dialog's close (✕, Escape, `close()`): Settings, Tasks, Mailing lists, Brain, task history | instant | back into its button, faster; Escape always closes; focus returns | 140 ms ease-in | 90 ms fade |
 | 96 | Approval / permission cards (draft, task approval, reminder) | appear at once + wobble | unchanged on purpose: they must be readable at once (#22, #31, #45) | — | — |
 | 97 | Account dialogs (Google sign-in guide, Garmin, Outlook) | in Settings | Settings' motion; their `details` drop open (#65) | — | — |
-| 98 | Today close | instant | shrinks back toward ☀, then the chat returns | 140 ms | fade |
+| 98 | Today close | instant | sinks away (translate + fade), then the chat returns | 140 ms | fade |
 | 99 | To-do / Homework / Health / Lab open | card pop (CSS) | grows out of its header button; contents rise; the to-do title icon bounces | 100 + 380 ms | fade |
 | 100 | Settings section jump (nav, "Fix it" buttons) | scroll + outline | + the section slides in from the side you travelled | 300 ms snap | none |
 | 101 | Tasks → Mailing lists / Inbox cleanup | one dialog closes, the other pops | hand-over: old slides out left, new slides in from right | 140 ms; 320 ms snap | fades |

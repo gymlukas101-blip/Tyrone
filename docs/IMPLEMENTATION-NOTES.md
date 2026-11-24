@@ -796,3 +796,67 @@ alone. UI: `tsc`, `vite build` and vitest (108) pass.
 
 **Open:** the Dell and a real inbox, Google's real consent screen (the owner adds `gmail.modify` under Data access
 first), and the Outlook Archive folder on the owner's Exchange account.
+
+## 2026-11-24: menu motion and loading UIs (branch `feature/menu-motion`)
+
+**Asked:** "add highly animated menu popup animations and transitions and highly animated loading UIs for when menus are
+taking time to load".
+
+**What:** two small generic modules plus a few-line hook per panel, so it merges easily with panel work elsewhere:
+- `ui/src/menu-motion.ts`: `installDialogMotion()` (called once in `main.ts`) routes every `<dialog>`'s `showModal()`,
+  `close()` and Escape (`cancel`) through one helper: grows out of the button that opened it, cascade + title bounce,
+  closes back into it in 140 ms, then the real `close()` (focus returns; re-focused if lost). A closing dialog already
+  reads `open === false`, so reopening it reverses the exit; a second Escape (or one Chrome won't let a page delay)
+  closes at once; a timer finishes any close whose animation can't. Dialog → dialog hand-over slides sideways.
+  `openFrom` / `closeTo` / `slideIn` / `wake()` do the same for cards, the Today pane, Settings section jumps and the
+  window coming back from the tray.
+- `ui/src/loader.ts`: `gate()` (nothing for 150 ms, then at least 400 ms), `loadInto()` (mounts a card / dialog frame /
+  panel spot only when slow, skeleton in the real layout, words that change at 3/8/15 s, error + Try again, crossfade by
+  moving the skeleton to a fixed click-through layer: inside a dialog a manual popover above it), `startLoading()` for
+  event-driven loads (Check everything), `busyButton()`, `loadingSince()` for redrawn states (task planning, scans).
+- `ui/src/menu-motion.css`: skeleton + jungle shimmer, banana trio, swinging vine, bobbing monkey head, error box,
+  levels (calm slower; min = a slow opacity pulse only), paused while hidden.
+- Demo: `?demo&slow=ms[&slowonly=a,b][&failonce=a]` (bridge.ts) for recordings, tests and the perf tool.
+- Inventory items 94–121 and the rules: `docs/ui/MOTION.md` ("Menus", "Loading").
+
+**Found while measuring (software-rendered Chromium in the container):**
+- A 3 px `backdrop-filter` blur on the dialog backdrop took the menu scenario's frame p95 from 16.8 to 50 ms (9 frames
+  over 50 ms vs 1). It's now only on with a real GPU (`html.blocky`, which the toy-block icons set only when they could
+  bake, i.e. not on software GL). Not measured on the Dell.
+- Reading the new dialog's box right after `showModal()` forced its layout inside the click's task; the entrance now
+  starts in the next frame's callbacks (still before that frame paints).
+- Scaling the whole Today pane from .5 made a 50–80 ms long task on its first open; the pane now rises in
+  (translate + fade) and sinks away; popups (dialogs, cards) keep the scale-from-the-button.
+- The dialog close sound now plays when the exit starts (`data-m-closing`), not 140 ms later when `open` goes away.
+
+**Perf** (`python -m tools.playtest.motion_perf`, `?demo&svg`, 1280×800, load ≈1; "before" = `origin/main` 354f694 +
+only the demo `?slow` switch; 3 alternating runs each, medians, spread in brackets):
+
+| | before | after |
+|---|---|---|
+| Idle main-thread CPU | 62.5 ms/s [61.8–67.6] | 67.7 ms/s [67.6–73.2] |
+| Animations running at idle / after menus / after slow loads | 6 / 8 / 8 | 6 / 8 / 8 (the same vines, leaves, tier shine) |
+| Running animations while hidden | 0 | 0 |
+| Stream 400 deltas: CPU / frame p95 / long tasks | 903 ms / 16.7 / 0 | 886 ms / 16.8 / 0 |
+| Add 10 to-dos: CPU / p95 / long tasks | 399 ms / 16.8 / 0 | 493 ms [351–498] / 16.8 / 0 |
+| 30 mixed events: CPU / p95 / long tasks | 260 ms / 16.7 / 0 | 288 ms / 16.7 / 0 |
+| Menus open/close ×2 (Settings+Esc, Tasks+✕, Today, To-do, Homework): CPU / p95 / frames > 50 ms / long tasks | 1257 ms / 16.8 / 0 / 0 [0–1] | 1491 ms / 16.8 / 0 / 1 [0–1] (~50 ms; `before` had one too in 1 of 3) |
+| Idle with Settings open | 95.5 ms/s | 95.9 ms/s |
+| Slow loads (`&slow=900`, same menus, 22 loaders shown): CPU / p95 / frames > 50 ms / long tasks | 2636 ms / 16.8 / 0 / 0 [0–1] | 2754 ms / 16.7 / 0 / 0 [0–1] |
+| Idle after slow loads | 100.1 ms/s | 95.3 ms/s |
+
+The first round (with the blur, entrance started synchronously, Today scaled) measured menus p95 50 ms, 9 frames over
+50 ms and 2–3 long tasks; those three fixes brought it level. The menus cost about 120 ms more main-thread time per
+pass of five menus (their animations), idle is within run-to-run spread, and nothing new keeps running once loaded.
+
+**Evidence** (not in the repo): `python -m tools.playtest.menu_record --dist ui/dist --out <dir>` records the menus,
+slow, error and narrow scenarios with the DevTools screencast + system ffmpeg, plus filmstrips per step.
+
+**Tests:** `ui/test/menu-motion.test.ts` (16: GPU-only plans, readable within T.read, closing faster with no bounce,
+min/calm, origin clamp, close-then-really-close, Escape twice, non-cancelable Escape, stuck-close timer, rapid toggling
+with reverse, Escape mid-open, focus return, reduced-motion close), `ui/test/loader.test.ts` (9: no flash for fast
+loads, 150 ms delay, 400 ms minimum, words over time, failures, delay 0 on retry), `tests/test_menu_motion_ui.py` (6:
+menus end open/closed with focus back, Escape/rapid toggling/hand-over never stuck, slow load shows a skeleton then the
+content in the same card, a fast load shows no loader, error + Try again, reduced motion holds still).
+`tests/test_task_helper_ui.py` now waits for the Tasks dialog's hand-over exit instead of asserting it hidden at once.
+Not tried on the Dell.

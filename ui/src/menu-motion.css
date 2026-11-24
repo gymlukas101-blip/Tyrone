@@ -9,8 +9,10 @@
 /* ---------- dialogs: JS owns the entrance (menu-motion.openDialog); closing fades the backdrop and stops clicks */
 dialog[open][data-m] { animation: none; }
 /* the backdrop dims and lightly blurs what's behind, so the menu reads as "on top"; it fades in and out with the
-   backdrop's opacity (no blur radius animation). Measured in tools/playtest/motion_perf.py (idle with Settings open). */
-dialog[data-m]::backdrop { backdrop-filter: blur(3px); }
+   backdrop's opacity (no blur radius animation). Only with a real GPU: html.blocky is set only when the toy-block
+   icons could bake, which they skip on software GL. On software rendering the blur doubled frame gaps while menus
+   opened (frame p95 16.8 -> 50 ms in tools/playtest/motion_perf.py), so there it's the plain dim. */
+html.blocky dialog[data-m]::backdrop { backdrop-filter: blur(3px); }
 dialog[data-m-closing] { pointer-events: none; }
 dialog[data-m-closing]::backdrop { animation: mm-backdrop-out 140ms cubic-bezier(.5, 0, .75, 0) forwards; }
 @keyframes mm-backdrop-out { to { opacity: 0; } }
