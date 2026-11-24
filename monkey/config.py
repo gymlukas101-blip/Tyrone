@@ -88,6 +88,10 @@ class Settings:
     canvas_ics_url: str = ""
     canvas_base_url: str = "https://canvas.wisc.edu"
     canvas_token_expires: str = ""    # YYYY-MM-DD; UW tokens are short-lived, Monkey warns before expiry
+    # Classes the owner dropped or hid: [{"key", "name", "hidden_at", "course_id", "code", "full", "fact_id"}].
+    # Hidden from Homework, Today, the brief, the brain's tools and email suggestions; "Show again" reverses it.
+    # Changed only through the course drop/undrop calls (integrations/courses.py), never by save_settings.
+    hidden_courses: list = field(default_factory=list)
     # Morning brief (America/Chicago): timed only from a schedule you confirmed; never pushes notifications.
     brief_enabled: bool = True        # build/preview the brief in the app
     brief_lead_min: int = 90          # minutes before your earliest verified class

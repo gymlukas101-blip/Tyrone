@@ -202,4 +202,6 @@ export function toggleToday(open?: boolean, returnFocus = true) {
 }
 
 export function todayOpen() { return !!root && !root.hidden && btnPressed(); }
+/** Something it shows changed (a class was hidden or shown again): redraw quietly if it's open. */
+export function refreshToday() { if (todayOpen()) void draw(1); }
 const btnPressed = () => document.getElementById("todayBtn")?.getAttribute("aria-pressed") === "true";

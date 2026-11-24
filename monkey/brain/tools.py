@@ -217,7 +217,23 @@ SCREEN_TIME_TOOLS: list[dict] = [
           "Say the total and one detail; don't lecture.",
           {"day": S}),
 ]
-LOCAL_TOOLS += MEMORY_TOOLS + SKILL_TOOLS + TODO_TOOLS + SCREEN_TIME_TOOLS
+COURSE_TOOLS: list[dict] = [
+    _tool("drop_course",
+          "The user dropped a class, or wants a class's assignments gone (\"I dropped marketing\", \"remove all my "
+          "marketing assignments\", \"hide the marketing class\"). Hides that class everywhere in Monkey (Homework, "
+          "Today, the morning brief, reminders, email to-do suggestions and your own tools) and archives its to-dos. "
+          "Only Monkey's data on this PC changes, never Canvas, and it can be undone. course: the class as the user "
+          "said it. First call with confirmed=false: a confirm card shows and you get the question to ask (\"Hide "
+          "MKTG 777 everywhere? 6 assignments, 2 to-dos\"). Call again with confirmed=true only after the user says "
+          "yes. If it asks which class, ask the user.",
+          {"course": S, "confirmed": B}),
+    _tool("undrop_course",
+          "Show a class the user dropped or hid again (\"show marketing again\", \"I'm back in that class\", \"undo "
+          "hiding marketing\"). Its assignments and to-dos come back. course: as the user said it, or '' for the one "
+          "hidden most recently.",
+          {"course": S}),
+]
+LOCAL_TOOLS += MEMORY_TOOLS + SKILL_TOOLS + TODO_TOOLS + SCREEN_TIME_TOOLS + COURSE_TOOLS
 
 # Tools whose output is text from other people / the internet. While it's in context, durable memory writes need
 # the user's own explicit request in their current message (prompt-injection guard).
@@ -240,6 +256,12 @@ TODO_CHANGE = re.compile(r"\b(?:done|finish\w*|complete\w*|check\w* off|mark\w*|
                          r"rename|update|resched\w*|due|help|steps?|break|priority|undo|not done|reopen)\b", re.I)
 TODO_DELETE = re.compile(r"\b(?:delete|remove|get rid of|take .{0,40}\boff|drop|scratch|clear|cancel|forget about|"
                          r"never ?mind|don'?t need)\b", re.I)
+# The user's answer to "Hide MKTG 777 everywhere?": a plain yes. Anything that hedges or says no leaves it shown.
+COURSE_YES = re.compile(r"\b(?:yes|yeah|yea|yep|yup|sure|ok(?:ay)?|do it|go ahead|confirm(?:ed)?|hide (?:it|them)|"
+                        r"drop it|remove (?:it|them)|please|bet|correct|that'?s right|that one)\b", re.I)
+COURSE_NO = re.compile(r"\b(?:no|nope|nah|don'?t|do not|wait|cancel|stop|never ?mind|not that|wrong|keep (?:it|them))\b",
+                       re.I)
+COURSE_CONFIRM_S = 10 * 60
 class Escalate(Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
@@ -273,6 +295,8 @@ class Services:
     skills: Any = None                                     # SkillLibrary (read-only playbooks)
     mailing: Any = None                                    # MailingService (mailing lists review; owner approves)
     inbox: Any = None                                      # InboxCleanup (plan -> the owner's one OK -> archive)
+    courses: Any = None                                    # CourseDropper (drop / show again a class)
+    hidden_courses: Any = None                             # HiddenCourses (what every surface leaves out)
 
 
 class ToolRunner:
@@ -285,6 +309,7 @@ class ToolRunner:
         self.session_id: str | None = None  # this conversation; its messages are already in context
         self.turn_source = "voice"       # how the current message arrived (voice | typed): a to-do's source
         self._todo_adds = 0              # add_todo calls this turn (a cap, so one reply can't flood the list)
+        self._course_pending: tuple[str, str, float] | None = None   # (course key, token, time) awaiting a yes
 
     def begin_turn(self, user_text: str, user_texts: list[str]) -> None:
         # Outside content (an email body, a web page) stays in the conversation after the turn that fetched it, so
@@ -646,6 +671,9 @@ class ToolRunner:
                     events.extend(cal.list_events(start, end))
             except Exception as exc:  # noqa: BLE001
                 self.s.emit("warning", {"message": f"{cal.name} calendar: {exc}"})
+        hidden = getattr(self.s, "hidden_courses", None)
+        if hidden:                                    # a class the user dropped: its deadlines and lectures are gone
+            events = [e for e in events if not hidden.hides_event(e)]
         key = lambda e: e.start if e.start.tzinfo else e.start.replace(tzinfo=timezone.utc)  # noqa: E731
         return sorted((e for e in events if start <= key(e) < end), key=key)
 
@@ -775,6 +803,8 @@ class ToolRunner:
         notes = ""
         if self.s.memory:
             notes = "\n\n".join(self.s.memory.read(f) for f in ("profile.md", "classes.md", "people.md", "preferences.md"))
+            if getattr(self.s, "hidden_courses", None):    # a dropped class isn't a reason to rank anything higher
+                notes = self.s.hidden_courses.filter_notes(notes)
         model, effort = ("claude-sonnet-5-5", "medium")
         if self.s.policy is not None:
             c = self.s.policy.choice("triage")
@@ -836,7 +866,86 @@ class ToolRunner:
             out["done"] = [{k: a[k] for k in ("id", "title", "course", "due")} for a in board["done"][:10]]
         if board["source"] == "feed":
             out["note"] = "Only due dates are available (no Canvas token), so ranking is by due date."
+        if board.get("hidden"):
+            out["hidden_classes"] = ("The user dropped/hid " + ", ".join(h["name"] for h in board["hidden"]) +
+                                     ": left out here on purpose. Don't bring them up unless asked.")
         return out
+
+    # ------------------------------------------------------------ classes the user dropped (local data only)
+    def _course_said(self, c) -> bool:
+        """Did the user name this class in their own words (not an assignment title or an email)?"""
+        from ..integrations.courses import FILLER, _word_hit, norm
+
+        said = {w for t in [*self.user_texts, self.user_text] for w in norm(t).split() if w not in FILLER and len(w) > 1}
+        have = c.words()
+        return any(_word_hit(w, have) for w in said)
+
+    def t_drop_course(self, course: str, confirmed: bool = False):
+        import time as _time
+
+        cs = self.s.courses
+        if cs is None:
+            return "Canvas isn't connected, so there are no classes to hide."
+        hits = cs.resolve(course)
+        if not hits:
+            gone = cs.resolve_hidden(course)
+            if gone:
+                return (f"{gone[0].name} is already hidden everywhere. Tell the user; they can say \"show "
+                        f"{gone[0].name} again\" to undo it.")
+            names = "; ".join(c.name + (f" ({c.full})" if c.full else "") for c in cs.courses()[:12])
+            return (f"No class matching {course!r} on the Homework list. Classes there: {names or 'none loaded'}. "
+                    "Ask the user which one they meant.")
+        if len(hits) > 1:
+            return ("Which one? " + "; ".join(f"{c.name}" + (f" ({c.full})" if c.full else "") +
+                                              f", {c.assignments} assignments" for c in hits) +
+                    ". Ask the user, then call again with that class's name or code.")
+        c = hits[0]
+        if not self._course_said(c):
+            return ("Not changed: the user didn't name that class. Only hide a class the user names in their own "
+                    "words.")
+        pend = self._course_pending
+        fresh = pend is not None and pend[0] == c.key and _time.time() - pend[2] <= COURSE_CONFIRM_S
+        if confirmed and fresh:
+            if not COURSE_YES.search(self.user_text or "") or COURSE_NO.search(self.user_text or ""):
+                return (f"Not hidden: the user hasn't said yes. Ask them: \"Hide {c.name} everywhere?\" and wait. "
+                        "If they said no, say it stays.")
+            res = cs.drop(c.key, pend[1])
+            self._course_pending = None
+            if not res.get("ok"):
+                return res.get("error", "Couldn't hide it.")
+            self.s.emit("course_dropped", res)
+            return (f"Done: {res['say']} Nothing changed on Canvas. Say it in one short sentence; they can press Undo "
+                    f"on screen or say \"show {c.name} again\".")
+        p = cs.preview(c.key)
+        if not p.get("ok"):
+            return p.get("error", "Couldn't check that class.")
+        self._course_pending = (c.key, p["token"], _time.time())
+        self.s.emit("course_drop_confirm", p)          # the card's Hide button uses the token; the model never sees it
+        todos = [t["text"] for t in p["todos"]][:5]
+        return {"ask_user": p["say"], "class": c.name + (f" ({c.full})" if c.full else ""),
+                "assignments": p["assignments"], "todos": todos,
+                "note": "Not hidden yet. A confirm card is on screen. Ask the user exactly that question in one "
+                        "sentence and wait; if they say yes, call drop_course again with confirmed=true. Only "
+                        "Monkey's data changes (Canvas stays as it is)."}
+
+    def t_undrop_course(self, course: str = ""):
+        cs = self.s.courses
+        if cs is None:
+            return "Canvas isn't connected."
+        hidden = cs.hidden.as_courses()
+        if not hidden:
+            return "No classes are hidden."
+        hits = cs.resolve_hidden(course) if (course or "").strip() else hidden[-1:]
+        if not hits:
+            return (f"No hidden class matches {course!r}. Hidden: " + "; ".join(c.name for c in hidden) +
+                    ". Ask which one.")
+        if len(hits) > 1:
+            return "Which one? Hidden: " + "; ".join(c.name for c in hits) + ". Ask the user."
+        res = cs.undrop(hits[0].key)
+        if not res.get("ok"):
+            return res.get("error", "Couldn't show it again.")
+        self.s.emit("course_restored", res)
+        return f"{res['say']} Say it in one short sentence."
 
     def t_check_off_assignment(self, item_id: str, done: bool = True):
         if self.s.assignments is None:

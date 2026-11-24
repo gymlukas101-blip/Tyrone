@@ -30,6 +30,7 @@ from .brain.tools import Services, ToolRunner
 from .config import Config, resource_path
 from .integrations.canvas_api import AssignmentBoard, CanvasAPI, LocalChecks
 from .integrations.canvas_ics import CanvasCalendar, ICSCalendar
+from .integrations.courses import CourseDropper, HiddenCourses
 from .integrations.garmin import GarminHealth
 from .integrations.accounts import EmailAccounts
 from .integrations.google import GmailProvider, GoogleAuth, GoogleCalendarProvider
@@ -151,7 +152,13 @@ class MonkeyApp:
         self.canvas = CanvasCalendar(lambda: self.cfg.settings.canvas_ics_url)
         self.ics_calendar = ICSCalendar(lambda: keys.get("calendar_ics"))   # private iCal links (no OAuth)
         self.canvas_api = CanvasAPI(lambda: self.cfg.settings.canvas_base_url, lambda: keys.get("canvas_token"))
-        self.board = AssignmentBoard(self.canvas_api, self.canvas, LocalChecks(self.cfg.db_path))
+        # Classes the owner dropped: hidden from every surface (Homework, Today, brief, tools, suggestions)
+        self.hidden_courses = HiddenCourses(lambda: self.cfg.settings.hidden_courses,
+                                            lambda rows: self.cfg.update(hidden_courses=rows))
+        self.board = AssignmentBoard(self.canvas_api, self.canvas, LocalChecks(self.cfg.db_path),
+                                     hidden=self.hidden_courses)
+        self.courses = CourseDropper(self.hidden_courses, self.board, self.todos,
+                                     memory_root=lambda: self.memory.memory_root, on_change=self._courses_changed)
         self.garmin = GarminHealth(self.cfg.data_dir / "garmin")
         self.approval = ApprovalGate(self._sender_for)     # sends only from the account the draft was made in
         self.client = None
@@ -165,12 +172,14 @@ class MonkeyApp:
             record_usage=self._record_usage, open_url=self._open_url,
             assignments=self.board, health=self.garmin, history=self.history,
             skills=self._skills(), todos=self.todos, screentime=self.screentime,
+            courses=self.courses, hidden_courses=self.hidden_courses,
         )
         self.policy = ModelPolicy(self.cfg.data_dir / "model_policy.json")
         self.services.policy = self.policy
         from .brain.email_todos import EmailTodoScanner
 
-        self.suggestions = SuggestionStore(self.cfg.db_path)     # "Suggested from email" (never added on their own)
+        # "Suggested from email" (never added on their own); ones about a dropped class aren't shown
+        self.suggestions = SuggestionStore(self.cfg.db_path, hidden=self.hidden_courses.hides_suggestion)
         self.services.suggestions = self.suggestions
         self._email_scan_stop = threading.Event()
         self.email_todos = EmailTodoScanner(
@@ -464,6 +473,29 @@ class MonkeyApp:
         return status(self.canvas_api.available(), self.cfg.settings.canvas_token_expires,
                       getattr(self.canvas_api, "token_rejected", False))
 
+    def _class_notes(self) -> str:
+        """classes.md for class times, without the lines about a class the owner dropped."""
+        return self.hidden_courses.filter_notes(self.memory.read("classes.md") or "")
+
+    def _courses_changed(self, summary: dict) -> None:
+        """A class was dropped or shown again: every view that already loaded follows (the board, Today's brief),
+        then the UI hears about it. Runs in the background: the answer to the click doesn't wait on Canvas."""
+        def refresh():
+            try:
+                self.board.load(refresh=False)
+            except Exception:  # noqa: BLE001
+                log.debug("board reload after a course change failed", exc_info=True)
+            try:
+                if self.cfg.settings.brief_enabled and getattr(self, "_last_brief", None) is not None:
+                    b = self.morning.run(datetime.now().astimezone(), "app_open", rebuild=True)
+                    if b is not None:
+                        self._last_brief = b
+            except Exception:  # noqa: BLE001
+                log.debug("brief rebuild after a course change failed", exc_info=True)
+            self._emit("courses_changed", {"action": summary.get("action"), "key": summary.get("key"),
+                                           "name": summary.get("name")})
+        threading.Thread(target=refresh, name="courses-changed", daemon=True).start()
+
     def _brief_sources(self):
         from datetime import datetime as _dt, time as _time
         from .routines.morning import TZ, Sources
@@ -475,7 +507,7 @@ class MonkeyApp:
             out = []
             for p in cals:
                 out += p.list_events(start, start + timedelta(days=1))
-            return out
+            return [e for e in out if not self.hidden_courses.hides_event(e)]     # a dropped class isn't "today"
 
         self.refresh_accounts()
         mails = [p for p in list(self.services.mail.values()) if self._ok(p)]
@@ -500,7 +532,7 @@ class MonkeyApp:
             weather=self.services.weather,
             sleep=sleep if self.garmin.connected() else None,
             canvas_token=self.canvas_token_status,
-            class_notes=lambda: self.memory.read("classes.md") or "",
+            class_notes=self._class_notes,
             todos=lambda: self.todos.items("open"),
             todo_suggestions=self.suggestions.count_pending,
             screen_time=self.screentime.brief_line if self.screentime.enabled() else None,
@@ -1316,7 +1348,8 @@ class Api:
             return []
 
     def save_settings(self, changes: dict):
-        allowed = {k: v for k, v in (changes or {}).items() if k != "extra"}
+        # hidden_courses changes only through course_drop/course_undrop (they also archive and restore to-dos)
+        allowed = {k: v for k, v in (changes or {}).items() if k not in ("extra", "hidden_courses")}
         if allowed.get("automation_browser", "chrome") not in ("chrome", "edge", "my_chrome"):
             allowed.pop("automation_browser")
         if "ntfy_server" in allowed:
@@ -1574,9 +1607,11 @@ class Api:
                     events += p.list_events(now, now + timedelta(days=14))
                 except Exception as exc:  # noqa: BLE001
                     log.warning("calendar read failed: %s", type(exc).__name__)
+            # a class the owner dropped never times the brief
+            events = [e for e in events if not a.hidden_courses.hides_event(e)]
             found, source = candidate_schedule(events, now), "your calendar"
         if not found:
-            notes = schedule_from_notes(a.memory.read("classes.md") or "")
+            notes = schedule_from_notes(a._class_notes())
             if notes:
                 found, source = notes, "your notes"
         if not found and not cals:
@@ -2010,6 +2045,35 @@ class Api:
             return {"ok": True, **r}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
+
+    # classes the owner dropped (Homework → ⋯ → I dropped this class; Settings → Accounts → Hidden classes)
+    def course_drop_preview(self, key: str):
+        """What dropping this class hides (assignment count, the to-dos by name) and a one-time token for Confirm."""
+        try:
+            return self._app.courses.preview(str(key))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("course drop preview failed", exc_info=True)
+            return {"ok": False, "error": f"Couldn't check that class ({type(exc).__name__})."}
+
+    def course_drop(self, key: str, token: str):
+        try:
+            return self._app.courses.drop(str(key), str(token or ""))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("course drop failed", exc_info=True)
+            return {"ok": False, "error": f"Couldn't hide that class ({type(exc).__name__})."}
+
+    def course_undrop(self, key: str):
+        try:
+            return self._app.courses.undrop(str(key))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("course undrop failed", exc_info=True)
+            return {"ok": False, "error": f"Couldn't show that class again ({type(exc).__name__})."}
+
+    def hidden_courses(self):
+        try:
+            return {"ok": True, "items": self._app.courses.hidden_list()}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "items": []}
 
     # to-do list
     def _todo_settings(self) -> dict:

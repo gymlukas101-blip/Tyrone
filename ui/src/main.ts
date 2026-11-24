@@ -6,7 +6,8 @@ import { Avatar3D, webglAvailable } from "./avatar3d";
 import type { AvatarLike, AvatarState } from "./avatar-types";
 import { type Api, type AppState, type Brief, type Importance, waitForApi } from "./bridge";
 import { type Child, fmtTime, h, safeHttp, setToastSound, toast } from "./dom";
-import { renderAssignments, markChecked, undoToast } from "./assignments";
+import { renderAssignments, markChecked, replaceBoard, undoToast } from "./assignments";
+import { closeConfirm, confirmDrop, droppedToast, hiddenCoursesSection, initCourseDrop, type DropResult } from "./coursedrop";
 import { refreshTodos, reminderToast, renderTodos, todoOpen } from "./todo";
 import { reminderSettings } from "./reminders";
 import { setSuggestions } from "./todosuggest";
@@ -19,7 +20,7 @@ import { renderAvatarLab } from "./avatarlab";
 import { brainEvent, openBrain } from "./brain";
 import { cursorSettings } from "./cursor";
 import { flash, pop, pulse, setFeedbackSound, shake } from "./feedback";
-import { initToday, todayOpen, toggleToday } from "./today";
+import { initToday, refreshToday, todayOpen, toggleToday } from "./today";
 import { AvatarStateResolver } from "./avatar/resolver";
 import { automationEvent, computerEvent, controlBanner, initComputer, initOverlay, openTasks, refresh as refreshTasks } from "./computer";
 import { initMailing, mailingEvent } from "./mailinglists";
@@ -32,6 +33,7 @@ import "./theme-blocky.css";
 import "./motion.css";
 import "./hearing.css";
 import "./menu-motion.css";
+import "./coursedrop.css";
 import { installDialogMotion, openFrom, slideIn } from "./menu-motion";
 import { busyButton, loadInto, startLoading, type LoadOpts } from "./loader";
 
@@ -555,6 +557,21 @@ function assignmentsCard(board: any, into?: HTMLElement | null) {
   return c;
 }
 
+/** A class was hidden or shown again: Homework (on screen), To-do, Today and Settings follow without a reopen.
+ *  Also runs on the background "courses_changed" Python sends after any change (a second, quiet redraw). */
+async function afterCourseChange(_r: Partial<DropResult>) {
+  const open = document.querySelector<HTMLElement>(".card.assign:not(.todo):not(.homework):not(.m-loading)");
+  if (open) {
+    try {
+      const b = await api.get_assignments(false);
+      if (b.ok && !replaceBoard(b, open)) assignmentsCard(b);
+    } catch { /* the next open loads it */ }
+  }
+  if (todoOpen()) void refreshTodos();
+  refreshToday();
+  document.querySelectorAll<HTMLElement>(".cd-hidden").forEach((box) => (box as any).redraw?.());
+}
+
 /** The to-do list panel. `data` comes from a "todos" event (Monkey showed it) or is loaded here (the button). */
 async function todoCard(data?: any, tab?: "open" | "overdue" | "done") {
   let into: HTMLElement | null = null;
@@ -671,6 +688,11 @@ function onEvent(name: string, p: any) {
     case "weather": weatherCard(p); break;
     case "assignments": assignmentsCard(p); break;
     case "assignment_checked": markChecked(p.id, p.done); if (p.done) avatar.emote("celebrate"); break;
+    // a class the owner dropped: Monkey asks (the same confirm as Homework's ⋯ menu), then says what went, with Undo
+    case "course_drop_confirm": if (p.ok) confirmDrop(p); break;
+    case "course_dropped": closeConfirm(p.key); droppedToast(p); void afterCourseChange(p); break;
+    case "course_restored": toast(`✓ ${p.name} is back`); void afterCourseChange(p); break;
+    case "courses_changed": void afterCourseChange(p); break;
     case "todos": void todoCard(p); break;
     case "todo_suggestions":           // the inbox scan found new to-dos to suggest (nothing was added)
       setSuggestions(p.items);
@@ -1125,6 +1147,9 @@ async function openSettings(section?: string) {
             note,
             h("p", { class: "help" }, "In Canvas: Calendar (left menu) → “Calendar Feed” (bottom right) → copy the link."));
         })(),
+        h("h5", { id: "set-hidden-classes" }, "🙈 Hidden classes"),
+        h("p", { class: "help" }, "Classes you dropped. Monkey leaves them out of Homework, Today, the morning brief, reminders and email suggestions (nothing changes on Canvas). Show one again to bring back its assignments and to-dos."),
+        hiddenCoursesSection(),
         h("h5", {}, "✉️ Gmail + Google Calendar"),
         (() => {
           const hasClient = !!appState.keys.google_client, connected = !!appState.connections.gmail;
@@ -1967,6 +1992,7 @@ async function bootOverlay() {
   $("#stage").append(controlBanner());
   $("#tasksBtn").addEventListener("click", () => void openTasks());
   initToday(api, $("#side"), $("#cards"));
+  initCourseDrop(api, (r) => void afterCourseChange(r));
   $("#todayBtn").addEventListener("click", () => toggleToday());
   if (appState.transfer) welcomeAfterMove(appState.transfer);
   void showMorningBrief();

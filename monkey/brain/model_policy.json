@@ -196,6 +196,30 @@
       },
       "why": "Adding or checking off is one tool call; 'help me with this' breaks the item into steps and may open a site or start a draft, so Important gets Sonnet."
     },
+    "course_drop": {
+      "label": "Dropped a class (hide it everywhere / show it again)",
+      "min": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "default": [
+        "claude-haiku-5-5",
+        "low"
+      ],
+      "max": [
+        "claude-sonnet-5-5",
+        "low"
+      ],
+      "est": {
+        "rounds": 2,
+        "new_in": 400,
+        "out": 40,
+        "think": 100,
+        "searches": 0,
+        "per_month": 2
+      },
+      "why": "Matching the class and the confirm are done in code; the model asks the one question and calls the tool twice."
+    },
     "task_helper": {
       "label": "Task helper (unsubscribe, do something on a website)",
       "min": [

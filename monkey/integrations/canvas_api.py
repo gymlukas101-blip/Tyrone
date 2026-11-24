@@ -100,6 +100,7 @@ class CanvasAPI:
                 continue
             cid = str(c["id"])
             short = c.get("course_code") or c.get("name") or cid
+            long_name = str(c.get("name") or "")
             enr = next((e for e in c.get("enrollments", []) if e.get("type") == "student"), {})
             grade = enr.get("current_period_computed_current_score")
             if grade is None:
@@ -120,7 +121,7 @@ class CanvasAPI:
                     aid = str(a["id"])
                     item = Assignment(
                         id=f"canvas:{cid}:{aid}", title=a.get("name", "(untitled)"), course=short,
-                        course_id=cid, assignment_id=aid, due=_dt(a.get("due_at")),
+                        course_id=cid, course_name=long_name, assignment_id=aid, due=_dt(a.get("due_at")),
                         points=a.get("points_possible"), group_id=gid, course_grade=grade,
                         submitted=state in ("submitted", "pending_review") or bool(sub.get("submitted_at")),
                         graded=state == "graded" and sub.get("score") is not None and not sub.get("missing"),
@@ -180,10 +181,15 @@ def pretty_course(code: str) -> str:
 
 
 class AssignmentBoard:
-    """What the checklist UI and Monkey's tools use: Canvas API if there's a token, else the calendar feed."""
+    """What the checklist UI and Monkey's tools use: Canvas API if there's a token, else the calendar feed.
 
-    def __init__(self, api: CanvasAPI, feed, checks: LocalChecks):
+    Courses the owner dropped (`hidden`, integrations/courses.py) are left out of everything this returns; the
+    board still counts them (`hidden` in the result) so Settings can say what "Show again" brings back."""
+
+    def __init__(self, api: CanvasAPI, feed, checks: LocalChecks, hidden=None):
         self.api, self.feed, self.checks = api, feed, checks
+        self.hidden = hidden                        # HiddenCourses | None
+        self.items: list[Assignment] = []           # the last load, hidden courses included (for previews)
 
     def _from_feed(self) -> list[Assignment]:
         now = datetime.now(timezone.utc)
@@ -212,22 +218,61 @@ class AssignmentBoard:
             items, source = self._from_feed(), "feed"
         else:
             return {"source": "none", "todo": [], "done": [], "stats": {}}
+        from .courses import course_key_for, courses_from_items
+
         local = self.checks.get()
         for it in items:
             if it.id in local:
                 it.marked_complete = local[it.id]  # your last check/uncheck wins
+        self.items = list(items)
+        hidden_counts: dict[str, int] = {}
+        if self.hidden:
+            keep = []
+            for it in items:
+                e = self.hidden.course_entry(it.course, it.course_id, it.course_name)
+                if e is None:
+                    keep.append(it)
+                else:
+                    hidden_counts[e["key"]] = hidden_counts.get(e["key"], 0) + 1
+            items = keep
         todo, done = rank(items)
         now = datetime.now(timezone.utc)
         week = now + timedelta(days=7)
         in_week = [a for a in items if a.due and now - timedelta(days=1) <= a.due <= week]
+
+        def out(a: Assignment) -> dict:
+            d = a.to_dict()
+            d["course_key"] = course_key_for(a.course, a.course_id, a.course_name)
+            return d
+
         return {
             "source": source,
-            "todo": [a.to_dict() for a in todo],
-            "done": [a.to_dict() for a in done[:30]],
+            "todo": [out(a) for a in todo],
+            "done": [out(a) for a in done[:30]],
             "stats": {"week_total": len(in_week), "week_done": sum(a.done for a in in_week),
                       "missing": sum(a.missing and not a.done for a in items),
                       "critical": sum(a.tier == "critical" for a in todo)},
+            "courses": [c.public() for c in courses_from_items(items)],
+            "hidden": [{"key": e["key"], "name": e["name"], "assignments": hidden_counts.get(e["key"], 0)}
+                       for e in (self.hidden.entries() if self.hidden else [])],
         }
+
+    def courses(self, refresh: bool = False, include_hidden: bool = True):
+        """The courses on the board, from the last load (loads once if nothing is loaded yet)."""
+        from .courses import courses_from_items
+
+        if refresh or self.last is None:
+            self.load(refresh=refresh)
+        items = self.items
+        if not include_hidden and self.hidden:
+            items = [a for a in items if not self.hidden.hides_course(a.course, a.course_id, a.course_name)]
+        return courses_from_items(items)
+
+    def items_for(self, key: str) -> list[Assignment]:
+        """The last load's assignments of one course (hidden or not)."""
+        from .courses import course_key_for
+
+        return [a for a in self.items if course_key_for(a.course, a.course_id, a.course_name) == key]
 
     def toggle(self, item_id: str, done: bool) -> dict:
         """Check/uncheck. Returns {"synced": bool} - synced means Canvas's planner was updated too."""

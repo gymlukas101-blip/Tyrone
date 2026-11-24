@@ -7,6 +7,7 @@ import { demoScreenTimeApi, type ScreenTimeApi } from "./screentime";
 import type { MailingApi } from "./mailinglists";
 import type { InboxApi } from "./inboxcleanup";
 import type { TaskTemplate } from "./tasktemplates";
+import type { CourseApi, DropResult } from "./coursedrop";
 import { demoGeneralTask, demoInboxApi, demoMailingApi } from "./demo-taskhelper";
 export type TodoResult = { ok: boolean; error?: string; item?: Todo };
 
@@ -49,7 +50,7 @@ export interface BriefStatus { verified: boolean; schedule: Record<string, strin
 const demoBriefState: BriefStatus = { verified: false, schedule: {}, next_run: null, today: null, weekend: false, lead_min: 90, speak: false,
   canvas: { status: "none", days: null, message: "No Canvas token (using the calendar feed)." }, calendar: true, task: false };
 
-export interface Api extends ScreenTimeApi {
+export interface Api extends ScreenTimeApi, CourseApi {
   get_state(): Promise<AppState>;
   save_key(name: string, value: string): Promise<{ ok: boolean; error?: string; hint?: string; warning?: string; note?: string }>;
   test_anthropic(): Promise<{ ok: boolean; error?: string; note?: string }>;
@@ -490,6 +491,7 @@ function mockApi(): Api {
     async import_undo() { return { ok: true, restored: ["profile.md"] }; },
     async new_conversation() {},
     async get_assignments() { return { ok: true, ...demoBoard() }; },
+    ...demoCourseApi(),
     async dashboard() {
       // ?demo&empty: everything disconnected (the Today view must show zero made-up rows)
       if (new URLSearchParams(location.search).has("empty")) {
@@ -629,6 +631,14 @@ const demoTodos: Todo[] = [
     source: "typed", created: demoNow() - 2e5, done_at: demoNow() - 7e4 },
 ];
 const demoDeleted = new Map<string, Todo>();
+// ?demo&drop: two to-dos that belong to the made-up demo class MKTG 777 (Homework → By class → ⋯ → I dropped this class)
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("drop")) {
+  demoTodos.push(
+    { id: "t6", text: "Read ch 4 for MKTG 777", notes: "", due: localDue(2), priority: "normal", list: "school", status: "open",
+      steps: [], source: "typed", created: demoNow() - 2e4, done_at: null },
+    { id: "t7", text: "Outline the pretend product launch", notes: "", due: localDue(5), priority: "normal", list: "marketing",
+      status: "open", steps: [], source: "voice", created: demoNow() - 1e4, done_at: null });
+}
 // Demo inboxes: shown with ?demo&accounts (plain ?demo keeps everything disconnected, as before).
 const demoHasAccounts = () => typeof location !== "undefined" && new URLSearchParams(location.search).has("accounts");
 const demoAccounts: EmailAccount[] = [
@@ -728,20 +738,84 @@ const demoCleanup = () => [
   { kind: "download", label: "Download: TyroneSetup.zip", path: "C:\\Users\\you\\Downloads\\TyroneSetup.zip", status: "found", detail: "" },
 ];
 const inH = (hours: number) => new Date(Date.now() + hours * 3.6e6).toISOString();
+/** Classes hidden in the demo (Homework → By class → ⋯ → I dropped this class): key -> what was hidden. */
+const demoHidden = new Map<string, { name: string; full: string; hidden_at: string; todos: Todo[] }>();
+const demoKey = (course: string) => "code:" + course.toLowerCase().replace(/\s+/g, "");
+const demoCourseTodo = (t: Todo) => /\bMKTG ?777\b/i.test(t.text) || t.list.toLowerCase() === "marketing";
+function demoCourseApi(): CourseApi {
+  const pending = new Map<string, string>();
+  const all = () => { const b = demoBoardAll(); return [...b.todo, ...b.done]; };
+  return {
+    async course_drop_preview(key: string) {
+      const items = all().filter((x) => x.course_key === key);
+      if (!items.length || demoHidden.has(key)) return { ok: false, error: "That class isn't on your Homework list any more.", key, name: "", assignments: 0, todos: [], token: "" };
+      const token = Math.random().toString(36).slice(2);
+      pending.set(key, token);
+      const todos = key === "code:mktg777" ? demoTodos.filter(demoCourseTodo) : [];
+      const name = items[0].course;
+      return { ok: true, key, name, full: key === "code:mktg777" ? "Principles of Pretend Marketing" : "", assignments: items.length,
+               todos: todos.map((t) => ({ id: t.id, text: t.text })), token, say: `Hide ${name} everywhere?` };
+    },
+    async course_drop(key: string, token: string): Promise<DropResult> {
+      if (!token || pending.get(key) !== token) return { ok: false, error: "Confirm it again (the confirmation expired).", key, name: "", assignments: 0, todos: [] };
+      pending.delete(key);
+      const items = all().filter((x) => x.course_key === key);
+      const todos = key === "code:mktg777" ? demoTodos.filter(demoCourseTodo) : [];
+      for (const t of todos) demoTodos.splice(demoTodos.indexOf(t), 1);
+      const name = items[0]?.course ?? key;
+      demoHidden.set(key, { name, full: key === "code:mktg777" ? "Principles of Pretend Marketing" : "", hidden_at: new Date().toISOString().slice(0, 16), todos });
+      return { ok: true, action: "dropped", key, name, assignments: items.length, todos: todos.map((t) => ({ id: t.id, text: t.text })) };
+    },
+    async course_undrop(key: string): Promise<DropResult> {
+      const e = demoHidden.get(key);
+      if (!e) return { ok: false, error: "That class isn't hidden.", key, name: "", assignments: 0, todos: [] };
+      demoHidden.delete(key);
+      demoTodos.push(...e.todos);
+      const n = all().filter((x) => x.course_key === key).length;
+      return { ok: true, action: "restored", key, name: e.name, assignments: n, todos: e.todos.map((t) => ({ id: t.id, text: t.text })) };
+    },
+    async hidden_courses() {
+      const items = Array.from(demoHidden.entries()).map(([key, e]) => ({ key, name: e.name, full: e.full, hidden_at: e.hidden_at,
+        assignments: all().filter((x) => x.course_key === key).length, todos: e.todos.length }));
+      return { ok: true, items };
+    },
+  };
+}
+/** The demo board without the classes hidden in this session (what Homework and Today show). */
 function demoBoard() {
+  const b = demoBoardAll();
+  const shown = (x: any) => !demoHidden.has(x.course_key);
+  const todo = b.todo.filter(shown), done = b.done.filter(shown);
+  const courses = new Map<string, { key: string; name: string; full: string; assignments: number; open: number }>();
+  for (const x of [...todo, ...done]) {
+    const c = courses.get(x.course_key) ?? { key: x.course_key, name: x.course, full: x.course_key === "code:mktg777" ? "Principles of Pretend Marketing" : "", assignments: 0, open: 0 };
+    c.assignments += 1; if (!x.done) c.open += 1;
+    courses.set(x.course_key, c);
+  }
+  const gone = b.todo.length + b.done.length - todo.length - done.length;
+  return { ...b, todo, done,
+    stats: { ...b.stats, week_total: b.stats.week_total - gone, week_done: b.stats.week_done - b.done.filter((x) => !shown(x)).length },
+    courses: Array.from(courses.values()).sort((x, y) => x.name.localeCompare(y.name)),
+    hidden: Array.from(demoHidden.entries()).map(([key, e]) => ({ key, name: e.name, assignments: 0 })) };
+}
+function demoBoardAll() {
   const it = (o: any) => ({ points: null, impact_pct: null, course_grade: null, missing: false, url: "", done: false,
-                            source: "canvas", ...o });
+                            source: "canvas", course_key: demoKey(o.course), ...o });
   return {
     source: "canvas",
-    stats: { week_total: 8, week_done: 3, missing: 1, critical: 2 },
+    stats: { week_total: 11, week_done: 4, missing: 1, critical: 2 },
     todo: [
       it({ id: "a1", title: "HW 6: Red-black trees", course: "COMP SCI 400", due: inH(-50), points: 30, impact_pct: 4.2, course_grade: 84, missing: true, priority: 74, tier: "critical", reason: "~4.2% of your grade · MISSING · you're at 84% in COMP SCI 400" }),
       it({ id: "a2", title: "Midterm 2", course: "MATH 222", due: inH(20), points: 100, impact_pct: 20, course_grade: 79, priority: 92, tier: "critical", reason: "~20.0% of your grade · due in 20h · you're at 79% in MATH 222" }),
       it({ id: "a3", title: "Lab report 4", course: "CHEM 104", due: inH(70), points: 50, impact_pct: 3.1, course_grade: 88, priority: 50, tier: "high", reason: "~3.1% of your grade · due in 3d · you're at 88% in CHEM 104" }),
       it({ id: "a4", title: "Discussion post week 11", course: "PSYCH 202", due: inH(110), points: 5, impact_pct: 0.4, course_grade: 96, priority: 16, tier: "low", reason: "~0.4% of your grade · due in 5d · you're at 96% in PSYCH 202" }),
+      // a made-up class to drop in the demo (Homework → By class → ⋯ → I dropped this class)
+      it({ id: "m1", title: "Case study: the banana phone", course: "MKTG 777", due: inH(96), points: 20, impact_pct: 2, course_grade: 90, priority: 14, tier: "low", reason: "~2.0% of your grade · due in 4d · you're at 90% in MKTG 777" }),
+      it({ id: "m2", title: "Quiz 6: pricing", course: "MKTG 777", due: inH(130), points: 10, impact_pct: 1, course_grade: 90, priority: 12, tier: "low", reason: "~1.0% of your grade · due in 5d · you're at 90% in MKTG 777" }),
     ].sort((a, b) => b.priority - a.priority),
     done: [
       it({ id: "d1", title: "Reading quiz 10", course: "PSYCH 202", due: inH(-20), priority: 0, tier: "done", reason: "submitted", done: true }),
+      it({ id: "m3", title: "Discussion: brand mascots", course: "MKTG 777", due: inH(-30), priority: 0, tier: "done", reason: "submitted", done: true }),
     ],
   };
 }

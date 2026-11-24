@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Callable
 
 STATUSES = ("pending", "accepted", "dismissed", "skipped")
 KEEP_S = 45 * 86400            # dismissed/skipped rows outlive the scan window (days) many times over, then go
@@ -42,9 +43,12 @@ PUBLIC = ("id", "account", "account_label", "kind", "link", "text", "due", "evid
 
 
 class SuggestionStore:
-    def __init__(self, db_path: Path | str):
+    def __init__(self, db_path: Path | str, hidden: Callable[[dict], bool] | None = None):
         self.db_path = str(db_path)
         self._lock = threading.Lock()
+        # Suggestions about a class the owner dropped stay in the table (Dismiss/seen state is kept) but aren't shown
+        # or counted while the class is hidden; showing the class again brings them back.
+        self.hidden = hidden
         with self._conn() as c:
             c.execute(f"CREATE TABLE IF NOT EXISTS todo_suggestions({', '.join(f'{k} {v}' for k, v in COLUMNS.items())})")
             have = {r[1] for r in c.execute("PRAGMA table_info(todo_suggestions)")}
@@ -113,14 +117,22 @@ class SuggestionStore:
             r = c.execute("SELECT message_id FROM todo_suggestions WHERE id=?", (sid,)).fetchone()
         return r[0] if r else ""
 
+    def _shown(self, row: dict) -> bool:
+        try:
+            return not (self.hidden is not None and self.hidden(row))
+        except Exception:  # noqa: BLE001 - a bad filter must never hide the whole list
+            return True
+
     def pending(self, limit: int = MAX_PENDING) -> list[dict]:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM todo_suggestions WHERE status='pending' "
-                             "ORDER BY CASE signal WHEN 'flagged' THEN 0 WHEN 'task' THEN 0 ELSE 1 END, created DESC "
-                             "LIMIT ?", (limit,)).fetchall()
-        return [self._row(r) for r in rows]  # type: ignore[misc]
+                             "ORDER BY CASE signal WHEN 'flagged' THEN 0 WHEN 'task' THEN 0 ELSE 1 END, created DESC"
+                             ).fetchall()
+        return [r for r in (self._row(x) for x in rows) if r is not None and self._shown(r)][:limit]
 
     def count_pending(self) -> int:
+        if self.hidden is not None:
+            return len(self.pending())
         with self._conn() as c:
             return int(c.execute("SELECT COUNT(*) FROM todo_suggestions WHERE status='pending'").fetchone()[0])
 

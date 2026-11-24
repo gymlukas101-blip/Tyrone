@@ -56,7 +56,38 @@ _HIGH = re.compile(
 )
 _LOW = re.compile(r"\b(quick(?:ly)?|real quick|fast|briefly|short answer|tl;?dr|no big deal|whatever)\b", re.I)
 
+# A class the owner dropped (drop_course / undrop_course): "I dropped marketing", "remove all my marketing
+# assignments", "hide the marketing class", "show marketing again". Not "I dropped my phone", not one assignment
+# ("delete the history assignment"), not a to-do ("remove the dentist to-do").
+def _subject_words() -> str:
+    from ..integrations.courses import SUBJECTS
+
+    words = sorted({w for ws in SUBJECTS.values() for w in ws if len(w) >= 4} | set(SUBJECTS), key=len, reverse=True)
+    return "|".join(re.escape(w) for w in words)
+
+
+_COURSE_WORD = r"(?:class(?:es)?|course|assignments|homework|hw|stuff|lectures?)"
+# a subject people say ("marketing", "comp sci") or a course code ("mktg 300")
+_SUBJ = r"(?:" + _subject_words() + r"|[a-z]{2,8} ?\d{3})"
+_NOT_A_CLASS = r"(?!(?:my|it|this|that|the|a|an|him|her|them|off|by|everything|something|out|in|me)\b)"
+COURSE_DROP = re.compile(
+    r"\bi(?:'ve| have)?(?: just| already| officially)? dropped\s+(?:out of\s+)?" + _NOT_A_CLASS + r"[a-z&]+|"
+    r"\bdropped (?:out of )?(?:the |my |that )?(?:[\w&]+ ){0,3}" + _COURSE_WORD + r"\b|"
+    r"\b(?:remove|hide|delete|get rid of|clear(?: out)?|drop)\s+(?:all\s+(?:of\s+)?)?"
+    r"(?!(?:(?:the|my|those|these) )?(?:old|done|finished|completed|checked|late|missing|other)\b)"
+    r"(?:the |my |those |these )?(?:[\w&]+ ){1,3}(?:class|course|assignments|homework|hw)\b|"
+    r"\b(?:i'?m|i am) (?:not|no longer) (?:taking|in|enrolled in) (?:the |my )?(?:" + _SUBJ + r"|(?:[\w&]+ ){1,3}"
+    r"(?:class|course))\b|"
+    r"\b(?:show|bring back|put back)\s+(?:the |my )?" + _SUBJ + r"(?: (?:class|course|assignments))? (?:again|back)\b|"
+    r"\b(?:show|bring back|put back)\s+(?:the |my )?(?:[\w&]+ ){0,3}(?:class|course) (?:again|back)\b|"
+    r"\b(?:bring back|unhide|restore)\s+(?:the |my )?(?:[\w&]+ ){0,3}(?:class|course)\b|\bunhide\b|"
+    r"\b(?:un-?drop|re-?enrolled in|added back into)\b|\bhidden (?:classes|courses)\b|"
+    r"\b(?:classes|courses) (?:are |i )?(?:hidden|hid)\b",
+    re.I)
+
 RULES: list[tuple[str, re.Pattern]] = [
+    # First: "remove all my marketing assignments" is a dropped class, not an assignments question or a to-do.
+    ("course_drop", COURSE_DROP),
     # The user's own to-do list (not Canvas's "to-do", not computer tasks). First, so "add 'email my TA' to my
     # to-do list" is a to-do and not an email draft.
     ("todo", re.compile(
@@ -169,6 +200,7 @@ def rule_task(text: str) -> tuple[str | None, str]:
 
 # ---------------------------------------------------------------- classifier
 CLASSIFIER_TASKS = ["chat", "quick_fact", "command", "weather", "web_lookup", "assignments", "check_off", "todo",
+                    "course_drop",
                     "task_helper", "health", "calendar", "memory_note", "general", "read_email", "triage", "briefing", "study_help",
                     "hard_problem", "draft_email", "research", "image_request"]
 
@@ -184,7 +216,8 @@ CLASSIFIER_PROMPT = (
     "Classify a college student's request to their voice assistant. Pick the task: chat (small talk), quick_fact "
     "(one-line stable fact), command (open a site, show pictures/videos, timers), weather, web_lookup (a current "
     "fact from the web: scores, hours, news), assignments (Canvas homework), check_off, todo (the user's own to-do "
-    "list: add, list, finish or get help with an item), task_helper (do a multi-step job FOR them on a website or "
+    "list: add, list, finish or get help with an item), course_drop (they dropped a class: hide its assignments "
+    "everywhere, or show a hidden class again), task_helper (do a multi-step job FOR them on a website or "
     "in an app: unsubscribe from mailing lists, fill in a form, change a setting, cancel a subscription, find "
     "something on a site and show it), health (Garmin sleep/heart "
     "rate, phone screen time), calendar, memory_note (remember/forget), general (an everyday question needing a few sentences), "

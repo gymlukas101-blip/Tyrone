@@ -540,6 +540,85 @@ The owner asked for "a to do list UI that can remember everything I need to do a
 
 **Open:** not tried on the Dell. Windows notifications for reminders are a question for the owner.
 
+## 2026-11-24: a dropped class, hidden everywhere (branch `feature/dropped-course`)
+
+The owner asked: "remove all marketing assignments since I dropped the class". There was no way to hide a course, so
+this adds one; the owner uses it once on the Dell. Local Monkey data only (not outward-facing): nothing changes on
+Canvas. Every fixture and the demo use made-up classes (MKTG 777 "Principles of Pretend Marketing", MATH 888,
+PSYCH 999); the owner's real class name is never written into the repo.
+
+**Matching** (`monkey/integrations/courses.py` `resolve`): the strongest tier with a hit wins; several hits there are
+ambiguous and the caller asks which one.
+1. The course key or Canvas course id.
+2. A course code, department + number: "MKTG 777", "mktg777", "MKTG_777_001_F26" (the feed's bracket), "Marketing
+   777" (department words map to codes through a small table of common subjects: marketing → MKTG, computer science
+   → COMP SCI, …). A number that isn't there ("Marketing 778") matches nothing.
+3. The whole name: the code, the display name or Canvas's long name (API only), ignoring case and punctuation.
+4. Words: every meaningful word of the request names the course (department, its subject words, long-name words).
+   Whole words only, a 5+ letter prefix ("psych"), and one typo in 7+ letter words ("marketting").
+5. A subject word among words the feed can't know ("Intro to Marketing" when the feed only says MKTG 777): the
+   courses of that department, never across departments.
+"Marketing" never matches "Mathematics" (whole words; their similarity is 0.5 against the 0.88 typo bar), and "math"
+never matches marketing.
+
+**Hiding** (`HiddenCourses`, setting `hidden_courses` = `[{key, name, hidden_at, course_id, code, full, fact_id}]`):
+an assignment by course id, course code or long name; free text (calendar events, to-dos, email suggestions, notes)
+by a course code in it, the long name as a phrase, the whole text being the course ("Marketing"), or a subject word
+next to a school word ("Marketing quiz", "read ch 4 for marketing"; not "marketing club meeting" or "email the
+marketing club"). `save_settings` can't change the list: only drop/undrop (which also archive and restore to-dos).
+
+**Surfaces:**
+- Homework and Today: `AssignmentBoard._load` leaves hidden courses out (it still counts them: `hidden`), adds
+  `courses` and each item's `course_key`. Today reads `board.last`, so it follows; the cached brief is rebuilt after a
+  change (`MonkeyApp._courses_changed`, in the background, then a `courses_changed` event).
+- Morning brief: due/overdue come from the board; today's events (`events_today`) and the class times from notes
+  (`_class_notes`: classes.md without the dropped class's lines) are filtered.
+- Class-schedule detection (`brief_candidates`): calendar events and notes filtered. The confirmed `brief_schedule`
+  stores only times, so it is left as the owner confirmed it (re-detect in Morning brief if the dropped class was the
+  first one of a day).
+- Brain tools: `get_assignments` (assignments, due soon, grades in the reason line; a `hidden_classes` note says not
+  to bring it up), `get_calendar` and `rank_items` (via `_events`; `rank_items` notes filtered too).
+- To-dos: by origin `course_key`, a list tag naming the course (#marketing, #mktg777), a course code or long name in the
+  text, or subject + school word. Archived with status `dropped` (new columns `dropped_course`, `archived_from`),
+  never deleted: gone from every list, `find`, counts, the brief and reminders (`due_reminders` only reads `open`).
+  Showing the class again restores each to the status it had (open or done).
+- Email to-do suggestions: `SuggestionStore(hidden=…)` leaves matching pending ones out of `pending()` and
+  `count_pending()` (rows kept, so Dismiss/seen state survives and they come back with the class).
+- Memory: one line through `facts.add_fact` into the owner's local classes.md ("Dropped <class> on <date> …", plain
+  words only); "show again" forgets it with `forget_fact`.
+
+**Confirm:** `CourseDropper.preview(key)` returns the counts, the to-dos by name and a one-time token (15 min);
+`drop(key, token)` applies. The UI's Hide it button and the brain tool both go through it.
+
+**Brain:** `drop_course(course, confirmed)` and `undrop_course(course)`.
+- First call: a confirm card on screen (`course_drop_confirm`, the token goes to the UI only) and `ask_user` for the
+  model ("Hide MKTG 777 everywhere? 3 assignments, 2 to-dos.").
+- `confirmed=true` works only after that, for the same class, within 10 minutes, and when the user's current message
+  is a plain yes (`COURSE_YES` without `COURSE_NO`). The class must be named in the user's own words (an assignment
+  title or email can't drop a class), and ambiguity returns "Which one?".
+- Router task `course_drop`: a rule placed first ("I dropped marketing", "remove all my marketing assignments", "hide
+  the marketing class", "show marketing again", "unhide …", "I'm not taking … anymore"; not "I dropped my phone",
+  "remove the old assignments", "show the weather again"). Classifier task, policy (Haiku low / low / Sonnet low,
+  `docs/MODEL-POLICY.md` regenerated), calibration sample and stubs, 3 bench cases (55 now), persona paragraph.
+
+**UI:** Homework gets a **By class** tab: a group per course with "N to do · M done" and a **⋯** button
+(`aria-haspopup=menu`) → "🎒 I dropped this class" (`ui/src/coursedrop.ts`). The confirm is a `<dialog>`
+(menu-motion grows it out of the ⋯) with the class, its long name, two count blocks, the to-dos by name, what it does,
+**Keep it** / **Hide it**. After Hide: the group shrinks away (motion.flip), the toast says "Removed 3 MKTG 777
+assignments and 2 to-dos" with **Undo** (12 s). Settings → Accounts → **Hidden classes** lists them with
+**Show again**. Homework, To-do, Today and Settings redraw after any change. Demo: `?demo` has the made-up MKTG 777;
+`?demo&drop` adds its two to-dos. Styles in `ui/src/coursedrop.css` (prefixed `cd-` / `asg-course`).
+
+**Tests** (container, not the Dell): `tests/test_course_drop.py` (71: matching incl. Marketing vs Mathematics and
+ambiguity, near-miss texts, the board from a fake feed and a fake API with grades, to-do archive and restore, the
+whole app with every surface before → after → Undo, the cached brief, the tool's confirm/yes/no/expiry/own-words
+rules, routing phrases and near misses, policy/calibration), `tests/test_course_drop_ui.py` (5, Playwright in
+`?demo&svg&drop`, added to the CI browser job: ⋯ menu → confirm with counts → Removed … Undo, Keep it and Escape,
+Settings → Show again, Monkey's confirm event with a never-issued token refused, narrow window), `ui/test/
+coursedrop.test.ts` (1). Full suite `pytest -n 4 --dist loadfile`: 1150 passed, 23 skipped, 6 failed under load
+average ~20; one was real (a test's `SimpleNamespace` services had no `hidden_courses`; fixed with `getattr`) and the
+five browser/e2e ones passed when re-run alone. vitest 141 passed. Screenshots were saved outside the repo.
+
 ## 2026-11-23: reminders as Windows notifications and on the phone (branch `feature/todo-notifications`)
 
 The owner asked: "Make reminders appear as windows notifications and on my phone too." That is the owner's OK for these two outward channels (CLAUDE.md: ask first). Both are settings in **Settings → Reminders**; nothing else became outward-facing.

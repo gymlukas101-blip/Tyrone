@@ -1,0 +1,58 @@
+/* "I dropped this class": Homework's By class groups and their ⋯ menu, the confirm, Settings → Hidden classes.
+   Prefixed cd- / asg-course (agent-lessons: a new layer's class names must not pick up other styles). Buttons get
+   the chunky blocky look from game.css; motion comes from motion.ts / menu-motion.ts (dialogs grow out of the ⋯). */
+
+/* ---- Homework → By class */
+.asg-groups { display: flex; flex-direction: column; gap: 10px; }
+.asg-course { border: 2px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 14px; padding: 8px 10px 10px;
+  background: color-mix(in srgb, var(--panel2) 45%, transparent); }
+.asg-course-head { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.asg-course-name { font-family: var(--display); font-size: 16px; letter-spacing: .02em; color: #fff;
+  text-shadow: 0 2px 0 var(--ink, #14240f); }
+.asg-course-full { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.asg-course-count { font-size: 12px; margin-left: auto; white-space: nowrap; }
+.asg-course .empty { margin: 2px 0 0; font-size: 12px; }
+.asg-course .asg .course { display: none; }        /* the group header already names the class */
+.ghost.mini.cd-more { margin-left: 4px; min-width: 32px; font-size: 18px; line-height: 1; font-weight: 900; padding: 0 6px 4px; }
+.cd-more[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* ---- the ⋯ menu */
+.cd-menu { position: fixed; z-index: 1200; min-width: 200px; padding: 6px; border-radius: 14px; background: var(--panel);
+  border: 3px solid var(--ink, #14240f); box-shadow: 0 6px 0 rgba(0, 0, 0, .35), 0 12px 28px rgba(0, 0, 0, .35); }
+.cd-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-weight: 800;
+  color: var(--text); background: transparent; border: 0; border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.cd-item:hover, .cd-item:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.cd-item-ico { font-size: 18px; }
+
+/* ---- the confirm */
+dialog.cd-dlg { width: min(420px, 92vw); border-radius: 20px; border: 3px solid var(--ink, #14240f);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, .35); }
+.cd-box { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; }
+.cd-box header { display: flex; align-items: center; gap: 10px; background: none; padding: 0; border: 0; }
+.cd-box h3 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: .02em; color: #fff;
+  -webkit-text-stroke: 3px var(--ink, #14240f); paint-order: stroke fill; }
+.cd-ico { font-size: 30px; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .35)); }
+.cd-q { margin: 0; font-size: 15px; }
+.cd-counts { display: flex; gap: 10px; }
+.cd-count { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 6px; border-radius: 14px;
+  border: 3px solid var(--ink, #14240f); background: var(--panel2); box-shadow: 0 4px 0 rgba(0, 0, 0, .3); }
+.cd-count strong { font-family: var(--display); font-size: 28px; line-height: 1.1; color: #fff;
+  text-shadow: 0 2px 0 var(--ink, #14240f); font-variant-numeric: tabular-nums; }
+.cd-count span { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.cd-todos { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.cd-todos li { overflow-wrap: anywhere; }
+.cd-note { margin: 0; font-size: 12px; }
+.cd-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.cd-actions button { min-width: 96px; }
+
+/* ---- Settings → Accounts → Hidden classes */
+.cd-hidden-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cd-hidden-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 10px; }
+.cd-hname { font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+.cd-hname .meta { font-weight: 600; }
+.cd-hmeta { font-size: 12px; flex: 1 1 12em; }
+.cd-hidden-list .ghost.mini { margin-left: auto; }
+.cd-none { font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .cd-menu, .cd-dlg { animation: none; } }

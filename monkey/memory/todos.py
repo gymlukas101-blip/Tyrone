@@ -41,7 +41,12 @@ COLUMNS: dict[str, str] = {           # name -> type/default; new columns are ad
     "deleted_at": "REAL",
     "reminded_for": "TEXT NOT NULL DEFAULT ''",   # the due string the in-app reminder already fired for
     "snooze_until": "REAL",
+    # status 'dropped': archived because its class was dropped (hidden from every list and reminder). It keeps
+    # the course key and the status it had, so "show the class again" puts it back exactly as it was.
+    "dropped_course": "TEXT NOT NULL DEFAULT ''",
+    "archived_from": "TEXT NOT NULL DEFAULT ''",
 }
+DROPPED = "dropped"
 
 
 # ------------------------------------------------------------------ due-date parsing
@@ -416,6 +421,9 @@ class TodoStore:
         if status == "done":
             out = sorted((r for r in rows if r["status"] == "done"), key=lambda r: -(r["done_at"] or 0))[:done_limit]
             return out
+        if status == DROPPED:                        # archived with a dropped class (never in the other lists)
+            return sorted((r for r in rows if r["status"] == DROPPED), key=lambda r: r["created"] or 0)
+        rows = [r for r in rows if r["status"] != DROPPED]
         out = [r for r in rows if r["status"] == "open"] if status != "all" else rows
         if status == "overdue":
             out = [r for r in out if r["overdue"]]
@@ -437,7 +445,7 @@ class TodoStore:
         if not ref:
             return []
         exact = self.get(ref.lower(), now)
-        if exact:
+        if exact and exact["status"] != DROPPED:
             return [exact]
         pool = self.items("all", now)
         if status != "all":
@@ -558,10 +566,36 @@ class TodoStore:
             raise KeyError(f"no to-do with id {tid}")
         return got
 
+    # ---- a dropped class: its to-dos are archived (status 'dropped'), never deleted, and come back with the class
+    def archive_for_course(self, ids: list[str], course_key: str) -> list[dict]:
+        """Archive these to-dos under a dropped course. Returns the items as they were (for "Removed … Undo")."""
+        out = []
+        ts = time.time()
+        with self._lock, self._conn() as c:
+            for tid in ids:
+                r = c.execute("SELECT status FROM todos WHERE id=? AND deleted_at IS NULL", (tid,)).fetchone()
+                if r is None or r[0] == DROPPED:
+                    continue
+                c.execute("UPDATE todos SET status=?, archived_from=?, dropped_course=?, updated=? WHERE id=?",
+                          (DROPPED, r[0], course_key, ts, tid))
+                out.append(tid)
+        return [self.get(t) for t in out]  # type: ignore[misc]
+
+    def restore_course(self, course_key: str) -> list[dict]:
+        """The class is shown again: its archived to-dos go back to the status they had (open or done)."""
+        with self._lock, self._conn() as c:
+            ids = [r[0] for r in c.execute("SELECT id FROM todos WHERE status=? AND dropped_course=?",
+                                           (DROPPED, course_key))]
+            c.execute("UPDATE todos SET status=CASE WHEN archived_from IN ('open', 'done') THEN archived_from "
+                      "ELSE 'open' END, archived_from='', dropped_course='', updated=? WHERE status=? AND "
+                      "dropped_course=?", (time.time(), DROPPED, course_key))
+        return [t for t in (self.get(i) for i in ids) if t is not None]
+
     def set_origin(self, tid: str, origin: dict) -> dict:
         """Record where an item came from (an accepted email suggestion): account label, the quoted line, a link."""
         keep = {k: str(v)[:300] for k, v in (origin or {}).items()
-                if k in ("kind", "account", "account_label", "evidence", "subject", "link", "suggestion") and v}
+                if k in ("kind", "account", "account_label", "evidence", "subject", "link", "suggestion",
+                         "course_key", "course") and v}
         with self._lock, self._conn() as c:
             c.execute("UPDATE todos SET origin=? WHERE id=?", (json.dumps(keep) if keep else "", tid))
         got = self.get(tid)

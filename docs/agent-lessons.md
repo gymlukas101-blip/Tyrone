@@ -37,6 +37,8 @@ How it's kept up to date:
 - **The Linux test lock has no Playwright, so browser tests skip silently.** Install it as CI's `ui-browser` job does (`pip install "playwright==1.65.2"`), build `ui/dist`, and check the browser tests ran (`-rs`) before you report them passing. *Why:* the new Tasks/inbox UI tests showed "4 skipped" on the first run, which reads like a pass in a `tail`.
 - **Screenshots go in a folder unique to your run** (e.g. `scratchpad/<feature>-shots-<random>`), never a shared `scratchpad/shots`. *Why:* other sessions write into the same scratchpad, and a shared folder mixed their screenshots with this run's.
 - **A Google token stores the scopes it was granted; load and refresh credentials with those, never with a fixed list.** *Why:* `credentials()` passed the base `SCOPES`, so the first refresh after an incremental-consent upgrade would have asked for fewer scopes and silently dropped `gmail.modify`.
+- **A new `Services` field is read with `getattr(self.s, "x", None)` in tools.** *Why:* some tests pass a `SimpleNamespace` as services, and `self.s.hidden_courses` broke `get_calendar` there.
+- **In Playwright, move the mouse off a button before clicking it a second time.** *Why:* the blocky hover lift keeps a hovered button "not stable", so a re-click timed out after 30 s.
 - **Fake clients in tests take `(content, stop_reason)` script items** (`tests/test_agent_loop.py` `FakeClient`). *Why:* wasted a debug round.
 
 ### Windows specifics

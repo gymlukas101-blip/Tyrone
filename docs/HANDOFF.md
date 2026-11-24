@@ -1,10 +1,19 @@
 # Handoff: where Monkey stands
 
-Last updated 2026-11-24. Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
+Last updated 2026-11-24 (dropped class). Everything below is on `main`, including Voice 2.0 and hybrid computer use (merged together on 2026-11-20, after the sound-off, Animation 2.0 and sound-rebuild releases v0.3.81 and v0.3.83). The owner is on the Dell XPS 15 9530.
 
 **Not yet tried on the Dell:** Voice 2.0 (early commit, fast voice routing, soft ack; setting `early_commit` = false restores the old endpointing), hybrid computer use (needs a live model run, `docs/research/COMPUTER-USE-QUALITY.md` §7), the new face and lip sync, and the sounds.
 
 Everything is on `main`. The development sessions run in throwaway cloud containers, so anything not in this repo is gone when one ends. The chat history survives, but not the container's files.
+
+## Dropped a class (branch `feature/dropped-course`, waiting for review)
+- The owner asked to "remove all marketing assignments since I dropped the class". Built as a feature they use once: a class can be hidden everywhere in Monkey and shown again. Local data only; nothing changes on Canvas.
+- **How the owner does it** (either way):
+  - Homework → **By class** → **⋯** next to the class → **I dropped this class** → the confirm names the class and the counts → **Hide it**. The toast says "Removed N … assignments and M to-dos" with **Undo**.
+  - Or say/type "I dropped marketing" (or "remove all my marketing assignments", "hide the marketing class"). Monkey asks "Hide <class> everywhere? N assignments, M to-dos" and shows the same confirm; say "yes" or press Hide it.
+  - Show it again: the toast's Undo, Settings → Accounts → **Hidden classes** → Show again, or "show marketing again".
+- Hidden from: Homework, Today, the morning brief (due, overdue, today's classes, class times from notes), the brain's assignment/calendar/ranking tools, reminders, email to-do suggestions, and class-schedule detection. Its to-dos are archived (status `dropped`, restored as they were). A memory line "Dropped <class> on <date>" goes in the owner's local classes.md.
+- Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-24, dropped class). Not tried on the Dell or with the owner's real Canvas feed (the match uses the feed's course codes; a class with no code in the feed is matched by name).
 
 ## To-do list (branch `feature/todo-list`, waiting for review)
 - 📝 To-do panel and brain tools (`add_todo`, `list_todos`, `update_todo`, `delete_todo`): the owner's own to-do list in `monkey.db`, with quick add ("call the dentist tomorrow 5pm"), sub-steps, Undo, Monkey's "help me with this" (steps, then existing tools only), in-app reminders and a To-do section in the morning brief. Details: `docs/IMPLEMENTATION-NOTES.md` (2026-11-23).
@@ -116,6 +125,8 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
    remove scopes, add `https://www.googleapis.com/auth/gmail.modify` (and `.../auth/gmail.settings.basic` for "skip the
    inbox" filters) → Save. Keep the app In production; the unverified-app warning is expected (Advanced → Go to Monkey).
    Then 🖐 Tasks → Clean up my inbox → Allow in Google.
+7. The dropped class (once `feature/dropped-course` ships): Homework → By class → ⋯ → I dropped this class → Hide it,
+   or say "I dropped marketing" and then "yes". Check that the confirm names the right class and counts.
 
 ## Next up for development
 - Tune the router from the benchmark results.

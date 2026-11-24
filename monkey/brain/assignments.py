@@ -22,6 +22,7 @@ class Assignment:
     title: str
     course: str
     course_id: str = ""
+    course_name: str = ""           # Canvas's long course name when the API gives it ("Intro to Marketing")
     assignment_id: str = ""
     due: datetime | None = None
     points: float | None = None

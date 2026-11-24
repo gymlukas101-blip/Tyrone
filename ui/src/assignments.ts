@@ -1,21 +1,27 @@
 // Canvas checklist: ranked assignments with animated checkboxes.
 import { countdown, h, s, toast } from "./dom";
 import { confetti, flip, pop, toastGone, toastShown } from "./motion";
+import { courseMoreButton } from "./coursedrop";
 
 export interface Item {
   id: string; title: string; course: string; due: string | null; points: number | null;
   impact_pct: number | null; course_grade: number | null; missing: boolean; priority: number;
   tier: "critical" | "high" | "normal" | "low" | "done"; reason: string; url: string; done: boolean;
-  source: string;
+  source: string; course_key?: string;
 }
+/** A course on the board (Python groups them: Canvas course id, else the course code). */
+export interface CourseInfo { key: string; name: string; full?: string; assignments: number; open: number }
 export interface Board {
   source: "canvas" | "feed" | "none"; todo: Item[]; done: Item[];
   stats: { week_total?: number; week_done?: number; missing?: number; critical?: number };
+  courses?: CourseInfo[];
+  hidden?: { key: string; name: string; assignments: number }[];       // classes the owner dropped (not shown)
 }
+type Tab = "todo" | "class" | "done";
 type Toggle = (id: string, done: boolean) => Promise<{ ok: boolean; synced?: boolean; error?: string }>;
 type Open = (url: string) => void;
 
-let current: { board: Board; root: HTMLElement; toggle: Toggle; open: Open; tab: "todo" | "done" } | null = null;
+let current: { board: Board; root: HTMLElement; toggle: Toggle; open: Open; tab: Tab } | null = null;
 
 function checkbox(checked: boolean) {
   const svg = s("svg", { viewBox: "0 0 28 28", width: 28, height: 28, "aria-hidden": "true" },
@@ -143,13 +149,53 @@ function ring(done: number, total: number) {
     s("text", { x: 26, y: 30, "text-anchor": "middle", class: "ring-txt" }, `${done}/${total}`));
 }
 
-export function undoToast(text: string, undo: () => void) {
+export function undoToast(text: string, undo: () => void, ms = 7000) {
   const host = (Array.from(document.querySelectorAll("dialog[open]:not([data-m-closing])")).pop() as HTMLElement | undefined) ?? document.body;
   const t = h("div", { class: "toast" }, text, " ",
     h("button", { class: "ghost mini", type: "button", onclick: () => { toastGone(t); undo(); } }, "Undo"));
   host.append(t);
   toastShown(t);
-  setTimeout(() => toastGone(t), 7000);
+  setTimeout(() => toastGone(t), ms);
+}
+
+/** The board's courses (from Python, or grouped here for an older board), each with its open items. */
+function groups(board: Board): { c: CourseInfo; items: Item[]; done: number }[] {
+  const keyOf = (it: Item) => it.course_key || `name:${it.course}`;
+  const list: CourseInfo[] = board.courses?.length ? [...board.courses] : [];
+  if (!list.length) {
+    const seen = new Map<string, CourseInfo>();
+    for (const it of [...board.todo, ...board.done]) {
+      const k = keyOf(it);
+      const c = seen.get(k) ?? { key: k, name: it.course, assignments: 0, open: 0 };
+      c.assignments += 1; if (!it.done) c.open += 1;
+      seen.set(k, c);
+    }
+    list.push(...Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name)));
+  }
+  return list.map((c) => ({ c, items: board.todo.filter((it) => keyOf(it) === c.key),
+                            done: board.done.filter((it) => keyOf(it) === c.key).length }));
+}
+
+/** "By class": one group per course, each with a ⋯ menu (I dropped this class). */
+function byClass(board: Board) {
+  const gs = groups(board);
+  if (!gs.length) return h("p", { class: "meta empty" }, "No classes on the board.");
+  return h("div", { class: "asg-groups" }, ...gs.map(({ c, items, done }) =>
+    h("section", { class: "asg-course", "data-key": c.key, "aria-label": c.name },
+      h("div", { class: "asg-course-head" },
+        h("span", { class: "asg-course-name" }, c.name),
+        c.full ? h("span", { class: "meta asg-course-full" }, c.full) : null,
+        h("span", { class: "meta asg-course-count" }, `${items.length} to do${done ? ` · ${done} done` : ""}`),
+        courseMoreButton({ key: c.key, name: c.name, full: c.full })),
+      items.length ? h("ul", { class: "asg-list" }, ...items.map(row)) : h("p", { class: "meta empty" }, "Nothing to do here."))));
+}
+
+/** New data for the board on screen (a class was hidden or shown again): rows glide out/in, the tab stays. */
+export function replaceBoard(board: Board, root?: HTMLElement) {
+  if (!current || !current.root.isConnected || (root && current.root !== root)) return false;
+  current.board = board;
+  draw();
+  return true;
 }
 
 let drawnTab: string | null = null;
@@ -160,7 +206,7 @@ function draw() {
   // new list: it cascades in, without ghosts of the old tab.
   const switched = drawnTab !== null && drawnTab !== tab;
   drawnTab = tab;
-  const play = flip(root, "li.asg", (el) => el.dataset.id);
+  const play = flip(root, "li.asg, section.asg-course", (el) => el.dataset.id ?? el.dataset.key);
   const st = board.stats;
   const list = tab === "todo" ? board.todo : board.done;
   root.querySelector(".asg-body")!.replaceChildren(
@@ -179,9 +225,12 @@ function draw() {
     h("div", { class: "tabs" },
       h("button", { type: "button", class: tab === "todo" ? "on" : "", onclick: () => { current!.tab = "todo"; draw(); } },
         `All to do (${board.todo.length})`),
+      h("button", { type: "button", class: tab === "class" ? "on" : "", "data-tab": "class",
+                    onclick: () => { current!.tab = "class"; draw(); } }, "By class"),
       h("button", { type: "button", class: tab === "done" ? "on" : "", onclick: () => { current!.tab = "done"; draw(); } },
         `Done (${board.done.length})`)),
-    list.length
+    tab === "class" ? byClass(board)
+    : list.length
       ? h("ul", { class: "asg-list" }, ...list.map(row))
       : h("p", { class: "meta empty" }, tab === "todo" ? "Nothing left. You're locked in. 🔒" : "Nothing checked off yet."),
   );
@@ -189,11 +238,11 @@ function draw() {
   if (switched) pop(root.querySelector(".asg-body .tabs button.on"), 0.7);
 }
 
-export function renderAssignments(card: HTMLElement, board: Board, toggle: Toggle, open: Open) {
+export function renderAssignments(card: HTMLElement, board: Board, toggle: Toggle, open: Open, tab: Tab = "todo") {
   card.classList.add("assign");
   const body = h("div", { class: "asg-body" });
   card.append(body);
-  current = { board, root: card, toggle, open, tab: "todo" };
+  current = { board, root: card, toggle, open, tab };
   drawnTab = null;
   draw();
 }

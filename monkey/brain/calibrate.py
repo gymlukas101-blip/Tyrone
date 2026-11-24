@@ -32,6 +32,7 @@ SAMPLES: dict[str, str] = {
     "assignments": "what should I work on tonight?",
     "check_off": "check off the CS 400 project proposal",
     "todo": "add call the dentist tomorrow at 5 to my to-do list",
+    "course_drop": "I dropped Marketing 777, remove all its assignments",
     "task_helper": "unsubscribe me from the Daily Byte newsletter",
     "health": "how did I sleep last night?",
     "calendar": "what's on my calendar tomorrow?",
@@ -57,6 +58,10 @@ FAKE: dict[str, object] = {
         {"id": "a3", "course": "BIO 151", "name": "Lab report 5", "due": "yesterday", "points": 20,
          "share_of_grade": "2%", "current_grade": "B", "missing": True, "tier": "critical"}]},
     "check_off_assignment": {"ok": True, "synced_to_canvas": True},
+    "drop_course": {"ask_user": "Hide MKTG 777 everywhere? 6 assignments, 2 to-dos.", "class": "MKTG 777",
+                    "assignments": 6, "todos": ["Read ch 4 for MKTG 777", "Marketing case study"],
+                    "note": "Not hidden yet. Ask the user exactly that question and wait."},
+    "undrop_course": "MKTG 777 is back: 6 assignments and 2 to-dos. Say it in one short sentence.",
     "add_todo": 'Added to the to-do list: id=t9 "Call the dentist", due tomorrow 5:00 PM. Confirm in a few words.',
     "list_todos": {"counts": {"open": 3, "overdue": 1, "today": 1}, "items": [
         {"id": "t1", "text": "Email the TA about the lab makeup", "due": "yesterday", "when": "overdue since yesterday",
