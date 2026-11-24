@@ -722,3 +722,19 @@ and long tasks appear in both; compare builds only from alternating runs on a qu
 **Tests:** `ui/test/motion.test.ts` (19: levels, GPU-only properties, readability limits, Juice-minimal/reduced paths,
 calm, count-up frames, `leave`). The browser suites run with motion on (`?demo&svg`); entrances never block clicks
 (elements are in the DOM at once; exits are `inert`, ghosts sit in a click-through layer outside the panels).
+
+## 2026-11-24: click Monkey to turn his hearing on or off
+- The owner asked to click Monkey to start or stop his hearing, with a whole-body reaction.
+- **Backend:** `MonkeyApp.toggle_hearing()` / `Api.toggle_hearing()`.
+  - Hearing off (muted) → unmute and listen now.
+  - Listening or in a conversation → end the turn (cancel) and mute the microphone (no wake word either) until the next click, the mic button, the hotkey or the tray.
+  - Otherwise → listen now; a click while he talks interrupts, like barge-in.
+  - The mic button / `push_to_talk` also unmutes.
+  - `state` events now carry `muted`; a `hearing` event drives the UI. The tray's Mute item emits it too.
+- **UI:** the 3D monkey takes clicks only on him: a screen-space ellipse in his projected rest bounds, so clicks on the jungle around him do nothing. The cursor becomes a pointer over him. `#avatar` is a focusable button (Enter/Space), and double clicks are one toggle.
+- **Reaction** (`ui/src/avatar/hearingpop.ts`, applied to the model root on top of any clip):
+  - **on:** crouch, then a stretch with a hop, an overshooting landing and a settle. It plays `attn_perk`, a wide-eyed raised-brow face, a "!" plus a sparkle ring, and ear-perk + boing sounds.
+  - **off:** a small "oh?", then a volume-keeping deflate low and wide, then a wobbly recovery. It plays `idle_shake_off`, a squinty face, a puff, and a flop sound.
+  - Juice calm halves it; Minimal and reduced motion keep it still. The SVG fallback gets the same pop as a CSS animation.
+  - While hearing is off, he's slightly desaturated and a "🙉 Hearing off · click to turn on" badge sits under him.
+- **Tests:** `tests/test_hearing_click.py` (toggle logic), `tests/test_hearing_click_ui.py` (3D and SVG, click and keyboard, badge), `ui/test/hearingpop.test.ts` (curves and hit test).

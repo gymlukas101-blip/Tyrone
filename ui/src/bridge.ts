@@ -57,6 +57,8 @@ export interface Api extends ScreenTimeApi {
   save_settings(changes: Record<string, any>): Promise<AppState>;
   send_text(text: string, importance: Importance | null): Promise<void>;
   push_to_talk(): Promise<void>;
+  /** Click on Monkey: hearing on (listen now) or off (stop + mute until the next click). */
+  toggle_hearing(): Promise<{ ok: boolean; on: boolean; muted: boolean }>;
   stop_speaking(): Promise<void>;
   approve(draftId: string, token: string): Promise<{ ok: boolean; error?: string }>;
   cancel_draft(draftId: string): Promise<void>;
@@ -356,7 +358,21 @@ function mockApi(): Api {
         later(700, () => talk("Yo, I'm in demo mode right now. Run me as the desktop app and I'm fully plugged in."));
       }
     },
-    async push_to_talk() { emit([["state", { state: "listening", conversation: true }]]); later(4000, () => emit([["state", { state: "idle", conversation: false }]])); },
+    async push_to_talk() {
+      demoHearing.muted = false; demoHearing.listening = true;
+      emit([["state", { state: "listening", conversation: true, muted: false }]]);
+      later(4000, () => { if (demoHearing.listening) { demoHearing.listening = false; emit([["state", { state: "idle", conversation: false, muted: false }]]); } });
+    },
+    async toggle_hearing() {
+      if (demoHearing.listening && !demoHearing.muted) {
+        demoHearing.listening = false; demoHearing.muted = true;
+        emit([["hearing", { on: false, muted: true, via: "click" }], ["state", { state: "idle", conversation: false, muted: true }]]);
+        return { ok: true, on: false, muted: true };
+      }
+      emit([["hearing", { on: true, muted: false, via: "click" }]]);
+      await (this as any).push_to_talk();
+      return { ok: true, on: true, muted: false };
+    },
     async stop_speaking() {},
     async approve() { return { ok: true }; },
     async cancel_draft() {},
@@ -527,6 +543,9 @@ const dueInHours = (hours: number) => {
 };
 const demoTodoSettings = { reminders: true, speak: false };
 /** Settings → Reminders in demo mode: a fake topic (never a real one) and a fake send. */
+/** Demo mode: Monkey's hearing (click toggles; see toggle_hearing). */
+const demoHearing = { listening: false, muted: false };
+
 function demoReminderApi(state: AppState) {
   const ph = { topic: "", status: { state: "idle", at: null, detail: "" } as PhoneStatus };
   const st = state.settings;

@@ -12,6 +12,7 @@ import { type Juice, Sfx } from "./avatar/sfx";
 import { Vfx } from "./avatar/vfx";
 import { type Beat, crossed } from "./avatar/events";
 import { PerformanceDirector } from "./avatar/acting";
+import { POP_DUR, type PopKind, onAvatar, popAt } from "./avatar/hearingpop";
 import { FaceMixer } from "./avatar/face";
 import { addFurDetail, setFurStrength } from "./avatar/fur";
 
@@ -105,6 +106,100 @@ export class Avatar3D implements AvatarLike {
   /** Layered face (avatar/face.ts) and the performance director (avatar/acting.ts). */
   readonly face = new FaceMixer();
   readonly director = new PerformanceDirector();
+  /** Click on him -> the app toggles his hearing (main.ts sets this). */
+  onClick: (() => void) | null = null;
+  private pop: { kind: PopKind; t0: number } | null = null;
+  /** Every hearing pop played (tests and the Sound Lab read it). */
+  readonly popLog: PopKind[] = [];
+  private popBase: { scale: THREE.Vector3; y: number } | null = null;
+  private popHeight = 1;
+  private hitBox: THREE.Box3 | null = null;
+
+  /** His on-screen box (page pixels), for clicks: the rest-pose bounds projected through the camera. */
+  private screenBox() {
+    const b = this.hitBox;
+    if (!b) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
+      const v = new THREE.Vector3(x, y, z).project(this.camera);
+      const px = r.left + (v.x + 1) / 2 * r.width, py = r.top + (1 - v.y) / 2 * r.height;
+      left = Math.min(left, px); right = Math.max(right, px); top = Math.min(top, py); bottom = Math.max(bottom, py);
+    }
+    // the box is loose around a crouching gorilla: tighten it so the jungle around him stays click-free
+    const dx = (right - left) * 0.08, dy = (bottom - top) * 0.04;
+    return { left: left + dx, right: right - dx, top: top + dy, bottom: bottom - dy };
+  }
+
+  hitTest(x: number, y: number) {
+    const box = this.screenBox();
+    return !!box && onAvatar(x, y, box);
+  }
+
+  private installClick() {
+    const el = this.renderer.domElement;
+    let down: { x: number; y: number; t: number } | null = null;
+    el.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+    el.addEventListener("pointerup", (e) => {
+      const d = down;
+      down = null;
+      if (!d || e.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || performance.now() - d.t > 600) return;
+      if (this.hitTest(e.clientX, e.clientY)) this.onClick?.();
+    });
+    el.addEventListener("pointermove", (e) => {
+      el.style.cursor = this.onClick && this.hitTest(e.clientX, e.clientY) ? "pointer" : "";
+    }, { passive: true });
+  }
+
+  /** The whole-body reaction to his hearing turning on (ears up: pop + hop) or off (deflate + wobble). */
+  hearingPop(on: boolean) {
+    const kind: PopKind = on ? "on" : "off";
+    if (this.sleeping) this.wake("startle");
+    this.pop = { kind, t0: this.virtualNow ?? performance.now() };
+    this.popLog.push(kind);
+    this.poke();
+    const clip = this.actions.get(on ? "attn_perk" : "idle_shake_off");
+    this.expr = on ? { wideEyes: 0.7, browsUp: 0.8, browOuterUp_L: 0.4, browOuterUp_R: 0.4, smile: 0.45 }
+                   : { squint: 0.35, browDown_L: 0.3, browDown_R: 0.3, browsSad: 0.25, smirk_L: 0.25 };
+    if (clip) {
+      this.endGesture();
+      clip.reset().setEffectiveWeight(1).fadeIn(0.12).play();
+      this.current?.fadeOut(0.18);
+      this.current = clip;
+      this.emoting = clip;                  // its "finished" clears the face and returns to the state clip
+      this.emoteName = null;
+    }
+    if (this.life && this.juice !== "minimal") {
+      const head = this.head(0.22);
+      if (on) {
+        this.vfx.spawn({ kind: "bang", at: head, size: 0.16, life: 0.9, pop: true, vel: new THREE.Vector3(0, 0.2, 0) });
+        this.around(8, 0.5).forEach((p, i) => this.vfx.spawn({ kind: "sparkle", at: p, size: 0.08, life: 0.45, pop: true,
+          delay: i * 0.035, spin: 2 }));
+      } else {
+        this.vfx.spawn({ kind: "puff", at: head, size: 0.14, life: 0.8, vel: new THREE.Vector3(0.05, 0.12, 0),
+          grow: [0.6, 1.3], pop: false });
+      }
+    }
+    if (on) { this.sfx.play(this.sfx.has("ear_perk") ? "ear_perk" : "pop"); this.sfx.play("boing", 0.6); }
+    else this.sfx.play(this.sfx.has("flop") ? "flop" : "pop", 0.8);
+  }
+
+  /** Applies the pop on top of the clip pose (every frame while it runs). */
+  private applyPop(t: number) {
+    if (!this.model || !this.popBase || !this.pop) return;
+    const b = this.popBase;
+    const strength = this.juice === "minimal" || matchMedia("(prefers-reduced-motion: reduce)").matches ? 0
+      : this.juice === "calm" ? 0.5 : 1;
+    const el = (t - this.pop.t0) / 1000;
+    const f = popAt(this.pop.kind, el, strength);
+    this.model.scale.set(b.scale.x * f.sxz, b.scale.y * f.sy, b.scale.z * f.sxz);
+    this.model.position.y = b.y + f.lift * this.popHeight;
+    if (f.done || el > POP_DUR[this.pop.kind] + 0.1) {
+      this.model.scale.copy(b.scale);
+      this.model.position.y = b.y;
+      this.pop = null;
+    }
+  }
   private faceKeys = new Set<string>();
   private visNow: Record<string, number> = {};
   private jaw = 0;
@@ -147,6 +242,7 @@ export class Avatar3D implements AvatarLike {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.domElement.className = "avatar3d";
+    this.installClick();
     host.replaceChildren(this.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -198,6 +294,10 @@ export class Avatar3D implements AvatarLike {
     const gltf = await new GLTFLoader().loadAsync(url);
     const model = gltf.scene;
     this.model = model;
+    this.popBase = { scale: model.scale.clone(), y: model.position.y };
+    const hb = new THREE.Box3().setFromObject(model);
+    this.popHeight = hb.max.y - hb.min.y;
+    this.hitBox = hb;
     this.scene.add(model);
 
     model.traverse((o) => {
@@ -763,6 +863,8 @@ export class Avatar3D implements AvatarLike {
       this.faceKeys = new Set(Object.keys(out));
       for (const [k, v] of Object.entries(out)) this.setMorph(k, v);
     }
+
+    this.applyPop(t);
 
     // Glow follows the assistant state.
     const s = this.state;

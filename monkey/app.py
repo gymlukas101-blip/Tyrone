@@ -705,7 +705,8 @@ class MonkeyApp:
             state = "listening"
         else:
             state = self._agent_state
-        self.ui.emit("state", {"state": state, "conversation": self._in_conversation})
+        self.ui.emit("state", {"state": state, "conversation": self._in_conversation,
+                               "muted": bool(self.listener is not None and getattr(self.listener, "muted", False))})
 
     def _say(self, sentence: str) -> None:
         if self.speaker is not None:
@@ -828,8 +829,39 @@ class MonkeyApp:
         if self.listener is None:
             self._emit("error", {"message": "Microphone isn't ready yet."})
             return
+        if getattr(self.listener, "muted", False):     # asking to talk is turning his hearing back on
+            self.listener.muted = False
+            self.ui.emit("hearing", {"on": True, "muted": False, "via": "push_to_talk"})
         self._on_wake()
         self.listener.push_to_talk()
+
+    def hearing_listening(self) -> bool:
+        """He's taking in what you say right now (a turn being recorded, or a conversation waiting for you)."""
+        return bool(self._listening or self._agent_state in ("listening", "transcribing")
+                    or (self._agent_state == "idle" and self.listener is not None
+                        and getattr(self.listener, "mode", "") == "conversation"))
+
+    def toggle_hearing(self) -> dict:
+        """Clicking Monkey. Hearing off (muted) -> on, and he listens now. Listening / in a conversation -> off: the
+        turn ends and the microphone is muted (no wake word either) until the next click, the mic button, the hotkey
+        or the tray. Otherwise (idle, thinking, talking) -> he listens now; a click while he talks interrupts him."""
+        if self.listener is None:
+            self._emit("error", {"message": "Microphone isn't ready yet."})
+            return {"ok": False, "on": False, "muted": False}
+        if getattr(self.listener, "muted", False):
+            self.push_to_talk()                          # unmutes and starts listening
+            on = True
+        elif self.hearing_listening():
+            self.end_conversation("hearing turned off (clicked Monkey)", cancel=True)
+            self.listener.muted = True
+            on = False
+        else:
+            self.push_to_talk()
+            on = True
+        muted = bool(self.listener.muted)
+        self.ui.emit("hearing", {"on": on, "muted": muted, "via": "click"})
+        self._publish_state()
+        return {"ok": True, "on": on, "muted": muted}
 
     def _on_timeout(self) -> None:
         self._listening = False
@@ -1312,6 +1344,10 @@ class Api:
 
     def push_to_talk(self):
         self._app.push_to_talk()
+
+    def toggle_hearing(self):
+        """Click on Monkey: turn his hearing on (listen now) or off (stop and mute until the next click)."""
+        return self._app.toggle_hearing()
 
     def stop_speaking(self):
         if self._app.speaker:
@@ -2643,6 +2679,8 @@ def _tray(app: MonkeyApp, window) -> None:
             app.listener.muted = not app.listener.muted
             if app.listener.muted:
                 app.end_conversation("muted")
+            app.ui.emit("hearing", {"on": not app.listener.muted, "muted": app.listener.muted, "via": "tray"})
+            app._publish_state()
 
     def quit_app(icon, item):
         icon.stop()
