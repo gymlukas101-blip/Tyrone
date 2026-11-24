@@ -258,7 +258,7 @@ so the levels are unit-tested without a browser.
 | 98 | Today close | instant | shrinks back toward ☀, then the chat returns | 140 ms | fade |
 | 99 | To-do / Homework / Health / Lab open | card pop (CSS) | grows out of its header button; contents rise; the to-do title icon bounces | 100 + 380 ms | fade |
 | 100 | Settings section jump (nav, "Fix it" buttons) | scroll + outline | + the section slides in from the side you travelled | 300 ms snap | none |
-| 101 | Tasks → Mailing lists | one dialog closes, the other pops | hand-over: old slides out left, new slides in from right | 140 ms; 320 ms snap | fades |
+| 101 | Tasks → Mailing lists / Inbox cleanup | one dialog closes, the other pops | hand-over: old slides out left, new slides in from right | 140 ms; 320 ms snap | fades |
 | 102 | Dropdowns / popovers (`details`, memory chip, guides) | drop open (#65, #39) | unchanged | 110 + 320 ms | fade |
 | 103 | Native `select` menus | OS menu | not animatable (the OS draws it) | — | — |
 | 104 | Narrow / mobile layout (≤ 820 px stacked, ≤ 560 px icon-only header) | as wide | the same origin-aware motion; dialogs at 94 vw grow out of the (wrapped) header button | as wide | as wide |
@@ -275,7 +275,7 @@ so the levels are unit-tested without a browser.
 | 115 | Update check, Clean up old installs, Fill in from my calendar | button text | banana trio + busy label in the button | ≥ 400 ms | static |
 | 116 | Tasks dialog open | waited, then opened | opens at once with a form skeleton | as #106 | pulse |
 | 117 | Task helper planning (`PLANNING`) | "Thinking" badge | + bobbing monkey with "Planning the steps…" → "Still planning: reading the page…" (redraws keep their place) | while planning | static |
-| 118 | Mailing lists open / first scan | waited / "Reading list headers…" | dialog at once with a table skeleton; the scan shows the table skeleton + banana trio with changing words | while scanning | pulse |
+| 118 | Mailing lists and Inbox cleanup: open / scan | waited / "Reading list headers…" | dialog at once with a table skeleton; the scan shows the table skeleton + banana trio with changing words | while scanning | pulse |
 | 119 | Brain dialog (models per task) | waited, then opened | opens at once with a table skeleton | as #106 | pulse |
 | 120 | Avatar Lab: designs list; image generation (~40 s) | "Generating… (~40s)" on the button | designs skeleton; a placeholder tile with the swinging vine where the new picture lands, words change | until done | pulse |
 | 121 | Morning brief at start-up | card when ready | card at once with a text skeleton and the monkey; gone smoothly if there's no brief | as #106 | pulse |

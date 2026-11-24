@@ -59,6 +59,12 @@ Everything is on `main`. The development sessions run in throwaway cloud contain
 - Expressive, readable motion for every UI event and interaction: `ui/src/motion.ts` + `ui/src/motion.css`, inventory and rules in `docs/ui/MOTION.md`, notes and perf numbers in `docs/IMPLEMENTATION-NOTES.md` (2026-11-23, UI motion).
 - Follows Settings → Juice level (Minimal = short fades only) and the Windows "reduce motion" setting. Not tried on the Dell.
 
+## Menu motion + loading UIs (branch `feature/menu-motion`, waiting for review)
+- The owner asked for "highly animated menu popup animations and transitions and highly animated loading UIs for when menus are taking time to load".
+- Every dialog, panel and header card grows out of the button that opened it and closes back into it (faster); Escape animates too and always closes; Tasks → Mailing lists / Inbox slide across; Settings section jumps slide in. One helper for all dialogs: `ui/src/menu-motion.ts`.
+- Slow menus (over 150 ms) show a skeleton in their real layout with a jungle shimmer, a banana trio / swinging vine / bobbing monkey, words that change after 3 s and 8 s, an error with Try again, then crossfade to the content: `ui/src/loader.ts`. Covers Today, Homework, To-do, Health, Lab, Settings and its sections, Check everything, Tasks and task planning, Mailing lists, Inbox cleanup, Brain, the morning brief, update checks and image generation.
+- Rules, inventory (items 94–121) and levels: `docs/ui/MOTION.md` ("Menus", "Loading"); perf and notes: `docs/IMPLEMENTATION-NOTES.md` (2026-11-24, menu motion). Try it in a browser with `?demo&slow=1500`. Not tried on the Dell.
+
 ## Hybrid computer use (merged; live Dell run still pending)
 - **Hybrid computer use:** `monkey/automation/computer/`. One `Computer` interface over:
   - the managed browser (Playwright);

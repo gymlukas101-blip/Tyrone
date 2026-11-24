@@ -109,7 +109,7 @@ def test_escape_and_rapid_toggling_never_leave_a_dialog_stuck(browser):
         # Tasks → Mailing lists: one dialog hands over to the other; only the new one ends open
         p.click("#tasksBtn")
         p.wait_for_function(OPEN, arg="#tasksDlg", timeout=10000)
-        p.click("#tasksDlg >> text=Mailing lists")
+        p.click("#tasksDlg >> text=Unsubscribe from lists")
         p.wait_for_function(OPEN, arg="#mailDlg", timeout=10000)
         p.wait_for_function(SHUT, arg="#tasksDlg", timeout=2000)
         p.keyboard.press("Escape")

@@ -145,7 +145,7 @@ def test_tasks_menu_is_general_first_and_course_fields_live_only_in_the_course_t
         p.fill("#tasksDlg .tk-objective", "please clean up my inbox")
         p.click("#tasksDlg .tk-go")
         p.wait_for_selector("#inboxDlg[open]")
-        assert not p.is_visible("#tasksDlg")
+        p.wait_for_selector("#tasksDlg", state="hidden", timeout=3000)       # after its hand-over exit (menu-motion)
     finally:
         p.close()
 

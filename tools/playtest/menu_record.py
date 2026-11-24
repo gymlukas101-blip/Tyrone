@@ -107,7 +107,7 @@ def scenario_menus(page, rec: Recorder) -> None:
     _step(rec, page, "settings-jump-reminders", lambda: page.click("#settings .settingsnav >> text=Reminders"), 700)
     _step(rec, page, "settings-escape", lambda: page.keyboard.press("Escape"), 600)
     _step(rec, page, "tasks-open", lambda: page.click("#tasksBtn"), 900)
-    _step(rec, page, "tasks-to-mailing", lambda: page.click("#tasksDlg >> text=Mailing lists"), 1000)
+    _step(rec, page, "tasks-to-mailing", lambda: page.click("#tasksDlg >> text=Unsubscribe from lists"), 1000)
     _step(rec, page, "mailing-escape", lambda: page.keyboard.press("Escape"), 600)
     _step(rec, page, "today-open", lambda: page.click("#todayBtn"), 1000)
     _step(rec, page, "today-tab-schedule", lambda: page.click("#todayTab-schedule"), 800)
