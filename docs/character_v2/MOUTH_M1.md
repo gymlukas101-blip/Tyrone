@@ -143,4 +143,5 @@ upper-lip fold next to the corners: 40 flipped faces in F3's laugh, 0 in M1 apar
 9. **Found on the way (eyes, not fixed here):** `tools/character_v2/eye_poses.py` checks for magenta with the blends'
    AgX view transform, under which the magenta background renders as (201, 116, 201), so its leak test can't fail. The
    E5–E7 "0 leak pixels" results are therefore unverified. `mouth_poses.py` forces the Standard transform; the eye test
-   needs the same fix and a re-run.
+   needs the same fix and a re-run. **2026-11-25:** fixed in `eye_poses.py` and `eye_audit.py`, and shown to fail on a
+   throwaway scene. The counts on `tripo_M1.blend` are still to measure (`EYES_E7.md`).

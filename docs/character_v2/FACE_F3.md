@@ -16,7 +16,10 @@ E5's topology (fitted eyeball, one sealed lid and socket mesh per eye, the tuck 
 | Independent blinks | The app gained `winkEye(side)` and a `wink` event (`ui/src/avatar3d.ts`, `ui/src/main.ts`): it eases in and out over the ordinary blink, which carries on. Measured in the app: `blink_L` 1, `blink_R` 0 |
 
 Checks:
-- 0 background or skull leak pixels: 7 neutral views + 16 poses.
+- Leaks: **unverified.** The run reported 0 background or skull leak pixels (7 neutral views + 16 poses), but the test
+  could not fail: AgX rendered the magenta background as (201, 116, 201), which the detector rejects. Back faces were
+  drawn too, so an opening into the skull interior wouldn't have read as magenta anyway. Fixed in `eye_audit.py` /
+  `eye_poses.py` on 2026-11-25. F3 was not re-run; for the current eyes see `EYES_E7.md`.
 - Eyeballs: 0 open and 0 non-manifold edges.
 - Sheets: `G1` (Tripo / E5 / E6 / F3 neutral, 7 matched views) and `G2` (16 eye poses: half blink, blink, wink, squint, happy, angry, sad, surprised, 4 gaze directions, blink while looking aside, squint while looking up).
 

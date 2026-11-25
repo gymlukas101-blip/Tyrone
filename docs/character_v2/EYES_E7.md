@@ -18,10 +18,26 @@ separate parts the app animates, while keeping the reference look.
 
 Measured on Tripo's paint: iris ≈ 36° (angular radius on a 43 mm eyeball), pupil = 64% of the iris. One iris size
 for both eyes. Stack heights over the eyeball: iris 0.18–0.53 mm < catchlights 0.62 mm < lid margin 0.7 mm, so the
-lids slide over everything and a blink still seals: 0 leak pixels in 16 poses × 4 views, re-checked on the M1 model after
-`eye_poses.py` was fixed to render exact colours (before, AgX tone mapping turned the magenta background grey, so the
-E5–E7 leak tests could not fail; the detector now sees the background in 48 of 64 frames, the rest are face-filling
-close-ups).
+lids are built to slide over everything. **Whether a blink seals is not yet measured by a test that can fail:**
+- E7's "0 leak pixels in all 16 poses" ran under the blend's AgX view transform. AgX renders the magenta background as
+  (201, 116, 201), which the detector rejects, so the count was 0 whatever the geometry.
+- The 2026-11-24 re-check on the M1 model reported 0 in 16 poses × 4 views. It used the Standard transform, but kept
+  anti-aliasing and drew back faces, so it only saw background straight *through* the head. It could not see an opening
+  into the closed skull, which is what a missing socket shows. On `eye_leak_selftest.py`'s scene, hiding
+  `V2_EyeSock_L` gives 10,614 hole pixels and 0 through-the-head pixels.
+- Since 2026-11-25, `eye_poses.py` counts openings with back faces culled (`hole_px`, as the app draws single-sided
+  materials) as well as through the head (`through_px`). Both counts use an exact-colour pass, and each view first
+  proves that its background reads as magenta. The self-test proves the counts can fail.
+- **The real counts on `tripo_M1.blend` are still to measure.** The cloud workspace that held the blend is gone, and
+  the Tripo source isn't in the repo. With the blend in `$W/mouth_m1/`:
+  ```bash
+  $PY tools/character_v2/eye_poses.py -- $W/mouth_m1/tripo_M1.blend $W/mouth_m1/eye_leaks \
+      --views front,three_quarter_L,three_quarter_R,closeup_L
+  $PY tools/character_v2/eye_poses.py -- $W/mouth_m1/tripo_M1.blend $W/mouth_m1/eye_leaks_nosock \
+      --views front --hide V2_EyeSock_L          # must report hole_px > 0 for L, or the test is still blind
+  ```
+  `poses.json` gives the counts per pose, view and eye. Any leaking frame also writes `<pose>_<view>_leak.png` and
+  `where` (mm from the eye centre).
 
 ## App (this branch's UI)
 - `face.ts`: pupils are one signed size (dilate − constrict) with a slow irregular flutter (hippus, ±0.07), so the eyes

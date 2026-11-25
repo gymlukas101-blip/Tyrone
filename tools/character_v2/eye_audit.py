@@ -10,7 +10,9 @@ Measured, not assumed:
 3. Lids: the gap between each lid shell and its eyeball (floating lids), lid vertices inside the brow mesh.
 4. Background leaks: close-ups of the eye region from 7 cameras (front, 3/4 left, 3/4 right, side, top-down,
    low angle, eye close-up) on a magenta background; magenta pixels inside each projected eye disc are holes
-   through the head. Also rendered with the eye meshes hidden (what the socket looks like behind the eye).
+   through the head. Counted on a second render in exact colours (`exact_colours`), after `check_background` proves
+   the background really reads as magenta. Also rendered with the eye meshes hidden (what the socket looks like
+   behind the eye).
 5. For the Tripo source: its painted eye, sampled through front rays (sclera / iris / pupil colours, iris
    centre and radius, the opening's upper and lower contour) - the neutral design a reconstruction must match.
 Writes OUT_DIR/LABEL_eye_audit.json and the renders.
@@ -20,6 +22,7 @@ from __future__ import annotations
 import json
 import math
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import bpy
@@ -41,6 +44,98 @@ VIEWS = {  # name: (direction from target to camera, ortho scale)
     "top": (Vector((0, -0.55, 1)), 0.30), "low": (Vector((0, -0.85, -0.5)), 0.30), "closeup_L": (Vector((0, -1, 0.05)), 0.12),
 }
 MAGENTA = (1.0, 0.0, 1.0)
+EYE_DISC_R = 0.03                                               # m around each eye centre that the leak tests count
+
+
+def read_rgba(path: Path) -> np.ndarray:
+    """A rendered PNG as float RGBA, rows bottom-up (row 0 = camera-view y 0, like world_to_camera_view)."""
+    img = bpy.data.images.load(str(path), check_existing=False)
+    w, h = img.size
+    a = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return a.reshape(h, w, 4)
+
+
+def is_magenta(a: np.ndarray) -> np.ndarray:
+    return (a[..., 0] > 0.9) & (a[..., 1] < 0.12) & (a[..., 2] > 0.9)
+
+
+@contextmanager
+def exact_colours(sc, cull: bool = False):
+    """Render settings for a magenta leak pass, restored afterwards so pictures keep the scene's own look.
+    Standard view transform: the V2 blends use AgX, which renders a (1, 0, 1) background as about (201, 116, 201) and
+    made every earlier leak count 0 whatever the geometry. No anti-aliasing: edge pixels would mix with the background.
+    Flat grey geometry, so no texture can read as magenta. `cull` hides back faces: an opening in a front surface
+    then shows magenta even when the head is closed behind it (the skull interior is all back faces)."""
+    vs, d, sh, r = sc.view_settings, sc.display, sc.display.shading, sc.render
+    new = [(vs, "view_transform", "Standard"), (vs, "look", "None"), (vs, "exposure", 0.0), (vs, "gamma", 1.0),
+           (d, "render_aa", "OFF"), (r, "film_transparent", False),
+           (r.image_settings, "color_management", "FOLLOW_SCENE"), (sh, "light", "FLAT"),
+           (sh, "color_type", "SINGLE"), (sh, "single_color", (0.5, 0.5, 0.5)), (sh, "show_cavity", False),
+           (sh, "show_shadows", False), (sh, "show_xray", False), (sh, "show_specular_highlight", False),
+           (sh, "show_object_outline", False), (sh, "background_type", "VIEWPORT"),
+           (sh, "background_color", MAGENTA), (sh, "show_backface_culling", cull)]
+    old = []
+    for o, k, v in new:
+        cur = getattr(o, k)
+        old.append((o, k, cur if isinstance(cur, (str, float, int, bool)) else tuple(cur)))
+        setattr(o, k, v)
+    try:
+        yield
+    finally:
+        for o, k, v in old:
+            setattr(o, k, v)
+
+
+def check_background(sc, tmp: Path) -> list:
+    """Inside exact_colours(): render the current camera with every object hidden and fail unless all four corner pixels
+    pass is_magenta(). This proves the colour pipeline the leak count relies on, for views where the face fills the
+    frame too, so the test can't silently pass again. Returns the corner colour (0-255)."""
+    was = {o.name: o.hide_render for o in bpy.data.objects}
+    for o in bpy.data.objects:
+        o.hide_render = True
+    try:
+        sc.render.filepath = str(tmp)
+        bpy.ops.render.render(write_still=True)
+        a = read_rgba(tmp)
+    finally:
+        for o in bpy.data.objects:
+            o.hide_render = was[o.name]
+    corners = np.stack([a[0, 0], a[0, -1], a[-1, 0], a[-1, -1]])
+    rgb = [round(float(x) * 255) for x in corners[0, :3]]
+    if not is_magenta(corners).all():
+        raise RuntimeError(f"leak test is blind: the magenta background renders as {rgb} (0-255), which is_magenta() "
+                           f"rejects; check the view transform, look, exposure and anti-aliasing")
+    return rgb
+
+
+def enclosed(mag: np.ndarray) -> np.ndarray:
+    """Magenta pixels NOT connected (4-neighbour) to the frame border: openings surrounded by geometry. Magenta that
+    reaches the border is background beside the head's outline, e.g. where a 3/4 view's far eye disc overhangs it."""
+    out = np.zeros_like(mag)
+    out[0], out[-1], out[:, 0], out[:, -1] = mag[0], mag[-1], mag[:, 0], mag[:, -1]
+    while True:
+        grow = out.copy()
+        grow[1:] |= out[:-1]
+        grow[:-1] |= out[1:]
+        grow[:, 1:] |= out[:, :-1]
+        grow[:, :-1] |= out[:, 1:]
+        grow &= mag
+        if (grow == out).all():
+            return mag & ~out
+        out = grow
+
+
+def eye_discs(sc, cam, n: int, scale: float) -> dict:
+    """{side: (bool mask of the projected eye disc, projected centre)} for an n x n render of ortho scale `scale`."""
+    bpy.context.view_layer.update()                             # the camera matrix must be current before projecting
+    yy, xx = np.mgrid[0:n, 0:n] + 0.5                           # pixel centres
+    out = {}
+    for side, c in EYE_C.items():
+        p = world_to_camera_view(sc, cam, c)
+        out[side] = ((xx - p.x * n) ** 2 + (yy - p.y * n) ** 2 < (EYE_DISC_R / scale * n) ** 2, p)
+    return out
 
 
 def load(p: Path):
@@ -221,6 +316,7 @@ def render_views(out: Path, label: str, tag: str):
     cam.data.type = "ORTHO"
     sc.camera = cam
     leaks = {}
+    tmp = out / "_leak.png"
     for name, (d, scale) in VIEWS.items():
         tgt = EYE_C["L"] if name == "closeup_L" else TARGET
         cam.location = tgt + d.normalized() * 3
@@ -228,24 +324,21 @@ def render_views(out: Path, label: str, tag: str):
         cam.data.ortho_scale = scale
         path = out / f"{label}_{tag}_{name}.png"
         sc.render.filepath = str(path)
-        bpy.ops.render.render(write_still=True)
-        img = bpy.data.images.load(str(path), check_existing=False)
-        a = np.empty(img.size[0] * img.size[1] * 4, np.float32)
-        img.pixels.foreach_get(a)
-        a = a.reshape(img.size[1], img.size[0], 4)
-        bpy.data.images.remove(img)
-        mag = (a[..., 0] > 0.9) & (a[..., 1] < 0.12) & (a[..., 2] > 0.9)
-        per = {}
+        bpy.ops.render.render(write_still=True)                 # the picture, in the scene's own look
+        with exact_colours(sc):                                 # the count: exact colours, line of sight through
+            bg = check_background(sc, tmp)
+            sc.render.filepath = str(tmp)
+            bpy.ops.render.render(write_still=True)
+        mag = is_magenta(read_rgba(tmp))
+        hole = enclosed(mag)
+        per = {"background_rgb": bg}
         res = sc.render.resolution_x
-        for side, c in EYE_C.items():
-            p = world_to_camera_view(sc, cam, c)
-            cx, cy = p.x * res, p.y * res
-            r = 0.03 / scale * res
-            yy, xx = np.mgrid[0:res, 0:res]
-            disc = (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
-            per[side] = {"disc_px": int(disc.sum()), "magenta_px": int((mag & disc).sum()),
+        for side, (disc, p) in eye_discs(sc, cam, res, scale).items():
+            per[side] = {"disc_px": int(disc.sum()), "magenta_px": int((hole & disc).sum()),
+                         "outline_px": int((mag & ~hole & disc).sum()),
                          "in_frame": bool(0 <= p.x <= 1 and 0 <= p.y <= 1)}
         leaks[name] = per
+    tmp.unlink(missing_ok=True)
     return leaks
 
 

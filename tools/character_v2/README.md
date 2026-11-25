@@ -28,6 +28,13 @@ $PY tools/character_v2/mouth_poses.py -- $W/mouth_m1/tripo_M1.blend $W/mouth_m1/
 python tools/character_v2/mouth_sheet.py $W/mouth_m1/poses_before $W/mouth_m1/poses_after $W/mouth_m1/M1_before_after_face.png
 ```
 
+Eye leak test (any V2 blend with the E6/E7 eyes; prove it can fail first):
+```bash
+$PY tools/character_v2/eye_leak_selftest.py -- $W/eye_leak_selftest     # throwaway scene: guard, sealed 0, hidden socket > 0
+$PY tools/character_v2/eye_poses.py -- $W/mouth_m1/tripo_M1.blend $W/mouth_m1/eye_leaks \
+    --views front,three_quarter_L,three_quarter_R,closeup_L
+```
+
 The baseline `.blend` is `import_glb(monkey.glb)` saved as is (`tools/blender/common.py`).
 
 | Script | Role |
@@ -41,6 +48,9 @@ The baseline `.blend` is `import_glb(monkey.glb)` saved as is (`tools/blender/co
 | `sheet.py` | Comparison sheets (Pillow) |
 | `tripo_face_poc.py` | Tripo direction: hybrid face (new muzzle with lip loops, eyes with lids, brow keys) or the direct control (`--mode direct`) |
 | `mouth_m1.py` | M1 mouth on a V2 blend: mouth bag in the muzzle, tooth band, gums, tongue, one jaw field, all mouth keys rebuilt, numeric checks |
+| `eye_audit.py` | Eye-region audit: geometry, socket backing, leak renders; holds the shared exact-colour leak helpers |
+| `eye_poses.py` | Lid and gaze pose renders with per-eye leak counts (`hole_px` culled, `through_px`) in exact colours; `--hide` for a fail run |
+| `eye_leak_selftest.py` | Proves the eye leak test can fail, on a throwaway scene (no private assets) |
 | `mouth_poses.py` | Mouth pose renders (front, 3/4, side, low) with hole / foreign-geometry / poke-through tests in exact colours |
 | `mouth_sheet.py`, `app_mouth_sheet.py` | Before/after mouth sheets from `mouth_poses.py` and `threejs_face_check.py` runs (Pillow) |
 | `threejs_face_check.py` | Loads a candidate GLB in the real UI (demo build, `?model=`) and drives speech, blink and emotes with the app's own code; screenshots + morph read-back |

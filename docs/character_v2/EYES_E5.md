@@ -59,7 +59,7 @@ Everything except the eyes is Tripo's, including its original muzzle, so the eye
 | Check | Result |
 |---|---|
 | Geometry | Eyeballs: 0 boundary and 0 non-manifold edges. Sockets: 0 non-manifold; the 64 boundary edges are the tucked rim (hidden). No face points into the eye |
-| Background leaks | 0 magenta pixels in every eye disc, 7 neutral views + 16 poses × 4 views |
+| Background leaks | **Unverified.** The run reported 0 magenta pixels in every eye disc (7 neutral views + 16 poses × 4 views), but the test could not fail: `eye_audit.py` and `eye_poses.py` rendered the magenta background through the blend's AgX view transform as (201, 116, 201), which the detector rejects. Both scripts were fixed on 2026-11-25. E5 was not re-run: its blend is no longer in the workspace and E7 replaced its eyes. See `EYES_E7.md` |
 | Match to the source | `EYES_source_vs_E5_7views.png`: front, ¾ left, ¾ right, side, top-down, low angle, close-up; source / E5 / hybrid C rows |
 | Poses (Blender) | `EYES_E5_poses_{closeup_L,front,three_quarter_R}.png`: neutral, wide, half blink, blink, squint, happy, angry, sad, surprised, wink (L), gaze left / right / up / down, blink while looking aside, squint while looking up |
 | App (Three.js, `?demo&model=`) | Loads as 3D with the 7 eye morphs. The app's blink timer, emotes (happy → squint, angry → `angryEyes`, sad → `sadEyes`, surprised → `wideEyes`) and **look-at** drive it: eye bones rotate 14.4° / 9.6° sideways and 6.7° up/down, and 12.2° while talking (measured inside the render call). `EYES_E5_threejs.png` |

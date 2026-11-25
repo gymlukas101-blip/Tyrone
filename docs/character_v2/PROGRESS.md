@@ -21,6 +21,22 @@ Kept current after each bounded step. If a run is interrupted, resume from **nex
 | files_changed | `tools/character_v2/{retarget,clip_sheet,threejs_body_performance,measure_character,fidelity_render,fidelity}.py` (new); `ui/src/avatar3d.ts` (expression cleanup); `docs/character_v2/{CHARACTER_DESIGN_AUTHORITY.md, STAGE3_PLAN.md, PROGRESS.md, tripo_poc_manifest.json}`; `docs/agent-lessons.md`; `tests/test_character_v2_fidelity.py` |
 | external_tool_versions | bpy 5.3.0, Mesa software EGL, Playwright Chromium + SwiftShader, system ffmpeg. No Blender GUI or MCP; no local computer shared |
 
+## Eye leak test fix (2026-11-25): verified / failed / untested
+- **VERIFIED (cloud container, bpy 5.3):** `eye_leak_selftest.py` builds a throwaway AgX scene: a hollow head, eye
+  holes, eyeballs and `V2_EyeSock_*` cups.
+  - Under AgX with anti-aliasing, the background reads (201, 116, 201) and `check_background` raises.
+  - The sealed scene counts 0.
+  - With `--hide V2_EyeSock_L`: 10,614 `hole_px` in the left disc, 0 in the right, and 0 `through_px`. Back faces
+    must be culled to see a missing socket when the head is closed behind it.
+- **CHANGED:** `eye_poses.py` and `eye_audit.py` keep the scene's look for the pictures and count leaks on extra
+  exact-colour renders (Standard, no anti-aliasing, flat grey geometry, magenta background). They count only magenta
+  enclosed by geometry; magenta that reaches the frame edge is background beside the head (`outline_px`). Each view
+  first renders an empty frame and fails unless its corners read as magenta. `eye_poses.py` adds `--hide`, per-eye
+  `hole_px` (culled) / `through_px`, and `where` plus `<pose>_<view>_leak.png` for a leaking frame.
+- **CORRECTED:** the "0 leak pixels" claims in `EYES_E5.md`, `FACE_F3.md` and `EYES_E7.md` are marked unverified.
+- **UNTESTED:** the real counts on `tripo_M1.blend` (no V2 blend or Tripo source in this container, and no computer
+  folder shared). The commands are in `EYES_E7.md`.
+
 ## Mouth M1 run (2026-11-24): verified / failed / untested
 - **VERIFIED (cloud container):**
   - `mouth_m1.py` rebuilds the mouth on the E7 blend headless; same 62 morph names, all defaults 0, 46 clips.
@@ -32,7 +48,8 @@ Kept current after each bounded step. If a run is interrupted, resume from **nex
 - **FAILED and fixed:** BMesh slot reuse scrambled the new vertex order; Workbench AgX made the magenta test vacuous;
   a skin spike in cheeksUp (front ray missed → bad fallback); bag lagging the jaw through the lower lip; F3's
   upper-lip fold next to the corners in bigGrin/laugh. **Found, not fixed (separate task):** `eye_poses.py`'s leak test
-  has the same AgX blind spot, so the E5–E7 "0 leak pixels" claims are unverified.
+  has the same AgX blind spot, so the E5–E7 "0 leak pixels" claims are unverified. (Fixed in the tooling on 2026-11-25,
+  see below.)
 - **UNTESTED:** Windows / WebView2 / GPU frame time (+2.7k vertices, +2 draw calls); look-dev under the app's ACES
   lighting; real TTS audio.
 
