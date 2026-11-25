@@ -57,6 +57,11 @@ How it's kept up to date:
 ### Context and token use
 - **Don't pull whole docs or huge command outputs into context: grep or read slices, and send big outputs to a file.** *Why:* 20–40k-character tool outputs (API docs, artifact guides) cost a lot and were mostly unused.
 - **Don't re-read the same screenshot or file several times.** Note what you saw. *Why:* repeated reads of the same images.
+- **Adding a tool can break every message.** All strict tool schemas in a request compile into one grammar with
+  documented caps (20 strict tools, 24 optional and 16 union parameters) and an undocumented size cap. v0.3.107 added
+  two tools and the API answered every message with "The compiled grammar is too large". Keep `STRICT_TOOLS` to tools
+  that write, don't add to it casually, and keep the agent's non-strict retry (`_grammar_rejected`). *Why:* owner
+  hit it live on the Dell.
 
 ## Retired rules
 

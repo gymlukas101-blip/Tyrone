@@ -25,7 +25,7 @@ from . import workspace
 from .costs import HAIKU, SONNET, Ledger, Usage
 from .router import Route, Router
 from .speech_text import SentenceChunker
-from .tools import LOCAL_TOOLS, Escalate, ToolRunner, cap_strict
+from .tools import LOCAL_TOOLS, MAX_STRICT, Escalate, ToolRunner, cap_strict
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +143,13 @@ def _route_kind(reason: str) -> str:
     return head[:32] or "unknown"
 
 
+def _grammar_rejected(msg: str) -> bool:
+    """A 400 about the strict schemas' compiled grammar (size, complexity, too many strict tools or parameters)."""
+    return any(k in msg for k in ("compiled grammar", "grammar is too large", "too complex for compilation",
+                                  "strict tools", "simplify your tool schemas", "optional parameters",
+                                  "union types"))
+
+
 def _out_of_credits(exc: Exception) -> bool:
     text = f"{getattr(exc, 'message', '')} {exc}".lower()
     return "credit balance" in text or ("billing" in text and "too low" in text)
@@ -201,6 +208,7 @@ class Agent:
         self.on_workspace_error: Callable[[], bool] | None = None   # app hook: find + save workspace ID
         self.persist = persist           # False for throwaway agents (calibration) - never touch the saved chat
         self._haiku_web_direct = False   # set if the API wants Haiku's web search called directly
+        self._strict_limit = MAX_STRICT   # 0 once the API rejects the strict schemas' grammar (sent non-strict then)
         self.trace = None                # TurnTracer (app): stage timestamps and routing labels, no speech text
         self.fast_voice_routing = True   # voice turns skip the classifier unless the request looks like thinking work
         self._restore()
@@ -503,7 +511,7 @@ class Agent:
             "max_tokens": 16000,
             # 1-hour cache on the stable prefix (tools + persona): voice chats often pause > 5 minutes.
             "system": [{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
-            "tools": cap_strict(self._tools_for(route.model)),
+            "tools": cap_strict(self._tools_for(route.model), self._strict_limit),
             "messages": list(self.history),
             "output_config": {"effort": (self._conv_effort if self.per_message_effort and self._conv_effort
                                          else route.effort)},
@@ -574,6 +582,12 @@ class Agent:
                     # Per-message effort not accepted here: go back to plain top-level effort.
                     self.per_message_effort = False
                     self._drop_effort_messages()
+                    continue
+                if exc.status_code == 400 and self._strict_limit and _grammar_rejected(msg):
+                    # The tool schemas compile to a grammar the API won't build: send every tool non-strict from now
+                    # on rather than failing every message (tool inputs are still validated by the runner).
+                    log.warning("API rejected the strict tool grammar (HTTP %s); sending tools non-strict", exc.status_code)
+                    self._strict_limit = 0
                     continue
                 if exc.status_code == 400 and route.model == HAIKU and not self._haiku_web_direct \
                         and "allowed_callers" in msg:

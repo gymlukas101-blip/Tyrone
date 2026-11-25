@@ -22,12 +22,14 @@ from .approval import ApprovalGate, PendingDraft
 from .ranking import TIER_ORDER, rank_items
 
 
-# The API accepts at most 20 tools with strict schemas per request. Strict decoding matters most where a wrong
-# argument has a side effect (drafts, memory edits, check-offs, tasks); read-only tools validate their inputs anyway.
-MAX_STRICT = 20
+# Strict schemas are compiled into one grammar per request. The API limits it: at most 20 strict tools, 24 optional
+# and 16 union-type parameters, plus an undocumented cap on the compiled grammar's size, which 17 strict tools crossed
+# in v0.3.107-109 ("The compiled grammar is too large": every message failed). So only tools whose wrong argument
+# writes something are strict (drafts, check-offs, tasks, memory, to-dos); read-only tools validate their inputs
+# anyway, and the agent retries a rejected request with no strict tools at all (agent.py, _grammar_rejected).
+MAX_STRICT = 12
 STRICT_TOOLS = {"draft_email", "check_off_assignment", "propose_computer_task", "remember", "update_memory",
-                "forget_memory", "generate_image", "rank_items", "open_website", "escalate", "get_emails",
-                "read_email", "get_calendar", "show_on_screen", "add_todo", "update_todo", "delete_todo"}
+                "forget_memory", "add_todo", "update_todo", "delete_todo"}
 
 
 def _tool(name: str, description: str, properties: dict, required: list[str] | None = None) -> dict:

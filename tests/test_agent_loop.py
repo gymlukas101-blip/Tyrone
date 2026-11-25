@@ -237,3 +237,49 @@ def test_route_event_and_ledger_carry_task(tmp_path):
     import sqlite3
     rows = sqlite3.connect(tmp_path / "t.db").execute("SELECT purpose FROM spend").fetchall()
     assert ("chat:chat",) in rows
+
+
+def test_rejected_strict_grammar_retries_without_strict_tools(tmp_path):
+    """v0.3.107-109: 'The compiled grammar is too large' on every message. One quiet retry with no strict tools,
+    and the conversation is kept (not cut to the last message)."""
+    agent, _, *_ = build(tmp_path, [([text_block("Sup.")], "end_turn")])
+    agent.handle("yo")
+    agent.client = FailingOnceClient(
+        [([text_block("Here's your homework, hardest first.")], "end_turn")],
+        _bad_request("The compiled grammar is too large, which would cause performance issues. Simplify your tool "
+                     "schemas or reduce the number of strict tools."))
+    out = agent.handle("pull up all my homework and rank it by how hard it is")
+    first, retry = agent.client.calls[-2:]
+    assert any(t.get("strict") for t in first["tools"])
+    assert not any(t.get("strict") for t in retry["tools"])
+    assert len(retry["messages"]) > 1                    # history kept
+    assert "hardest first" in (out or "") or agent._strict_limit == 0
+    agent.client = FailingOnceClient([([text_block("Done.")], "end_turn")], None)
+    agent.handle("thanks")
+    assert not any(t.get("strict") for t in agent.client.calls[-1]["tools"])    # stays off for the session
+
+
+def test_strict_schemas_stay_within_the_documented_limits():
+    """20 strict tools, 24 optional and 16 union-type parameters across all strict schemas (structured-outputs docs),
+    and a small strict set: the grammar-size cap is undocumented, so keep strict to the tools that write."""
+    from monkey.brain.tools import LOCAL_TOOLS, MAX_STRICT
+
+    strict = [t for t in LOCAL_TOOLS if t.get("strict")]
+    assert len(strict) <= MAX_STRICT <= 12
+    opt = union = 0
+
+    def walk(s):
+        nonlocal opt, union
+        if not isinstance(s, dict):
+            return
+        if isinstance(s.get("type"), list) or "anyOf" in s:
+            union += 1
+        if s.get("type") == "object":
+            opt += len(set(s.get("properties", {})) - set(s.get("required", [])))
+            for v in s.get("properties", {}).values():
+                walk(v)
+        if s.get("type") == "array":
+            walk(s.get("items"))
+    for t in strict:
+        walk(t["input_schema"])
+    assert opt <= 24 and union <= 16

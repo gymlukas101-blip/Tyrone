@@ -1016,3 +1016,16 @@ tests. It now marks done and undoes inside one `page.evaluate`, and closes its p
 `tests/test_chrome_bridge.py::test_course_runs_in_the_users_own_chrome_through_the_extension` fails the same way on
 `main` here (not UI). Other 4-worker failures (hearing click, sound wiring, the idle-fps avatar test) moved between runs
 and passed alone. Not tried on the Dell.
+
+## 2026-11-25: hotfix, "The compiled grammar is too large" on every message
+
+- **Symptom (owner, v0.3.109 on the Dell):** every chat answered `API error 400 ... The compiled grammar is too large ... Simplify
+  your tool schemas or reduce the number of strict tools.`
+- **Cause:** 17 tools were sent with `strict: true`. They passed the documented limits (20 strict tools, 0 optional and 0
+  union parameters) but crossed the API's undocumented cap on the compiled grammar after the class-hiding tools changed the
+  tool set (v0.3.107).
+- **Fix:** `STRICT_TOOLS` is now the 9 tools that write (drafts, check-offs, computer tasks, memory, to-dos), `MAX_STRICT` 12.
+  If the API still rejects the grammar, `Agent._run` retries the same request with every tool non-strict and stays that way
+  for the session (`_grammar_rejected`), keeping the conversation; the tool runner still validates inputs.
+- **Tests:** `test_rejected_strict_grammar_retries_without_strict_tools`, `test_strict_schemas_stay_within_the_documented_limits`
+  (`tests/test_agent_loop.py`); the 20-tool cap test now checks `MAX_STRICT`.

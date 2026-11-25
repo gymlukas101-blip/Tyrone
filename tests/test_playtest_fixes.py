@@ -276,4 +276,5 @@ def test_requests_never_carry_more_than_20_strict_tools():
 
     assert sum(1 for t in LOCAL_TOOLS if t.get("strict")) <= MAX_STRICT
     many = [{"name": f"t{i}", "strict": True} for i in range(30)]
-    assert sum(1 for t in cap_strict(many) if t.get("strict")) == 20
+    assert sum(1 for t in cap_strict(many) if t.get("strict")) == MAX_STRICT <= 20
+    assert not any(t.get("strict") for t in cap_strict(many, 0))      # the grammar-rejected fallback
